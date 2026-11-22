@@ -4,6 +4,9 @@ using EfootballBot.Core.Input;
 using EfootballBot.Core.Vision;
 using System.IO; // Core.System 命名空间遮蔽：裸 Path/File/Directory 必须靠本 using（global:: 前缀在此工程报 CS0103）
 using EfootballBot.Core.Bot.Match;
+using EfootballBot.Core.Bot.Scenarios.Weekly;
+using EfootballBot.Core.Bot.Scenarios.AiLadder;
+using EfootballBot.Core.Bot.Scenarios.PeakLadder;
 
 // ===========================================================================
 // 架构锁 · 模块层 Core/Bot/Scenarios（v7.2）
@@ -44,6 +47,8 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
     private MatchSessionTracker _matchSession => _matchPlay.Session;
     /// <summary>赛后活动任务页（全屏活动地图）状态机：仅国际服（国服子类关闭）。</summary>
     private readonly PostMatchActivityController _postMatch = new();
+    /// <summary>启动引导：停在其他模块页时先 B 收敛回主页（国服子类有自己的残留页兜底，不用这个）。</summary>
+    private readonly ReturnToHomeGuide _homeGuide;
     /// <summary>是否处理赛后活动任务页。国服子类覆盖为 false（该功能仅国际服独享）。</summary>
     protected virtual bool SupportsPostMatchActivity => true;
 
@@ -122,6 +127,7 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         _engine = engine;
         _log = log;
         _matchPlay = new MatchPlay(engine, "我的联赛", log);
+        _homeGuide = new ReturnToHomeGuide("我的联赛", log, engine.DumpSuspiciousFrame);
         _swapTestOnly = swapTestOnly;
         // 焦点检测亮度明细 → Debug 日志（导航错判时日志直接给出各磁贴实际亮度/阈值/判定）
         MyLeagueBrain.FocusDiag = s => _log($"[我的联赛] {s}", LogLevel.Debug);
@@ -159,6 +165,23 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         bool matchContext = MatchShared.MatchContext(_memory, now);
         var screen = ClassifyScreen(obs, matchContext);
         _memory.Record(screen, now);
+        // 启动引导（国际服）：若游戏停在其他模块页（周活动/天梯/巅峰赛），先 B 收敛回主页，
+        // 否则共享分类会把该页当"前往比赛"直接开赛，导致从别的模块页启动本模块时永远到不了。
+        // 借其他模块 Brain 认残留页（架构锁允许只读借用 Brain.Classify）；本模块页/主页/比赛中跳过。
+        if (SupportsOcrTileNav) // 国际服标志（国服子类有自己的残留页兜底，关闭此引导）
+        {
+            bool otherModule = WeeklyBrain.Classify(obs.Detections, obs.Ocr,
+                                    ScreenProbe.CornerHasContent(obs.Frame), matchContext,
+                                    ScreenProbe.IsMostlyLightPage(obs.Frame)) != WkScreen.None
+                                || AiLadderBrain.Classify(obs.Ocr) != AlScreen.None
+                                || PeakLadderBrain.Classify(obs.Ocr, obs.Detections) != PlScreen.None;
+            bool ownPage = screen is MatchScreen.MatchStartPage or MatchScreen.InMatch or MatchScreen.DifficultyPage
+                           or MatchScreen.HasConfirm or MatchScreen.LeagueInfoPage;
+            int? guideWait = await _homeGuide.StepAsync(obs.Frame,
+                screen == MatchScreen.MainMenu, ownPage, otherModule,
+                () => _engine.Pad.Back());
+            if (guideWait is not null) return guideWait.Value;
+        }
         // 识别走查（2026-11-18）：连续多轮认不出的界面把实机帧 + OCR 摘要落 datadump。
         // 新版改版后「哪一屏认不出来」只能靠用户口述，反馈包里没有那一帧，远程只能猜；
         // 现在用户下次反馈直接带图。节流 120s、要求帧里确实有字（黑帧/加载帧不转存）。
