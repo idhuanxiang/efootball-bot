@@ -211,6 +211,11 @@ public sealed class PeakLadderScenario : IScenario
                 _log($"[天梯巅峰赛] {action.Target}", LogLevel.Warn);
                 await _engine.Pad.Back();
                 break;
+            case MatchActionKind.GamepadBackAfterConfirm:
+                _log($"[天梯巅峰赛] {action.Target}", LogLevel.Warn);
+                await _engine.Pad.Confirm(); // B 多次无效：先按 A 消掉挡住返回键的确认弹窗
+                await _engine.Pad.Back();
+                break;
             case MatchActionKind.MatchIdleTap:
                 // 比赛中挂机点击：按 A + 用户「挂机节奏」区间随机间隔（共享层 MatchPlay，拟人化）
                 return await _matchPlay.IdleTapAsync(ct);

@@ -410,6 +410,11 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
                 _log("[我的联赛] 无特征界面连续多轮，按 B 逃生", LogLevel.Warn);
                 await _engine.Pad.Back();
                 break;
+            case MatchActionKind.GamepadBackAfterConfirm:
+                _log($"[我的联赛] {action.Target}", LogLevel.Warn);
+                await _engine.Pad.Confirm(); // B 多次无效：先按 A 消掉挡住返回键的确认弹窗
+                await _engine.Pad.Back();
+                break;
             case MatchActionKind.PadUpConfirm:
                 _log($"[我的联赛] 弹窗上移确认：{action.Target}", LogLevel.Info);
                 await _engine.Pad.Dpad(PadDir.Up);
