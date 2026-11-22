@@ -78,6 +78,8 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
     private int _hubScanMoves;
     /// <summary>刚从比赛页按 A 想进「我的联赛」——下一帧若落到其它模块页需 B 退回，不能在错误页面继续推进。</summary>
     private bool _enteredFromHub;
+    /// <summary>进错页后连续 B 退回仍停在该页的次数，达阈值换招「上→A→B」（同 B 逃生换招）。</summary>
+    private int _wrongCardBacks;
     /// <summary>智能接管提示是否已记录（每次运行一次）。</summary>
     private bool _takeoverLogged;
     /// <summary>TitleScreen 首次出现时间（比赛上下文中按 X 前 30s 宽限，区分加载画面与真标题）。</summary>
@@ -218,21 +220,39 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
             // 既用于确认"正确进了我的联赛"，也用于避免主页被其它 Brain 误认成进错页。
             bool isMyLeagueHome = obs.Ocr.ContainsJoined("比赛记录") || obs.Ocr.ContainsJoined("最近5场比赛")
                                   || (obs.Ocr.ContainsJoined("排名") && obs.Ocr.ContainsJoined("赛程表"));
-            // 正确进了我的联赛主页（专有词命中）→ 直接结束监视，不再判进错
-            if (isMyLeagueHome)
+            // 正确进了我的联赛主页 / 本模块流程 / 回到比赛页 → 结束监视，清退回计数
+            if (isMyLeagueHome || isLeagueFlow || screen == MatchScreen.MatchHub)
             {
                 _enteredFromHub = false;
+                _wrongCardBacks = 0;
             }
             else if ((otherBrain || eventFeature) && !isLeagueFlow)
             {
-                _log($"[我的联赛] 比赛页进错板块（{screen}，特征：{(otherBrain ? "其它模块Brain" : "活动页特征词")}），B 退回比赛页重新定位", LogLevel.Warn);
-                _engine.DumpSuspiciousFrame(obs.Frame, "wrong_card_entered", $"比赛页按A后落到错误板块（{screen}），B退回重定位");
-                _enteredFromHub = false;
-                await _engine.Pad.Back();
+                // 仍在错误页：B 退回；连续 3 次无效（画面不变）则换招「上→A→B」，
+                // 与 B 逃生换招同款——直接 A 可能落在取消键，先上移避开再 A 最后 B。
+                _wrongCardBacks++;
+                bool escalate = _wrongCardBacks >= 3;
+                _log($"[我的联赛] 比赛页进错板块（{screen}），{(escalate ? "B 连续无效，换招上→A→B" : $"B 退回重定位（{_wrongCardBacks}/3）")}", LogLevel.Warn);
+                _engine.DumpSuspiciousFrame(obs.Frame, escalate ? "wrong_card_escape" : "wrong_card_entered",
+                    $"比赛页按A后落到错误板块（{screen}），{(escalate ? "B连续3次无效换招上AB" : "B退回")}");
+                if (escalate)
+                {
+                    await _engine.Pad.Dpad(PadDir.Up);
+                    await _engine.Pad.Confirm();
+                    await _engine.Pad.Back();
+                    _wrongCardBacks = 0;
+                }
+                else
+                {
+                    await _engine.Pad.Back();
+                }
                 return 2200;
             }
-            else if (isLeagueFlow || (screen != MatchScreen.MatchHub && !otherBrain && !eventFeature))
-                _enteredFromHub = false; // 本模块页 / 普通弹窗无板块特征 → 结束监视交原流程
+            else if (screen != MatchScreen.MatchHub && !otherBrain && !eventFeature)
+            {
+                _enteredFromHub = false; // 普通弹窗/未知页无板块特征 → 结束监视交原流程
+                _wrongCardBacks = 0;
+            }
         }
         // 识别走查（2026-11-18）：连续多轮认不出的界面把实机帧 + OCR 摘要落 datadump。
         // 新版改版后「哪一屏认不出来」只能靠用户口述，反馈包里没有那一帧，远程只能猜；
