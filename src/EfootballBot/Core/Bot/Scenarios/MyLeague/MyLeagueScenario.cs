@@ -46,6 +46,10 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
     private readonly PostMatchActivityController _postMatch = new();
     /// <summary>是否处理赛后活动任务页。国服子类覆盖为 false（该功能仅国际服独享）。</summary>
     protected virtual bool SupportsPostMatchActivity => true;
+
+    /// <summary>比赛页是否用 OCR 实时定位「我的联赛」磁贴卡位（国际服开；国服有自己的导航覆盖关闭）。
+    /// 磁贴随活动增减会左右漂移，写死右移次数会按错卡。</summary>
+    protected virtual bool SupportsOcrTileNav => true;
     /// <summary>
     /// 是否支持「只打关键比赛」（杀进程跳过普通比赛）。仅国际服：国服比赛中有
     /// 「跳过比赛」菜单项，不需要重启游戏；且国服进程重启会连带启动器行为差异较大。
@@ -303,6 +307,20 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         // 模块自有界面拦截（国服子类在此接管主页导航与 RT 确认键）：返回非 null = 本轮已处理
         int? customWait = await InterceptAsync(obs, screen, _streak, inMatchRecently);
         if (customWait is not null) return customWait.Value;
+        // 比赛页：OCR 实时定位「我的联赛」磁贴卡位（国际服）。磁贴随活动增减左右漂移，
+        // 原共享逻辑靠"焦点词读全"右移，读不全就一直晃/盲按（识别走查主要僵局）。
+        // 这里按 x 排序认出卡位后一次归位+右移到位再按 A，读不全(null)则回退原逻辑。
+        // 超过 NavEscapeStreak 仍未离开比赛页时回退原逻辑（保留其周期性 B 逃生兜底，防卡死）
+        if (SupportsOcrTileNav && screen == MatchScreen.MatchHub &&
+            _streak < MatchBrain.NavEscapeStreak &&
+            HubTileLocator.FindTileOffset(obs.Ocr, "我的联赛") is int tileOffset)
+        {
+            _log($"[我的联赛] 比赛页：OCR 定位「我的联赛」在第 {tileOffset + 1} 卡 → 归位最左后右×{tileOffset} → A", LogLevel.Info);
+            await _engine.Pad.DpadRepeat(PadDir.Left, 6);
+            if (tileOffset > 0) await _engine.Pad.DpadRepeat(PadDir.Right, tileOffset);
+            await _engine.Pad.Confirm();
+            return 2800;
+        }
         var action = MatchBrain.Decide(screen, obs.Ocr, _streak, inMatchRecently, obs.Frame);
         MatchShared.DecisionSnapshot(_log, "我的联赛", screen, _streak, action, obs.Ocr);
         // 标题画面宽限（共享实现，含赛后弹窗链 90s 档，见 MatchShared.TitleGrace）：
