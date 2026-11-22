@@ -76,6 +76,8 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
     private int _itemScanSteps;
     /// <summary>比赛页右移找「我的联赛」卡的格数（卡排可横向滚动，最右卡初始被裁切读不到标题）。</summary>
     private int _hubScanMoves;
+    /// <summary>刚从比赛页按 A 想进「我的联赛」——下一帧若落到其它模块页需 B 退回，不能在错误页面继续推进。</summary>
+    private bool _enteredFromHub;
     /// <summary>智能接管提示是否已记录（每次运行一次）。</summary>
     private bool _takeoverLogged;
     /// <summary>TitleScreen 首次出现时间（比赛上下文中按 X 前 30s 宽限，区分加载画面与真标题）。</summary>
@@ -192,6 +194,45 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
                 screen == MatchScreen.MainMenu, ownPage, otherModule,
                 () => _engine.Pad.Back());
             if (guideWait is not null) return guideWait.Value;
+        }
+        // 进错页兜底：刚从比赛页按 A 想进「我的联赛」，若落到别的板块页（活动/天梯/巅峰赛），
+        // 共享 HasConfirm「一律按确定推进」会在错误页面继续乱按（2026-11-23 实机日志：
+        // 进活动页 HasConfirm→按OK→回主页→又进错，反复跑偏）。这里识别后立即 B 退回比赛页
+        // 重新定位，不落共享决策。正常弹窗（确定/OK/下一步，无其它板块特征）不触发。
+        if (_enteredFromHub)
+        {
+            bool otherBrain = WeeklyBrain.Classify(obs.Detections, obs.Ocr,
+                                    ScreenProbe.CornerHasContent(obs.Frame), matchContext,
+                                    ScreenProbe.IsMostlyLightPage(obs.Frame)) != WkScreen.None
+                                || AiLadderBrain.Classify(obs.Ocr) != AlScreen.None
+                                || PeakLadderBrain.Classify(obs.Ocr, obs.Detections) != PlScreen.None;
+            bool eventFeature = obs.Ocr.ContainsJoined("赛事等级") || obs.Ocr.ContainsJoined("Team Effort")
+                                || (obs.Ocr.ContainsJoined("对阵AI") && !obs.Ocr.ContainsJoined("对阵AI类别"));
+            // 明确的本模块页 / 比赛流程 / 主菜单 → 正常。注意 LeaguePage 不在此列：
+            // 周活动主页也归此类，无法单靠它区分，用下面的联赛主页专有词判定。
+            bool isLeagueFlow = screen is MatchScreen.LeagueInfoPage
+                                or MatchScreen.LeagueSquadPage or MatchScreen.PointsPage or MatchScreen.ItemList
+                                or MatchScreen.MatchStartPage or MatchScreen.InMatch or MatchScreen.DifficultyPage
+                                or MatchScreen.FullTime or MatchScreen.MainMenu;
+            // 我的联赛主页专有词（排名/比赛记录/最近5场等固定词，用户实机确认）：
+            // 既用于确认"正确进了我的联赛"，也用于避免主页被其它 Brain 误认成进错页。
+            bool isMyLeagueHome = obs.Ocr.ContainsJoined("比赛记录") || obs.Ocr.ContainsJoined("最近5场比赛")
+                                  || (obs.Ocr.ContainsJoined("排名") && obs.Ocr.ContainsJoined("赛程表"));
+            // 正确进了我的联赛主页（专有词命中）→ 直接结束监视，不再判进错
+            if (isMyLeagueHome)
+            {
+                _enteredFromHub = false;
+            }
+            else if ((otherBrain || eventFeature) && !isLeagueFlow)
+            {
+                _log($"[我的联赛] 比赛页进错板块（{screen}，特征：{(otherBrain ? "其它模块Brain" : "活动页特征词")}），B 退回比赛页重新定位", LogLevel.Warn);
+                _engine.DumpSuspiciousFrame(obs.Frame, "wrong_card_entered", $"比赛页按A后落到错误板块（{screen}），B退回重定位");
+                _enteredFromHub = false;
+                await _engine.Pad.Back();
+                return 2200;
+            }
+            else if (isLeagueFlow || (screen != MatchScreen.MatchHub && !otherBrain && !eventFeature))
+                _enteredFromHub = false; // 本模块页 / 普通弹窗无板块特征 → 结束监视交原流程
         }
         // 识别走查（2026-11-18）：连续多轮认不出的界面把实机帧 + OCR 摘要落 datadump。
         // 新版改版后「哪一屏认不出来」只能靠用户口述，反馈包里没有那一帧，远程只能猜；
@@ -357,6 +398,7 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
                 _log($"[我的联赛] 比赛页：读到「我的联赛」标题（第 {to + 1} 可见卡，焦点已在目标卡），直接按 A", LogLevel.Info);
                 await _engine.Pad.Confirm();
                 _hubScanMoves = 0;
+                _enteredFromHub = true; // 下一帧核验是否真进了我的联赛，进错则 B 退回
                 return 2800;
             }
             // 读不到标题：首次先归位最左，再逐格右移切换焦点（目标卡被焦点选中时才会滚入并读全）
