@@ -189,18 +189,17 @@ public sealed class AiLadderScenario : IScenario
         {
             case MatchActionKind.PadEnterMatch:
                 // 主菜单进比赛卡：下×2 进底部卡行 → OCR 定位"比赛"格位后精确右移；读不全回退左×6
-                await _engine.Pad.Dpad(PadDir.Down);
-                await _engine.Pad.Dpad(PadDir.Down);
+                await _engine.Pad.DpadRepeat(PadDir.Down, 5); // 饱和下按到底部卡行（到底停住，防下少了按错）
                 int matchOff = HubTileLocator.FindMainMenuMatchOffset(obs.Ocr) ?? 0;
                 if (matchOff > 0)
                 {
-                    _log($"[AI天梯联赛] 主菜单导航：下×2→归位最左→右×{matchOff}→A（OCR 定位比赛在第 {matchOff + 1} 格）", LogLevel.Info);
+                    _log($"[AI天梯联赛] 主菜单导航：下×5→归位最左→右×{matchOff}→A（OCR 定位比赛在第 {matchOff + 1} 格）", LogLevel.Info);
                     await _engine.Pad.DpadRepeat(PadDir.Left, 6);
                     await _engine.Pad.DpadRepeat(PadDir.Right, matchOff);
                 }
                 else
                 {
-                    _log("[AI天梯联赛] 主菜单导航：下×2→左×6→A（OCR 未读全底部磁贴，回退饱和归位）", LogLevel.Info);
+                    _log("[AI天梯联赛] 主菜单导航：下×5→左×6→A（OCR 未读全底部磁贴，回退饱和归位）", LogLevel.Info);
                     _engine.DumpSuspiciousFrame(obs.Frame, "menu_tile_ocr_incomplete", "主菜单底部磁贴 OCR 读不全，回退固定左×6 导航");
                     await _engine.Pad.DpadRepeat(PadDir.Left, 6);
                 }
@@ -306,18 +305,17 @@ public sealed class AiLadderScenario : IScenario
                         await _engine.Pad.Back();
                         return 2400;
                     }
-                    await _engine.Pad.Dpad(PadDir.Down);
-                    await _engine.Pad.Dpad(PadDir.Down);
+                    await _engine.Pad.DpadRepeat(PadDir.Down, 5); // 饱和下按到底部卡行（到底停住，防下少了按错）
                     int flowMatchOff = HubTileLocator.FindMainMenuMatchOffset(obs.Ocr) ?? 0;
                     if (flowMatchOff > 0)
                     {
-                        _log($"[AI天梯联赛] 主菜单导航：下×2→归位最左→右×{flowMatchOff}→A（OCR 定位比赛在第 {flowMatchOff + 1} 格）", LogLevel.Info);
+                        _log($"[AI天梯联赛] 主菜单导航：下×5→归位最左→右×{flowMatchOff}→A（OCR 定位比赛在第 {flowMatchOff + 1} 格）", LogLevel.Info);
                         await _engine.Pad.DpadRepeat(PadDir.Left, 6);
                         await _engine.Pad.DpadRepeat(PadDir.Right, flowMatchOff);
                     }
                     else
                     {
-                        _log("[AI天梯联赛] 主菜单导航：下×2→左×6→A（OCR 未读全底部磁贴，回退饱和归位）", LogLevel.Info);
+                        _log("[AI天梯联赛] 主菜单导航：下×5→左×6→A（OCR 未读全底部磁贴，回退饱和归位）", LogLevel.Info);
                         _engine.DumpSuspiciousFrame(obs.Frame, "menu_tile_ocr_incomplete", "主菜单底部磁贴 OCR 读不全，回退固定左×6 导航");
                         await _engine.Pad.DpadRepeat(PadDir.Left, 6);
                     }
@@ -500,6 +498,5 @@ public sealed class AiLadderScenario : IScenario
         _attempts = 0;
     }
 }
-
 
 

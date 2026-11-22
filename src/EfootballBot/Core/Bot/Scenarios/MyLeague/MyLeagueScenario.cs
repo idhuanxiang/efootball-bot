@@ -388,18 +388,17 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
             case MatchActionKind.PadEnterMatch:
                 // 主菜单 → 底部卡片行 → "比赛"磁贴 → A。OCR 实时定位"比赛"在第几格后精确右移；
                 // 读不全（<3个底部标签）则回退原「左×6」饱和归位到最左——绝不瞎猜格位。
-                await _engine.Pad.Dpad(PadDir.Down);
-                await _engine.Pad.Dpad(PadDir.Down);
+                await _engine.Pad.DpadRepeat(PadDir.Down, 5); // 饱和下按到底部卡行（到底停住，防下少了按错）
                 int matchOff = HubTileLocator.FindMainMenuMatchOffset(obs.Ocr) ?? 0;
                 if (matchOff > 0)
                 {
-                    _log($"[我的联赛] 主菜单导航：下×2→归位最左→右×{matchOff}→A（OCR 定位比赛在第 {matchOff + 1} 格）", LogLevel.Info);
+                    _log($"[我的联赛] 主菜单导航：下×5→归位最左→右×{matchOff}→A（OCR 定位比赛在第 {matchOff + 1} 格）", LogLevel.Info);
                     await _engine.Pad.DpadRepeat(PadDir.Left, 6);
                     await _engine.Pad.DpadRepeat(PadDir.Right, matchOff);
                 }
                 else
                 {
-                    _log("[我的联赛] 主菜单导航：下×2→左×6→A（OCR 未读全底部磁贴，回退饱和归位）", LogLevel.Info);
+                    _log("[我的联赛] 主菜单导航：下×5→左×6→A（OCR 未读全底部磁贴，回退饱和归位）", LogLevel.Info);
                     _engine.DumpSuspiciousFrame(obs.Frame, "menu_tile_ocr_incomplete", "主菜单底部磁贴 OCR 读不全，回退固定左×6 导航");
                     await _engine.Pad.DpadRepeat(PadDir.Left, 6);
                 }
@@ -1115,7 +1114,6 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         };
     }
 }
-
 
 
 
