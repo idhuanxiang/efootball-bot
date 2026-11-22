@@ -355,8 +355,9 @@ public static partial class MatchBrain
 
     /// <summary>
     /// 周期性 B 逃生动作：每 Period(5) 轮按一次 B；连续按 B 失败（界面/分类一直没变，
-    /// 表现为 screenStreak 持续增长）达到 BackFailEscalations 次后，升级为「先 A 再 B」换招
-    /// ——A 消掉挡在返回键前面的确认弹窗，再 B 退出。之后每 3 次 B 再换一次，避免一直重复 A→B。
+    /// 表现为 screenStreak 持续增长）达到 BackFailEscalations 次后，升级为「上 → A → B」换招
+    /// ——先上移把焦点从「取消」移到确认键（直接 A 会落在取消上继续死循环），再 A 确认、最后 B 退出。
+    /// 之后每 3 次 B 再换一次，避免一直重复换招。
     /// 纯函数、复用 screenStreak，不引入 OCR 复核开销。
     /// </summary>
     private static MatchAction PeriodicBackAction(int screenStreak, int threshold, string backTarget)
@@ -364,7 +365,7 @@ public static partial class MatchBrain
         int k = (screenStreak - threshold) / 5; // 第几次周期 B（0 起）
         bool escalate = k >= BackFailEscalations - 1 && (k - (BackFailEscalations - 1)) % BackFailEscalations == 0;
         return escalate
-            ? new MatchAction(MatchActionKind.GamepadBackAfterConfirm, 3000, backTarget + "（B 多次无效，先 A 再 B）")
+            ? new MatchAction(MatchActionKind.GamepadBackAfterConfirm, 3000, backTarget + "（B 多次无效，上→A→B 换招）")
             : new MatchAction(MatchActionKind.GamepadBack, 2400, backTarget);
     }
 
