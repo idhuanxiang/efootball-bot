@@ -123,8 +123,13 @@ public static partial class MatchBrain
             {
                 // 「前往比赛」= 联赛主页主按钮；「下个赛季」= 赛季结束替换词（实机 next_season：
                 // 前往比赛位置变为"下个赛季"，另有"前往下个赛季"，含"下个赛季"即覆盖）
+                // 「对阵AI类别/对阵玩家类别」= eFootball™联赛类别选择页（实机 2026-11-22：
+                // 我的联赛从比赛页按 A 进到该页后，OCR 只有「eFootball™联赛|对阵AI类别」，
+                // 旧词表无匹配 → 一直 Wait 卡死。本模块无前置 Brain，此页落到 LeaguePage，
+                // 补上类别词即可按 A 进入；AI天梯有自己的 AiLadderBrain 先认，不受此影响。）
                 var go = FindLine(ocr, "下一步", "开始比赛", "开赛", "继续", "前往比赛",
-                    "进入比赛", "下个赛季", "开始");
+                    "进入比赛", "下个赛季", "开始",
+                    "对阵AI类别", "对阵玩家类别", "AI类别", "玩家类别");
                 if (go is not null)
                     return new MatchAction(MatchActionKind.PadConfirm, 2500, go);
                 // 关键词里没有、但底栏确实印着一枚推进键（新版换了文案/整行被并读成本页
