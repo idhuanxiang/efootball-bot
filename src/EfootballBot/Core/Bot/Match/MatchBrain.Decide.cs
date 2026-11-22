@@ -347,7 +347,9 @@ public static partial class MatchBrain
                     screenStreak < escapeAt && ocr.Words.Count > 0)
                     return new MatchAction(MatchActionKind.PadConfirm, 2000, "认不出的界面：按 A 试探");
                 if (screenStreak >= escapeAt && ocr.Words.Count > 0)
-                    return new MatchAction(MatchActionKind.GamepadBack, 3000, "B 键逃生");
+                    // 用周期换招替代裸 B：非比赛 6 轮起、比赛上下文 30 轮起，每 2 轮一次 B，
+                    // 第 3 次（非比赛约 10 轮）升级为「上→A→B」。水印/加载页已在前面 return，不会误触发。
+                    return PeriodicBackAction(screenStreak, escapeAt, "B 键逃生", period: 2);
                 return MatchAction.Wait(4000);
             }
         }
@@ -360,9 +362,9 @@ public static partial class MatchBrain
     /// 之后每 3 次 B 再换一次，避免一直重复换招。
     /// 纯函数、复用 screenStreak，不引入 OCR 复核开销。
     /// </summary>
-    private static MatchAction PeriodicBackAction(int screenStreak, int threshold, string backTarget)
+    private static MatchAction PeriodicBackAction(int screenStreak, int threshold, string backTarget, int period = 5)
     {
-        int k = (screenStreak - threshold) / 5; // 第几次周期 B（0 起）
+        int k = (screenStreak - threshold) / Math.Max(1, period); // 第几次周期 B（0 起）
         bool escalate = k >= BackFailEscalations - 1 && (k - (BackFailEscalations - 1)) % BackFailEscalations == 0;
         return escalate
             ? new MatchAction(MatchActionKind.GamepadBackAfterConfirm, 3000, backTarget + "（B 多次无效，上→A→B 换招）")

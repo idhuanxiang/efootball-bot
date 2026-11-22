@@ -1,5 +1,6 @@
 using EfootballBot.Core.Bot.Scenarios.MyLeague;
 using EfootballBot.Core.Bot.Scenarios.Weekly;
+using EfootballBot.Core.Bot.Scenarios.PeakLadder;
 using EfootballBot.Core.Input;
 using EfootballBot.Core.Vision;
 using EfootballBot.Core.Bot.Match;
@@ -89,7 +90,11 @@ public sealed class AiLadderScenario : IScenario
         _engine = engine;
         _log = log;
         _matchPlay = new MatchPlay(engine, "AI天梯联赛", log);
+        _homeGuide = new ReturnToHomeGuide("AI天梯联赛", log, engine.DumpSuspiciousFrame);
     }
+
+    /// <summary>启动引导：停在其他模块页时先 B 收敛回主页。</summary>
+    private readonly ReturnToHomeGuide _homeGuide;
 
     public async Task<int> RunOnceAsync(CancellationToken ct)
     {
@@ -116,6 +121,16 @@ public sealed class AiLadderScenario : IScenario
                 MatchShared.LoginRecovery(_memory, now), pitch)
             : MatchScreen.Unknown;
         _memory.Record(ml, now);
+        // 启动引导：停在其他模块页（周活动/巅峰赛/我的联赛）时先 B 收敛回主页。
+        bool otherModule = wk != WkScreen.None
+                           || PeakLadderBrain.Classify(obs.Ocr, obs.Detections) != PlScreen.None
+                           || (al == AlScreen.None &&
+                               ml is MatchScreen.LeaguePage or MatchScreen.PointsPage or MatchScreen.ItemList);
+        bool ownPage = al != AlScreen.None || ml is MatchScreen.MatchStartPage or MatchScreen.InMatch
+                       or MatchScreen.DifficultyPage or MatchScreen.HasConfirm;
+        int? guideWait = await _homeGuide.StepAsync(obs.Frame,
+            ml == MatchScreen.MainMenu, ownPage, otherModule, () => _engine.Pad.Back());
+        if (guideWait is not null) return guideWait.Value;
         if (!_takeoverLogged)
         {
             _takeoverLogged = true;
