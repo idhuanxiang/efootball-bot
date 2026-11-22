@@ -730,10 +730,12 @@ public partial class MainWindow
     /// <summary>把程序目录的代理 DLL + ini 写到指定目录。</summary>
     private void DeployProxyTo(string dir, string exeName, int targetId, System.Text.StringBuilder report)
     {
-        string src = Path.Combine(Core.System.AppPaths.ExeDir, "xinput1_3.dll");
-        if (!File.Exists(src))
+        // 源 = exe 同级 dll（本地调试 / 手动换 DLL）或 exe 内嵌副本（只分发 exe 的机器，见 PadProxyAssets）。
+        string? src = PadProxyAssets.ResolveSource(PadProxyAssets.Dll13);
+        if (src is null)
         {
-            report.AppendLine("程序目录缺少 xinput1_3.dll：先运行 tools\\xinput-proxy\\build.bat 构建。");
+            report.AppendLine("代理 DLL 缺失：本次构建既没有 exe 同级 xinput1_3.dll，也没有内嵌副本"
+                              + "（先在 tools\\xinput-proxy 跑 build.bat，再重新构建主程序）。");
             return;
         }
         try
@@ -754,8 +756,8 @@ public partial class MainWindow
 
             // 同时投放 1_4：SDL2 / 中间件是动态 LoadLibrary("XInput1_4.dll")，
             // 只有 1_3 只能覆盖游戏自身的静态导入。
-            string src14 = Path.Combine(Core.System.AppPaths.ExeDir, "xinput1_4.dll");
-            if (File.Exists(src14))
+            string? src14 = PadProxyAssets.ResolveSource(PadProxyAssets.Dll14);
+            if (src14 is not null)
             {
                 string dst14 = Path.Combine(dir, "xinput1_4.dll");
                 try { File.Copy(src14, dst14, overwrite: true); }
@@ -800,7 +802,8 @@ public partial class MainWindow
         var report = new System.Text.StringBuilder();
         foreach (var (dir, _, _) in ResolvePadTargets())
         {
-            foreach (var name in new[] { "xinput1_3.dll", "xinput_proxy.ini" })
+            // 1_4 也要撤：投放时一起写的，只删 1_3 会留下一个"半个代理"的目录
+            foreach (var name in new[] { PadProxyAssets.Dll13, PadProxyAssets.Dll14, PadProxyAssets.IniName })
             {
                 string path = Path.Combine(dir, name);
                 try
@@ -827,8 +830,13 @@ public partial class MainWindow
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("当前后端：" + PadBackendInfo.DisplayName(_cfg.Pad.Backend) + "（切换后下次开始挂机生效）");
 
-        string src = Path.Combine(Core.System.AppPaths.ExeDir, "xinput1_3.dll");
-        sb.AppendLine(File.Exists(src) ? "程序目录代理：已就绪" : "程序目录代理：缺失（改用 install.ps1 手动投放）");
+        bool besideDll = File.Exists(Path.Combine(Core.System.AppPaths.ExeDir, PadProxyAssets.Dll13));
+        bool embeddedDll = PadProxyAssets.IsEmbedded(PadProxyAssets.Dll13);
+        sb.AppendLine(besideDll
+            ? "程序目录代理：已就绪（exe 同级 dll）"
+            : embeddedDll
+                ? "程序目录代理：内嵌在 exe 里（首次投放自动解压，无需随包带 dll）"
+                : "程序目录代理：缺失（本机构建时 tools\\xinput-proxy 未产出，需先构建代理再构建主程序）");
 
         // 游戏在跑：代理 DLL 已被映射，替换/首次投放都要重启游戏才生效
         bool gameRunning = false;

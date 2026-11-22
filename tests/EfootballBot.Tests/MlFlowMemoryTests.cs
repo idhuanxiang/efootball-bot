@@ -117,8 +117,9 @@ public class MlFlowMemoryTests
         t.Observe(MatchScreen.InMatch, T0);
         Assert.False(t.Observe(MatchScreen.LeaguePage, T0.AddSeconds(2), isHome: false));
         Assert.True(t.Active);
-        // 回到真主页（含前往比赛）才关场
-        Assert.True(t.Observe(MatchScreen.LeaguePage, T0.AddSeconds(30), isHome: true));
+        // 回到真主页（含前往比赛）才关场。时间用 2 分钟：本场不足 60 秒的菜单类关场
+        // 一律按识别误判拦下（2026-11-20 进球 CG 被判 MatchHub 虚计一场），30 秒那版会被拦。
+        Assert.True(t.Observe(MatchScreen.LeaguePage, T0.AddMinutes(2), isHome: true));
     }
 
     // ---------------- 只打关键比赛：Abort / StartedAt ----------------
@@ -246,8 +247,8 @@ public class MlFlowMemoryTests
     {
         var t = new MatchSessionTracker();
         t.Observe(MatchScreen.InMatch, T0);
-        Assert.True(t.Observe(MatchScreen.MainMenu, T0.AddMinutes(1)));
-        Assert.False(t.Observe(MatchScreen.MainMenu, T0.AddMinutes(2))); // 关场只报一次
+        Assert.True(t.Observe(MatchScreen.MainMenu, T0.AddMinutes(2)));
+        Assert.False(t.Observe(MatchScreen.MainMenu, T0.AddMinutes(3))); // 关场只报一次
         Assert.False(t.Observe(MatchScreen.InMatch, T0.AddMinutes(10))); // 第二场开赛
         Assert.True(t.Observe(MatchScreen.MatchHub, T0.AddMinutes(35))); // 第二场结束
     }

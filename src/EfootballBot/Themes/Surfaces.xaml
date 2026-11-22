@@ -12,7 +12,9 @@
     <Thickness x:Key="HeadGap">0,0,0,14</Thickness>
     <Thickness x:Key="FieldGap">0,0,0,14</Thickness>
 
-    <!-- ============ 容器（Apple 玻璃卡片：渐变玻璃 + 高光描边 + 柔和投影） ============ -->
+    <!-- ============ 容器（玻璃卡片：渐变底 + 高光描边 + 柔和投影）
+         Fluent 下 GlassFill 三停同色（= 旧版平铺 CardBg）、投影为零强度，观感不变；
+         Glass 下才是"顶亮底透 + 淡投影"。圆角/内距两世界共用 ============================================ -->
     <Style x:Key="Card" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource GlassFill}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}"/>
@@ -20,7 +22,7 @@
         <Setter Property="CornerRadius" Value="12"/>
         <Setter Property="Padding" Value="16,15"/>
         <Setter Property="Margin" Value="0,0,0,14"/>
-        <Setter Property="Effect" Value="{StaticResource GlassCardShadow}"/>
+        <Setter Property="Effect" Value="{DynamicResource CardShadowEffect}"/>
     </Style>
 
     <Style x:Key="Inset" TargetType="Border">
