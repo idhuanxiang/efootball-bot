@@ -364,8 +364,9 @@ public sealed partial class CnWeeklyScenario : IScenario
                 break;
             case MatchActionKind.GamepadBackAfterConfirm:
                 _log($"[国服周活动] {action.Target}", LogLevel.Warn);
-                await _engine.Pad.Confirm(); // B 多次无效：先按 A 消掉挡住返回键的确认弹窗
-                await _engine.Pad.Back();
+                await _engine.Pad.Dpad(PadDir.Up); // B 多次无效：先上移把焦点从「取消」移到确认键
+                await _engine.Pad.Confirm(); // 再 A 确认（直接 A 可能落在取消键上继续死循环）
+                await _engine.Pad.Back(); // 最后 B 返回
                 break;
             case MatchActionKind.MatchIdleTap:
                 // 比赛中挂机点击：按 A + 用户「挂机节奏」区间随机间隔（共享层 MatchPlay，拟人化）
