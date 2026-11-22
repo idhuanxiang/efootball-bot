@@ -74,6 +74,8 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
     private int _itemRow;
     /// <summary>逐行 OCR 扫描定位目标的已下移格数（0=起点/未开始；扫描完归零）。</summary>
     private int _itemScanSteps;
+    /// <summary>比赛页右移找「我的联赛」卡的格数（卡排可横向滚动，最右卡初始被裁切读不到标题）。</summary>
+    private int _hubScanMoves;
     /// <summary>智能接管提示是否已记录（每次运行一次）。</summary>
     private bool _takeoverLogged;
     /// <summary>TitleScreen 首次出现时间（比赛上下文中按 X 前 30s 宽限，区分加载画面与真标题）。</summary>
@@ -339,19 +341,38 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         // 模块自有界面拦截（国服子类在此接管主页导航与 RT 确认键）：返回非 null = 本轮已处理
         int? customWait = await InterceptAsync(obs, screen, _streak, inMatchRecently);
         if (customWait is not null) return customWait.Value;
-        // 比赛页：OCR 实时定位「我的联赛」磁贴卡位（国际服）。磁贴随活动增减左右漂移，
-        // 原共享逻辑靠"焦点词读全"右移，读不全就一直晃/盲按（识别走查主要僵局）。
-        // 这里按 x 排序认出卡位后一次归位+右移到位再按 A，读不全(null)则回退原逻辑。
-        // 超过 NavEscapeStreak 仍未离开比赛页时回退原逻辑（保留其周期性 B 逃生兜底，防卡死）
+        if (screen != MatchScreen.MatchHub && _hubScanMoves != 0)
+            _hubScanMoves = 0; // 离开比赛页，重置卡排滚动扫描
+        // 比赛页：定位「我的联赛」卡（国际服）。实机 2026-11-23：默认视图只显示3张卡
+        // （锦标赛/活动/eFootball联赛），「我的联赛」在最右被裁切、标题读不到；
+        // 且卡排**只在焦点移到该卡时才滚动**，标题完整可读的那一刻焦点就已在其上。
+        // 策略：读到标题 = 焦点已就位 → 直接按 A（不再归位重移，否则滚动后 offset 失准会移错）。
+        // 读不到 → 逐格右移切换焦点（到目标卡时卡排自会滚入），下一轮重读；4 格仍无则回退共享逻辑。
         if (SupportsOcrTileNav && screen == MatchScreen.MatchHub &&
-            _streak < MatchBrain.NavEscapeStreak &&
-            HubTileLocator.FindTileOffset(obs.Ocr, "我的联赛") is int tileOffset)
+            _streak < MatchBrain.NavEscapeStreak)
         {
-            _log($"[我的联赛] 比赛页：OCR 定位「我的联赛」在第 {tileOffset + 1} 卡 → 归位最左后右×{tileOffset} → A", LogLevel.Info);
-            await _engine.Pad.DpadRepeat(PadDir.Left, 6);
-            if (tileOffset > 0) await _engine.Pad.DpadRepeat(PadDir.Right, tileOffset);
-            await _engine.Pad.Confirm();
-            return 2800;
+            int? tileOffset = HubTileLocator.FindTileOffset(obs.Ocr, "我的联赛");
+            if (tileOffset is int to)
+            {
+                _log($"[我的联赛] 比赛页：读到「我的联赛」标题（第 {to + 1} 可见卡，焦点已在目标卡），直接按 A", LogLevel.Info);
+                await _engine.Pad.Confirm();
+                _hubScanMoves = 0;
+                return 2800;
+            }
+            // 读不到标题：首次先归位最左，再逐格右移切换焦点（目标卡被焦点选中时才会滚入并读全）
+            if (_hubScanMoves == 0)
+                await _engine.Pad.DpadRepeat(PadDir.Left, 6);
+            if (_hubScanMoves < 4)
+            {
+                _hubScanMoves++;
+                _log($"[我的联赛] 比赛页：未读到「我的联赛」标题，右移切焦点第 {_hubScanMoves}/4 格后重读", LogLevel.Info);
+                await _engine.Pad.Dpad(PadDir.Right);
+                return 1800; // 给卡排滚动动画 + 下一帧 OCR 留足时间
+            }
+            // 4 格仍读不到：回退共享逻辑（其右移/盲按/B逃生兜底），重置扫描
+            _hubScanMoves = 0;
+            _log("[我的联赛] 比赛页：右移4格仍未读到「我的联赛」标题，回退共享导航", LogLevel.Warn);
+            _engine.DumpSuspiciousFrame(obs.Frame, "hub_tile_not_found", "比赛页右移4格仍未读到我的联赛标题（卡排裁切/布局异常）");
         }
         var action = MatchBrain.Decide(screen, obs.Ocr, _streak, inMatchRecently, obs.Frame);
         MatchShared.DecisionSnapshot(_log, "我的联赛", screen, _streak, action, obs.Ocr);
