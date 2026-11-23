@@ -7,7 +7,8 @@
 
 标准流程（仓库根目录）：
     python training/prepare_dataset.py --pack      # 校验 + 并入负样本 + 打包
-    python training/train_yolo.py --epochs 100     # 训练 + 导出
+    # Colab / 云 GPU：直接打开 training/cloud_train.ipynb，上传 dataset.zip 后运行全部单元格
+    python training/train_yolo.py --epochs 100     # 本地/云主机命令行训练 + 导出
     python training/verify_model.py --frames training/negatives/images   # 校验导出 + 看误检分数
     # 确认没问题后（显式执行，默认绝不覆盖）：
     python training/train_yolo.py --promote
