@@ -113,13 +113,15 @@ def evaluate(model: Path, frames: list[Path], np, ort, Image, classes: list[str]
     w, h, kind = inspect(session, np, classes)
     cls = classes.index("main_menu")
     print(f"\n=== {model.name}（main_menu id={cls}）===")
+    # 判定列是中性描述：这组帧可能是负样本（期望"不触发"），
+    # 也可能是真主菜单正样本（期望"触发"），别把正样本的高分写成"误判"。
     print(f"{'帧':<40} {'main_menu 最高分':>16} {'命中数':>8}  判定")
     for p in frames:
         with Image.open(p) as im:
             x = letterbox(im.convert("RGB"), np, Image, w, h)
         raw = session.run(None, {session.get_inputs()[0].name: x})[0]
         score, n = max_class_score(raw, np, cls, len(classes), kind)
-        verdict = "仍会误判" if score >= CLASSIFY_THRESHOLD else "OK"
+        verdict = "触发分类" if score >= CLASSIFY_THRESHOLD else "不触发"
         print(f"{p.name:<40} {score:>16.3f} {n:>8}  {verdict}")
 
 
@@ -158,7 +160,8 @@ def main() -> None:
         evaluate(other, frames, np, ort, Image, classes)
     evaluate(model, frames, np, ort, Image, classes)
     print(f"\n判定线：检测器 {DETECTOR_THRESHOLD} / 共享分类 MinScore {CLASSIFY_THRESHOLD}。"
-          "若负样本帧仍 >= 0.45，考虑提高阈值或再补同类帧重训。")
+          "\n负样本帧（周活动页/比赛页）应「不触发」，真主菜单帧应「触发」；"
+          "两边都要验，只压误报不够。若边界帧不稳，考虑提高阈值或再补同类帧重训。")
 
 
 if __name__ == "__main__":

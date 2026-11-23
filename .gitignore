@@ -87,3 +87,4 @@ training/out/
 training/runs/
 training/__pycache__/
 training/*.pyc
+training/dataset/labels/*.cache

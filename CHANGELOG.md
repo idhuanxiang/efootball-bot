@@ -3,6 +3,16 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v8.0.13
+
+- **重训 6 类 YOLO 模型，从模型层面根治「周活动卡片页被误判成主菜单」**。数据集从 182 帧扩到 189 帧（train 170 / val 19），补 7 张困难负样本：周活动卡片列表页 4 帧（含用户 11-22 实机的 Team Effort 页）+ 比赛选择页 3 帧，只标左下蓝色返回按钮；顶部「对阵AI/对阵玩家」胶囊、横版活动卡、灰色推进按钮一律不标。
+- 训练环境：本机 RTX 5060 Laptop（sm_120，CUDA 12.8 / torch 2.11.0+cu128 / ultralytics 8.4.216），yolo26n 预训练、100 epoch / imgsz 640 / batch 16 / seed 0，耗时 5 分 16 秒。末轮 mAP50 0.963 / mAP50-95 0.859。
+- **验收**：周活动 4 帧的 `main_menu` 分数从 0.775 / 0.867 / 0.892 / 0.920 全部降到 **0.000**；真主菜单 13 帧（含 3 张未进训练集的帧）仍稳定检出 **0.765~0.839**，远高于共享分类 `MinScore 0.45`。导出 ONNX 为 640×640、`[1,10,8400]` 常规预测头、6 类、opset 18，与 C# `YoloDetector` 及 rust sidecar 完全兼容（模型文件 4.8MB → 9.4MB，未做 simplify）。
+- 新增可复跑训练流水线：`training/prepare_dataset.py`（类别顺序/标签校验、幂等合并、打包）、`train_yolo.py`（训练 + 导出 + `--promote` 显式替换并自动备份）、`verify_model.py`（ONNX 结构与误检/召回帧分数对比）、`cloud_train.ipynb`（Colab 一键训练）。旧模型备份在 `training/out/yolo26n_backup.onnx`，可一键回滚。
+- 修复训练脚本两处环境坑：Windows 下 dataloader 多进程（`--workers 0`）、ultralytics 8.4.216 把 `data.yaml` 的 `path: .` 解析到错误目录（训练时生成带绝对路径的临时 yaml，原文件保持 HUB 上传格式）。
+- 测试：`MyLeagueRealFrameTests.MatchHistoryFrame...` 不再要求「必须检出 btn_confirm」——旧模型把比赛历史页蓝框误判成 0.578，新模型已消除该误检（0.299）并正确检出 `item_row` 0.721；改用合成高置信度误检保留「不得落 HasConfirm」的原意图。
+- 全量测试 **1088 通过 / 1089**（唯一失败为本机缺 `pwsh` 导致的架构锁脚本测试，与代码无关）。
+
 ## v8.0.12
 
 - 按用户 2026-11-22 实机截图（红框标出的主页固定词）重做「确实进了我的联赛主页」判据：把「前往比赛 / 排名 / 比赛记录 / 最近 5 场比赛 / 兑换积分 / 赛季纪录 / 赛事信息 / 建议 / 赛程表」收进 `MyLeagueBrain.LeagueHomeFixedWords`，命中 ≥2 个且其中至少一个是主页专有词就确认（用户要求"差不多就可以确定"），不再要求读全原来那 3 个大字。
