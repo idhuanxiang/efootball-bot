@@ -91,6 +91,8 @@ def main() -> None:
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--device", default="", help="留空自动；CPU 写 cpu；NVIDIA 写 0")
+    ap.add_argument("--workers", type=int, default=0,
+                    help="dataloader 进程数；Windows 上默认 0，多进程常触发 bootstrapping 报错")
     ap.add_argument("--seed", type=int, default=0,
                     help="随机种子；云端与本地填同一个值，数据增强/打乱顺序才对齐")
     ap.add_argument("--deterministic", action="store_true",
@@ -122,12 +124,26 @@ def main() -> None:
             fail(f"dataset/images/{subset} 为空")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Ultralytics 对 `path: .` 的解析随版本变化（8.4.216 实测把相对路径落到了仓库根，
+    # 报 "images/val not found"）。训练时用一份带绝对路径的临时 yaml，
+    # 原始 dataset/data.yaml 保持 `path: .` 不变（dataset.zip 的 HUB 上传格式不能动）。
+    train_yaml = OUT_DIR / "data_train.yaml"
+    rewritten = []
+    for line in DATA_YAML.read_text(encoding="utf-8-sig").splitlines():
+        if re.match(r"^\s*path\s*:", line):
+            rewritten.append(f"path: {DATA_YAML.parent.as_posix()}")
+        else:
+            rewritten.append(line)
+    train_yaml.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+    print(f"[OK] 训练用 data.yaml：{train_yaml}（path={DATA_YAML.parent.as_posix()}）")
+
     model = YOLO(args.weights)
     train_kwargs = dict(
-        data=str(DATA_YAML),
+        data=str(train_yaml),
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
+        workers=args.workers,         # Windows 默认 0，避免多进程 dataloader 报错
         seed=args.seed,               # 云端/本地一致性：固定数据增强与打乱顺序
         deterministic=args.deterministic,
         project=args.project,
