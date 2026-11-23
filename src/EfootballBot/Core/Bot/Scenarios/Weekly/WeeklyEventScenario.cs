@@ -951,10 +951,11 @@ public sealed partial class WeeklyEventScenario : IScenario
                 await _engine.Pad.Confirm();
                 return 2400;
             default:
-                // 按钮词没读到：有推进词就按 A（同比赛中弹窗规则），否则等一拍由上层重判
+                // 按钮词没读到：有推进词（含底栏「前往比赛/开始比赛/下一步」等）就按 A，否则等一拍由上层重判
                 if (obs.Ocr.ContainsJoined("下一步") || obs.Ocr.ContainsJoined("OK") ||
                     obs.Ocr.ContainsJoined("确认") || obs.Ocr.ContainsJoined("进入") ||
-                    obs.Ocr.ContainsJoined("继续"))
+                    obs.Ocr.ContainsJoined("继续") || obs.Ocr.ContainsJoined("前往比赛") ||
+                    MatchBrain.FindBottomPushWord(obs.Ocr) is not null)
                 {
                     _log($"[周活动] {context}：{note}，OCR 有推进词 → A", LogLevel.Info);
                     await _engine.Pad.Confirm();
