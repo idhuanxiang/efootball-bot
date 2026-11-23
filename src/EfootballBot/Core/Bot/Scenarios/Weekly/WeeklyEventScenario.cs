@@ -176,12 +176,21 @@ public sealed partial class WeeklyEventScenario : IScenario
         _memory.Record(ml, now);
         // 启动引导：停在其他模块页（我的联赛/天梯/巅峰赛）时先 B 收敛回主页，
         // 否则共享分类会把该页当"前往比赛"直接开赛，导致从别的模块页启动周活动到不了。
-        bool otherModule = AiLadderBrain.Classify(obs.Ocr) != AlScreen.None
-                           || PeakLadderBrain.Classify(obs.Ocr, obs.Detections) != PlScreen.None
-                           || (wk == WkScreen.None &&
-                               ml is MatchScreen.LeaguePage or MatchScreen.PointsPage or MatchScreen.ItemList);
+        // ★双守卫：
+        // 1) 已处于比赛上下文或共用比赛流程（开赛页/比赛中/过场弹窗/终场）时不触发引导，立即放行清零；
+        // 2) LeaguePage 只有真的含我的联赛专有词（LooksLikeLeagueHome）才算我的联赛残留页，
+        //    避免把周活动点「前往比赛」后的纯 btn_back 过渡页（MatchBrain 兜底成 LeaguePage）误踢回主页。
+        bool inMatchFlow = matchContext || _matchSession.Active || ReturnToHomeGuide.IsSharedMatchFlow(ml);
+        bool myLeagueResidual = wk == WkScreen.None &&
+                                (ml is MatchScreen.PointsPage or MatchScreen.ItemList ||
+                                 (ml == MatchScreen.LeaguePage && MyLeagueBrain.LooksLikeLeagueHome(obs.Ocr)));
+        bool otherModule = !inMatchFlow &&
+                           (AiLadderBrain.Classify(obs.Ocr) != AlScreen.None
+                            || PeakLadderBrain.Classify(obs.Ocr, obs.Detections) != PlScreen.None
+                            || myLeagueResidual);
+        bool ownPage = wk != WkScreen.None || inMatchFlow;
         int? guideWait = await _homeGuide.StepAsync(obs.Frame,
-            ml == MatchScreen.MainMenu, wk != WkScreen.None, otherModule,
+            ml == MatchScreen.MainMenu, ownPage, otherModule,
             () => _engine.Pad.Back());
         if (guideWait is not null) return guideWait.Value;
         if (!_takeoverLogged)
