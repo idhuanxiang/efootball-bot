@@ -12,6 +12,18 @@
     # 确认没问题后（显式执行，默认绝不覆盖）：
     python training/train_yolo.py --promote
 
+云端 vs 本地一致性：
+  * 决定效果的是数据/权重/超参/版本，不是训练地点。同一个导出的 .onnx 拿回本地，
+    运行时读到的是完全相同的权重，推理效果与"在哪训的"无关。
+  * 但"两次独立训练"不会逐位相同（GPU 非确定性、AMP/TF32、数据增强随机顺序）。
+    要尽量对齐：两边用同一份 dataset.zip、同一个 weights 文件、同一 ultralytics 版本，
+    并显式固定 --epochs/--imgsz/--batch/--seed；需要严格复现再加 --deterministic。
+  * 别用 Ultralytics HUB 的一键托管训练代替本脚本：它会套自己的默认超参/权重，
+    结果可能与本地明显不同。
+  * 最容易出差别的是**导出**：不同 ultralytics 版本可能导出 [1,N,6]（端到端 NMS-free）
+    而不是现网的 [1,10,8400]（常规预测头）。C# 两种都兼容，但置信度分布会变，
+    所以导出后必须跑 verify_model.py 重新量基线帧，必要时校准 MinScore。
+
 约束（改错会让运行时整套界面判定失效）：
   * 类别顺序固定为 models/yolo/classes.txt 的 6 行，data.yaml / label.txt 必须一致
     （prepare_dataset.py 会强制校验）。共享层 MatchBrain 硬编码了 "main_menu" 等类名。
@@ -78,6 +90,10 @@ def main() -> None:
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--device", default="", help="留空自动；CPU 写 cpu；NVIDIA 写 0")
+    ap.add_argument("--seed", type=int, default=0,
+                    help="随机种子；云端与本地填同一个值，数据增强/打乱顺序才对齐")
+    ap.add_argument("--deterministic", action="store_true",
+                    help="强制 torch 确定性算法（更可复现但更慢，个别 GPU 算子可能不支持；默认关）")
     ap.add_argument("--project", default=str(TRAINING / "runs"))
     ap.add_argument("--name", default="efootball6")
     ap.add_argument("--promote", action="store_true",
@@ -111,6 +127,8 @@ def main() -> None:
         epochs=args.epochs,
         imgsz=args.imgsz,
         batch=args.batch,
+        seed=args.seed,               # 云端/本地一致性：固定数据增强与打乱顺序
+        deterministic=args.deterministic,
         project=args.project,
         name=args.name,
         exist_ok=True,
