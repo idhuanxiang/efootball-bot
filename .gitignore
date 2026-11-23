@@ -80,3 +80,10 @@ rust/bin/
 tools/_toolchain/
 # 代理自测运行产物
 tools/xinput-proxy/tests/run/
+
+# YOLO 重训产物（本地/云端生成，体积大且可复现，不入库）
+training/dataset.zip
+training/out/
+training/runs/
+training/__pycache__/
+training/*.pyc
