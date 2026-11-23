@@ -205,12 +205,20 @@ def main() -> None:
             fail(f"{subset} 有 {len(missing)} 张图缺标签：" + ", ".join(sorted(missing)[:8]))
 
     if args.pack:
+        # 与 dedupe_pack.ps1 的 Ultralytics HUB 上传格式一致：zip 根目录直接是
+        # data.yaml / images/{train,val} / labels/{train,val}，不套一层 dataset/ 前缀。
         out = TRAINING / "dataset.zip"
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             for p in sorted(DATASET.rglob("*")):
                 if p.is_file():
-                    z.write(p, p.relative_to(DATASET.parent))
-        print(f"[OK] 已打包 {out}（{out.stat().st_size / 1024 / 1024:.1f} MB），可上传云端训练")
+                    z.write(p, p.relative_to(DATASET))
+        with zipfile.ZipFile(out) as z:
+            names = z.namelist()
+        assert "data.yaml" in names, "zip 缺 data.yaml"
+        assert any(n.startswith("images/train/") for n in names), "zip 缺 images/train"
+        assert any(n.startswith("labels/val/") for n in names), "zip 缺 labels/val"
+        print(f"[OK] 已打包 {out}（{out.stat().st_size / 1024 / 1024:.1f} MB，{len(names)} 项），"
+              "解压后 data.yaml 与 images/labels 同级，可直接上传 Ultralytics HUB 或在云端训练")
 
 
 if __name__ == "__main__":
