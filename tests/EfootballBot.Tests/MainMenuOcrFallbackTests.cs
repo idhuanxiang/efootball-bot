@@ -65,7 +65,11 @@ public class MainMenuOcrFallbackTests
     {
         var (ocr, dets) = Load("intlboot/login_bonus_popup.png");
         Assert.True(MatchBrain.HasMainMenuNavBar(ocr));   // 导航条确实在
-        Assert.Equal(MatchScreen.HasConfirm, MatchBrain.Classify(dets, ocr));
+        // 显式模拟「YOLO 漏检导航条」：把 main_menu 检测剔除，只留按钮等其它类别。
+        // 这样断言不绑定具体模型权重（旧模型会检出 main_menu 0.8x，新模型漏检），
+        // 在 PR 分支的上游模型与 fork 的重训模型下都能验证同一条产品规则。
+        var withoutNav = dets.Where(d => d.ClassName != "main_menu").ToList();
+        Assert.Equal(MatchScreen.HasConfirm, MatchBrain.Classify(withoutNav, ocr));
     }
 
     [Fact]
