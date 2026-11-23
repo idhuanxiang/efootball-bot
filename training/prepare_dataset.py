@@ -207,18 +207,37 @@ def main() -> None:
     if args.pack:
         # 与 dedupe_pack.ps1 的 Ultralytics HUB 上传格式一致：zip 根目录直接是
         # data.yaml / images/{train,val} / labels/{train,val}，不套一层 dataset/ 前缀。
+        # ★严格白名单：只放 data.yaml + 图片 + .txt 标签。Ultralytics 训练会在
+        # labels/ 下生成 .cache（pickle 里含 189 条本机绝对路径和用户名），
+        # 还有 .keep 占位文件，这些绝不能随 zip 上传到云端/HUB。
         out = TRAINING / "dataset.zip"
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-            for p in sorted(DATASET.rglob("*")):
-                if p.is_file():
-                    z.write(p, p.relative_to(DATASET))
+            z.write(DATA_YAML, "data.yaml")
+            for subset in ("train", "val"):
+                for p in sorted((DATASET / "images" / subset).iterdir()):
+                    if p.is_file() and p.suffix.lower() in IMAGE_EXTS:
+                        z.write(p, f"images/{subset}/{p.name}")
+                for p in sorted((DATASET / "labels" / subset).glob("*.txt")):
+                    z.write(p, f"labels/{subset}/{p.name}")
         with zipfile.ZipFile(out) as z:
             names = z.namelist()
-        assert "data.yaml" in names, "zip 缺 data.yaml"
-        assert any(n.startswith("images/train/") for n in names), "zip 缺 images/train"
-        assert any(n.startswith("labels/val/") for n in names), "zip 缺 labels/val"
+            assert "data.yaml" in names, "zip 缺 data.yaml"
+            assert any(n.startswith("images/train/") for n in names), "zip 缺 images/train"
+            assert any(n.startswith("labels/val/") for n in names), "zip 缺 labels/val"
+            forbidden = [n for n in names if n.endswith(".cache") or n.endswith(".keep")]
+            assert not forbidden, f"zip 混入非白名单文件：{forbidden}"
+            # 隐私审计：任何条目里都不该出现本机路径/用户名
+            markers = (":\\Users", ":/Users", "/Users/", "/home/", "WorkBuddy",
+                       "efootball-bot", "AppData", "clipboard-images")
+            leaked = []
+            for n in names:
+                body = z.read(n)
+                text = body.decode("latin-1", "replace")
+                if any(m in text for m in markers):
+                    leaked.append(n)
+            assert not leaked, f"zip 条目含本机痕迹：{leaked[:5]}"
         print(f"[OK] 已打包 {out}（{out.stat().st_size / 1024 / 1024:.1f} MB，{len(names)} 项），"
-              "解压后 data.yaml 与 images/labels 同级，可直接上传 Ultralytics HUB 或在云端训练")
+              "白名单文件 + 隐私审计通过，可上传 Ultralytics HUB 或云端训练")
 
 
 if __name__ == "__main__":

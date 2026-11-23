@@ -136,6 +136,21 @@ def main() -> None:
     classes = [x.strip() for x in CLASSES_FILE.read_text(encoding="utf-8-sig").splitlines() if x.strip()]
     if "main_menu" not in classes:
         fail("classes.txt 里没有 main_menu")
+    # 每次验证都默认做隐私审计：模型元数据里若带本机路径/用户名，直接拦下，
+    # 不允许带着本机痕迹进入发布流程。清法：python training/scrub_onnx.py <model>
+    from scrub_onnx import audit
+    privacy_targets = [Path(args.model)]
+    if args.compare:
+        privacy_targets.append(Path(args.compare))
+    for raw in privacy_targets:
+        p = raw if raw.is_absolute() else ROOT / raw
+        if not p.is_file():
+            continue
+        hits = audit(p)
+        if hits:
+            fail(f"{p.name} 含 {len(hits)} 处本机痕迹（{hits[0][:160]}）。"
+                 f"请先执行：python training/scrub_onnx.py {p}")
+        print(f"[OK] 隐私审计通过：{p.name}（无本机路径/用户名/时间戳）")
     frames: list[Path] = []
     if args.frames:
         d = Path(args.frames)

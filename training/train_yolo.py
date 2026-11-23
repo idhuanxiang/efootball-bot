@@ -13,6 +13,13 @@
     # 确认没问题后（显式执行，默认绝不覆盖）：
     python training/train_yolo.py --promote
 
+隐私默认（每次导出都自动执行，不需要额外参数）：
+  * 关闭 Ultralytics 匿名遥测（settings sync=False），本机训练不外发版本/环境/超参事件。
+  * 导出后立即用 scrub_onnx.py 清洗 ONNX 元数据：Ultralytics 会把 data.yaml 的
+    绝对路径和本地时间写进 description/date，明文随模型发布；清洗只动元数据，
+    权重与推理数值逐位不变（实测 13 帧分数一致）。
+  * --promote 上架前再审计一次，含本机痕迹直接拒绝；verify_model.py 结构校验也会审计。
+
 云端 vs 本地一致性：
   * 决定效果的是数据/权重/超参/版本，不是训练地点。同一个导出的 .onnx 拿回本地，
     运行时读到的是完全相同的权重，推理效果与"在哪训的"无关。
@@ -74,6 +81,12 @@ def class_order() -> list[str]:
 def promote() -> None:
     if not CANDIDATE.is_file():
         fail(f"没有候选模型 {CANDIDATE}，请先完成训练与导出")
+    # 上架前再审计一次，避免手工替换/旧候选把带本机路径的元数据带进发布包
+    from scrub_onnx import audit
+    leftovers = audit(CANDIDATE)
+    if leftovers:
+        fail(f"候选模型含本机痕迹，拒绝上架（先跑 python training/scrub_onnx.py {CANDIDATE}）："
+             f"{leftovers[:3]}")
     if OFFICIAL_MODEL.is_file():
         backup = OUT_DIR / "yolo26n_backup.onnx"
         shutil.copy2(OFFICIAL_MODEL, backup)
@@ -111,10 +124,18 @@ def main() -> None:
         return
 
     try:
-        from ultralytics import YOLO
+        from ultralytics import YOLO, settings as yolo_settings
     except ImportError:
         fail("缺少 ultralytics。请先执行：python -m pip install ultralytics\n"
              "（本机若无 GPU，建议把 training/dataset.zip 传到云端训练）")
+    # 默认关闭 Ultralytics 匿名遥测（sync）：本机训练不向外发版本/环境/超参事件。
+    # 只改本机 settings.json，不影响训练结果；用户显式改回 true 才会重新开启。
+    try:
+        if yolo_settings.get("sync", False):
+            yolo_settings.update({"sync": False})
+            print("[OK] 已关闭 Ultralytics 匿名遥测（sync=False）")
+    except Exception as ex:
+        print(f"[WARN] 关闭遥测失败（不影响训练）：{ex}", file=sys.stderr)
 
     if not DATA_YAML.is_file():
         fail(f"缺少 {DATA_YAML}，先跑 prepare_dataset.py")
@@ -161,6 +182,14 @@ def main() -> None:
     if not src.is_file():
         fail(f"导出未产出文件：{src}")
     shutil.copy2(src, CANDIDATE)
+    # 默认隐私清洗：Ultralytics 会把 data.yaml 的绝对路径 + 本地时间写进 ONNX 元数据，
+    # 明文随模型发布。权重不含训练图片，但这条字符串会泄露本机用户名/目录结构。
+    # 清洗只动元数据，权重与推理数值逐位不变（实测 13 帧分数一致）。
+    from scrub_onnx import audit, scrub
+    leftovers = scrub(CANDIDATE)
+    if leftovers:
+        fail(f"导出模型清洗后仍残留本机痕迹：{leftovers[:3]}")
+    print(f"[OK] 元数据已清洗（无本机路径/时间戳）；audit 残留 {len(audit(CANDIDATE))} 处")
     print(f"[OK] 候选模型：{CANDIDATE}（{CANDIDATE.stat().st_size / 1024 / 1024:.1f} MB）")
     print("[OK] 正式模型未被改动。接下来：")
     print("     python training/verify_model.py --frames training/negatives/images")
