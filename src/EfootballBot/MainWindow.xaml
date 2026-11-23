@@ -2568,6 +2568,27 @@
                                 <Ellipse Grid.Row="0" Style="{StaticResource BulletDot}"/>
                                 <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource BulletText}"><Run Text="保存到 exe 同级 "/><Run Text="data\suspicious\日期\"/><Run Text="；同类问题按节流间隔去重，避免刷屏。更改下次挂机生效"/></TextBlock>
                             </Grid>
+                            <CheckBox x:Name="ChkTeachingEnabled" Content="启用：自学习（录制 / 复现手柄操作）" Margin="0,16,0,0"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="模式" Style="{StaticResource FieldLabel}" Width="104" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="CmbTeachingMode" Width="170" Margin="10,0,0,0" SelectedIndex="0">
+                                    <ComboBoxItem Content="关闭"/>
+                                    <ComboBoxItem Content="录制（Record）"/>
+                                    <ComboBoxItem Content="顺序复现（Sequential）"/>
+                                    <ComboBoxItem Content="规则库复现（RuleBook）"/>
+                                </ComboBox>
+                                <TextBlock Text="轨迹名" Style="{StaticResource FieldLabel}" Width="56" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                <TextBox x:Name="TxtTeachingTrace" Width="120" Margin="8,0,0,0" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
+                            </StackPanel>
+                            <Grid Margin="0,8,0,0" MaxWidth="560" HorizontalAlignment="Left">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Ellipse Grid.Row="0" Style="{StaticResource BulletDot}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource BulletText}" TextWrapping="Wrap"
+                                           Text="录制只监听物理手柄白名单按键（A/B/X/Y/方向/Start/肩键），仅游戏窗口前台生效；轨迹只存 OCR 词 + 检测计数 + 按键到 data\traces\，不存截图、不录键盘、不联网。复现时画面不匹配就停手，连续 3 次不匹配自动交回正常挂机。"/>
+                            </Grid>
                         </StackPanel>
                     </Border>
                     </StackPanel>

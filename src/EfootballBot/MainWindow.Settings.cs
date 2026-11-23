@@ -172,6 +172,16 @@ public partial class MainWindow
 
         // 可疑帧收集
         ChkCollectSuspicious.IsChecked = _cfg.Learning.CollectSuspicious;
+        // 自学习（录制/复现）
+        ChkTeachingEnabled.IsChecked = _cfg.Learning.TeachingEnabled;
+        CmbTeachingMode.SelectedIndex = _cfg.Learning.TeachingMode switch
+        {
+            "Record" => 1,
+            "ReplaySequential" => 2,
+            "ReplayRuleBook" => 3,
+            _ => 0,
+        };
+        TxtTeachingTrace.Text = _cfg.Learning.TeachingTraceName;
         int[] suspendSecValues = { 10, 30, 60, 120, 300 };
         int suspendIdx = Array.IndexOf(suspendSecValues, _cfg.Learning.ThrottleSeconds);
         CmbSuspiciousThrottle.SelectedIndex = suspendIdx >= 0 ? suspendIdx : 2; // 缺省 60 秒
@@ -403,6 +413,13 @@ public partial class MainWindow
         }
         // 可疑帧收集
         _cfg.Learning.CollectSuspicious = ChkCollectSuspicious.IsChecked == true;
+        // 自学习：模式与轨迹名（轨迹名只保留安全字符，防路径穿越）
+        _cfg.Learning.TeachingEnabled = ChkTeachingEnabled.IsChecked == true;
+        string[] teachingModes = { "Off", "Record", "ReplaySequential", "ReplayRuleBook" };
+        _cfg.Learning.TeachingMode = teachingModes[Math.Clamp(CmbTeachingMode.SelectedIndex, 0, 3)];
+        var safeTrace = new string((TxtTeachingTrace.Text ?? "").Trim()
+            .Where(ch => char.IsAsciiLetterOrDigit(ch) || ch is '_' or '-').ToArray());
+        _cfg.Learning.TeachingTraceName = safeTrace.Length == 0 ? "demo" : safeTrace;
         if (CmbSuspiciousThrottle.SelectedIndex >= 0)
         {
             int[] suspendSec = { 10, 30, 60, 120, 300 };

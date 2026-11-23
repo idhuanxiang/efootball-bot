@@ -211,6 +211,9 @@ public sealed class BotEngine : IDisposable
     /// <summary>可疑帧转储节流（按 tag 分别计时），key=tag，value=上次转储的 TickCount64。</summary>
     private readonly global::System.Collections.Generic.Dictionary<string, long> _suspiciousDumpTicks = new();
 
+    /// <summary>自学习（默认 Off）。显式开启时接管观察后的这一轮，跳过场景决策。</summary>
+    private readonly TeachingController _teaching;
+
     // ---- 性能埋点（P1-14）：上一次观察的各段耗时（毫秒），由主循环汇总进 Perf ----
     private long _lastFrameWaitMs, _lastHashMs, _lastOcrMs, _lastYoloMs;
 
@@ -293,6 +296,7 @@ public sealed class BotEngine : IDisposable
             LogInternal($"OCR 引擎：{Ocr.LanguageTag}（{Ocr.EngineKind}）", LogLevel.Info);
         Observation = new ObservationService(Capture, Ocr, cfg);
         Observation.Log = LogInternal;
+        _teaching = new TeachingController(cfg.Learning, LogInternal);
         _scheduler = new SessionScheduler(cfg.Schedule, LogInternal);
         Capture.CaptureClosed += (_, msg) => LogInternal($"画面捕获已结束：{msg}", LogLevel.Warn);
     }
@@ -530,6 +534,21 @@ public sealed class BotEngine : IDisposable
                             RecordPerf(roundStartTick, actionStartMs);
                             await Task.Delay(2500, token);
                             continue;
+                        }
+                        // 自学习（v8.0.16，默认 Off）：录制只记物理手柄白名单按键，
+                        // 复现只在画面签名匹配时发键，不匹配就停手/退出，绝不在陌生界面盲按。
+                        // 放在黑帧与掉线重连等引擎级门控之后、场景决策之前。
+                        if (_teaching.Mode != TeachingMode.Off)
+                        {
+                            bool taught = _teaching.Tick(obs.Ocr, obs.Detections,
+                                out PadButton? teachButton, out int teachDelay, out _);
+                            if (teachButton is { } tb) await Pad.Press(tb);
+                            if (taught)
+                            {
+                                RecordPerf(roundStartTick, actionStartMs);
+                                await Task.Delay(Math.Clamp(teachDelay, 100, 5000), token);
+                                continue;
+                            }
                         }
                         int delayMs = 300;
                         if (Scenario is not null)

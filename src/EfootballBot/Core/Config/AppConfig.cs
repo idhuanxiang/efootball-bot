@@ -180,6 +180,23 @@ public sealed class LearningConfig
 
     /// <summary>同一类问题的转储节流秒数，防同一帧刷屏。</summary>
     public int ThrottleSeconds { get; set; } = 60;
+
+    /// <summary>自学习总开关。默认关 —— 开启后按 TeachingMode 决定录制/复现；
+    /// 只监听物理手柄白名单按键、只在游戏前台生效、轨迹只写 data\traces\。</summary>
+    public bool TeachingEnabled { get; set; } = false;
+
+    /// <summary>Off / Record / ReplaySequential / ReplayRuleBook。
+    /// Record=录一段流程；ReplaySequential=严格按序门控复现；ReplayRuleBook=按状态匹配任意步。</summary>
+    public string TeachingMode { get; set; } = "Off";
+
+    /// <summary>轨迹名（data\traces\{name}.json），只允许字母数字下划线连字符。</summary>
+    public string TeachingTraceName { get; set; } = "demo";
+
+    /// <summary>状态签名相似度阈值 0~1，默认 0.72。调低更宽松（误触发增多），调高更严格。</summary>
+    public double TeachingSimilarity { get; set; } = 0.72;
+
+    /// <summary>复现时连续多少帧画面不匹配就自动退出并交回正常挂机。</summary>
+    public int TeachingMaxMisses { get; set; } = 3;
 }
 
 /// <summary>全局热键配置（低级钩子实现：支持键盘任意键与鼠标键，可不带修饰键）。
