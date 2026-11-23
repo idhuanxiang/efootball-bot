@@ -21,6 +21,23 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 NEG = ROOT / "training" / "negatives"
+# YOLO 类别顺序（与 training/label.txt + models/yolo/classes.txt 一致）
+CLASS_ORDER = ["player_card", "btn_back", "btn_confirm", "coin_bar", "main_menu", "item_row"]
+CLASS_ID = {name: i for i, name in enumerate(CLASS_ORDER)}
+
+
+def to_yolo_label(box: str) -> str:
+    """批量检测的 'class,score,x,y,w,h'（x/y 为左上角归一化）→ YOLO 'id cx cy w h'。"""
+    parts = box.split(",")
+    if len(parts) != 6: return ""
+    name, score, x, y, bw, bh = parts
+    if name not in CLASS_ID: return ""
+    try:
+        cx = float(x) + float(bw) / 2
+        cy = float(y) + float(bh) / 2
+    except ValueError:
+        return ""
+    return f"{CLASS_ID[name]} {cx:.4f} {cy:.4f} {float(bw):.4f} {float(bh):.4f}"
 
 IMG_EXTS = {".jpg", ".jpeg", ".png"}
 # 困难负样本页 tag：即使无 YOLO 目标也保留（这些页正是要教模型「别检出」的）
@@ -129,8 +146,11 @@ def main():
         dst = img_dir / name
         if dst.exists(): continue
         shutil.copy2(p, dst)
+        # boxes 是 'class,score,x,y,w,h' 原始串，必须转成 YOLO 'id cx cy w h'（用户 2026-11-23 发现格式错误）
+        yolo = [to_yolo_label(b) for b in boxes]
+        yolo = [b for b in yolo if b]  # 过滤无法转换的空行
         (lbl_dir / (dst.stem + ".txt")).write_text(
-            "\n".join(boxes) + ("\n" if boxes else ""), encoding="utf-8")
+            "\n".join(yolo) + ("\n" if yolo else ""), encoding="utf-8")
         written += 1
     print(f"\n已写入 {written} 张 → {img_dir} / {lbl_dir}")
     print("下一步：python training/prepare_dataset.py --dry-run 校验")
