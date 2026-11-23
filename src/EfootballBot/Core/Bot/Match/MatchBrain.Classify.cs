@@ -95,7 +95,8 @@ public static partial class MatchBrain
         bool warmupStartPage =
             !ocr.ContainsJoined("整体实力") &&
             !ocr.ContainsJoined("赛程表") && !ocr.ContainsJoined("活动设置") &&
-            ((ocr.ContainsJoined("替补球员") || ocr.ContainsJoined("首发球员")) && ocr.ContainsJoined("前往比赛") ||
+            ((ocr.ContainsJoined("替补球员") || ocr.ContainsJoined("首发球员") || ocr.ContainsJoined("首发阵容")) &&
+             ocr.ContainsJoined("前往比赛") ||
              ocr.ContainsJoined("比赛计划") &&
              (ocr.Words.Any(w => w.CenterY > 0.80 && w.NormText.Contains("前往比赛")) ||
               ocr.Lines.Any(l => l.CenterY > 0.80 && l.Text.Replace(" ", "").Contains("前往比赛"))));

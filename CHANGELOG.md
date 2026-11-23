@@ -3,6 +3,24 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v8.3.1
+
+### 赛前热身/替补与首发名单页推进修复
+- 实机现象（用户 2026-11-24）：第一屏开球页（`设置 | 球场 | 下一步`）按 A 后进入第二屏赛前热身/阵容名单页（左列 `替补球员 / 首发阵容 / 首发球员`，底栏 `< B 返回 | Y 比赛计划 | 前往比赛 A >`）。该页无「球场」字样，右下角蓝色 `前往比赛` 按钮被 YOLO 检出 `btn_confirm` 后落入通用弹窗分支 `HasConfirm`，而 `PopupBrain` 只扫描画面中央弹窗区（`y: 0.30..0.92`），导致底栏按钮未命中、原地等待不推进。
+- 修复：`MatchBrain.Classify` 将赛前热身/阵容页（`替补球员 / 首发球员 / 首发阵容` + `前往比赛`，或带 `比赛计划` 且底栏 `y > 0.80` 出现 `前往比赛`，同时排除主页的 `赛程表 / 活动设置 / 整体实力`）归入 `MatchScreen.MatchStartPage`，直接按 A 开球；`WeeklyEventScenario.HandlePopupAsync` 兜底补充 `前往比赛` 与 `MatchBrain.FindBottomPushWord`；`WkPhase.IntroPopups` 遇到 `MatchStartPage / InMatch` 立即交还共享比赛流（覆盖从活动列表直接进入赛前页的单场活动）。
+
+### 周活动/天梯进入比赛误判「其他模块残留页面」死锁修复
+- 实机现象（用户 2026-11-24）：周活动正常进入比赛后，过场/赛中画面偶发只检出左下 `btn_back` 落入 `MatchBrain.Classify` 末尾的 `LeaguePage` 兜底，被 `WeeklyEventScenario` 当成「我的联赛残留页」连续按 6 次 B 退回并暂停 8 秒死循环。
+- 修复：`ReturnToHomeGuide` 新增 `IsSharedMatchFlow(MatchScreen)`（覆盖 `MatchStartPage / InMatch / FullTime / DifficultyPage / HasConfirm / KeyMatchDialog / LeagueSquadPage`）；周活动、AI 天梯、天梯巅峰赛在 `inMatchFlow`（比赛上下文、场次进行中或共用比赛流）下直接放行并清零引导计数，且 `MatchScreen.LeaguePage` 仅在命中 `MyLeagueBrain.LooksLikeLeagueHome` 主页专有词时才判为我的联赛残留页。
+
+### 全局暂停/停止热键失焦失效修复
+- 根因：`SmartHotkey` 在 `WH_KEYBOARD_LL` 低级钩子回调中使用 `GetKeyState` 读取 `Ctrl / Shift / Alt / Win` 修饰键状态；当主窗口失焦、游戏在前台时，当前线程消息队列未同步修饰键状态导致组合键失效，且长按按键重复触发会连发「暂停 + 结束」。
+- 修复：改用 `GetAsyncKeyState` 实时读取物理按键状态，补齐右 Win 键（`VK_RWIN 0x5C`），并增加主键抬起去抖锁（`_heldMainVk`），彻底解决游戏前台时热键失灵与长按误停问题。
+
+### YOLO 模型训练集清洗与重训
+- 清理上一轮自动采集并入的 32 张无用黑屏过渡帧、重复副本与过场回放误标帧（精简至 `train=211 / val=27`），修正 29 处伪标签（将右下角 `下一步` 从 `btn_back` 归正为 `btn_confirm`、赛前阵容页左下 `返回` 与右下 `前往比赛` 归正为 `btn_back + btn_confirm`、剔除 AI 天梯主页假 `item_row` 与弹窗遮罩下变暗的底栏 `btn_back`）。
+- 重新训练 100 epochs 并导出 FP16 ONNX（验证集 `mAP50 = 0.993`、`mAP50-95 = 0.907`），消除底栏左右按钮类别混淆。
+
 ## v8.3.0
 
 ### YOLO 模型重训（用新增训练帧）

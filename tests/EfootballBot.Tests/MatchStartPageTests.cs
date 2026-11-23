@@ -69,6 +69,23 @@ public class MatchStartPageTests
         var action = MatchBrain.Decide(MatchScreen.MatchStartPage, ocr, 0);
         Assert.Equal(MatchActionKind.PadConfirm, action.Kind);
     }
+
+    [Fact]
+    public void Classify_PreMatchStartingLineupPage_IsMatchStartPage()
+    {
+        // 2026-11-24 实机回归：左列「首发阵容」名单 + 底栏「返回 | 比赛计划 | 前往比赛」
+        var ocr = Ocr(
+            ("Vigo AB", 0.16, 0.17),
+            ("首发阵容", 0.14, 0.21),
+            ("返回", 0.11, 0.93),
+            ("比赛计划", 0.45, 0.93),
+            ("前往比赛", 0.88, 0.93));
+        var dets = new[]
+        {
+            new Core.Vision.Yolo.YoloDetection("btn_confirm", 0, 0.91f, 0.80, 0.90, 0.18, 0.06),
+        };
+        Assert.Equal(MatchScreen.MatchStartPage, MatchBrain.Classify(dets, ocr));
+    }
 }
 
 

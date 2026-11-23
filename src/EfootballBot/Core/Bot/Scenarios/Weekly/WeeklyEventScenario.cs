@@ -607,6 +607,14 @@ public sealed partial class WeeklyEventScenario : IScenario
                     return 600;
                 }
                 if (wk == WkScreen.EventsList) { SetPhase(WkPhase.Flow); return 800; }
+                // 单场活动/特殊活动从列表进入后不经过活动主页直接进开赛页或比赛中：立即切回 Flow 交还共享比赛流程
+                if (ml is MatchScreen.MatchStartPage or MatchScreen.InMatch)
+                {
+                    _introEnterTries = 0;
+                    _introStuckDumped = false;
+                    SetPhase(WkPhase.Flow);
+                    return null;
+                }
                 if (wk == WkScreen.EventIntro) return await PressIntroEnterAsync(obs);
                 if (wk == WkScreen.ChallengeList)
                     return await EnterChallengeListPhaseAsync(); // 挑战活动：介绍页按进入后弹的是挑战清单
