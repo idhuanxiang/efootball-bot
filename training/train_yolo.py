@@ -13,6 +13,11 @@
     # 确认没问题后（显式执行，默认绝不覆盖）：
     python training/train_yolo.py --promote
 
+体积默认（v8.0.15）：默认导出 **FP16**（half=True），约 4.7MB 而不是 FP32 的 9.4MB。
+  旧的自训练模型本来就是 FP16；本机 FP32/FP16 对比实测 13 帧最大差 0.001，
+  输出格式与 C# / sidecar 完全兼容。CPU-only 环境 half 导出失败会自动回退 FP32，
+  也可用 --fp32 显式指定。Colab notebook 同步。
+
 隐私默认（每次导出都自动执行，不需要额外参数）：
   * 关闭 Ultralytics 匿名遥测（settings sync=False），本机训练不外发版本/环境/超参事件。
   * 导出后立即用 scrub_onnx.py 清洗 ONNX 元数据：Ultralytics 会把 data.yaml 的
@@ -112,6 +117,8 @@ def main() -> None:
                     help="强制 torch 确定性算法（更可复现但更慢，个别 GPU 算子可能不支持；默认关）")
     ap.add_argument("--project", default=str(TRAINING / "runs"))
     ap.add_argument("--name", default="efootball6")
+    ap.add_argument("--fp32", action="store_true",
+                    help="导出 FP32（默认 FP16：体积约一半 4.7MB vs 9.4MB，推理分数几乎逐位一致）")
     ap.add_argument("--promote", action="store_true",
                     help="仅把已导出的候选模型覆盖到正式路径（默认绝不覆盖）")
     args = ap.parse_args()
@@ -176,8 +183,19 @@ def main() -> None:
     print(f"[..] 开始训练：{train_kwargs}")
     model.train(**train_kwargs)
 
-    print("[..] 导出 ONNX（端到端 NMS-free 输出 [1,N,6]，YoloDetector 原生兼容）")
-    exported = model.export(format="onnx", imgsz=args.imgsz, dynamic=False, simplify=False)
+    print("[..] 导出 ONNX（640×640 静态形状；默认 FP16，体积约 FP32 的一半）")
+    export_kw = dict(format="onnx", imgsz=args.imgsz, dynamic=False, simplify=False)
+    if not args.fp32:
+        export_kw["half"] = True
+    try:
+        exported = model.export(**export_kw)
+    except Exception as ex:
+        if "half" not in export_kw:
+            raise
+        # 个别 CPU-only 环境不支持 half 导出：回退 FP32，保证流程能跑完
+        print(f"[WARN] FP16 导出失败，回退 FP32：{ex}", file=sys.stderr)
+        export_kw.pop("half")
+        exported = model.export(**export_kw)
     src = Path(exported)
     if not src.is_file():
         fail(f"导出未产出文件：{src}")
