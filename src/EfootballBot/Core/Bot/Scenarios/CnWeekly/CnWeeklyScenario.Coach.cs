@@ -110,14 +110,17 @@ public sealed partial class CnWeeklyScenario : IScenario
     private async Task<int> HandleSignConfirmAsync()
     {
         if (_streak < 1) return 900; // 弹窗淡入防抖
-        _coachSigns++;
-        if (_coachSigns > 3)
+        if (++_attempts == 1)
         {
-            _log("[国服周活动] 签下教练后仍反复回到签下确认页，停止挂机（请手动检查活动状态）", LogLevel.Error);
-            _engine.StopWithError("教练签下反复出现");
-            return 0;
+            _coachSigns++;
+            if (_coachSigns > 3)
+            {
+                _log("[国服周活动] 签下教练后仍反复回到签下确认页，停止挂机（请手动检查活动状态）", LogLevel.Error);
+                _engine.StopWithError("教练签下反复出现");
+                return 0;
+            }
         }
-        if (++_attempts > 4)
+        if (_attempts > 4)
         {
             _log("[国服周活动] 签下确认弹窗多次未关闭，B 关闭后重走流程", LogLevel.Warn);
             SetPhase(CwPhase.Flow);

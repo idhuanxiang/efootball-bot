@@ -110,15 +110,19 @@ public sealed class VigemPad : IVirtualPad
         for (int i = 0; i < 4; i++)
             if (PadBackendProbe.IsSlotOccupied(i)) before.Add(i);
 
+        IXbox360Controller? pad = null;
         try
         {
             _client ??= new ViGEmClient();
-            _pad = _client.CreateXbox360Controller();
-            _pad.AutoSubmitReport = false; // 手动提交，保证一次状态变化一次上报
-            _pad.Connect();
+            pad = _client.CreateXbox360Controller();
+            pad.AutoSubmitReport = false; // 手动提交，保证一次状态变化一次上报
+            pad.Connect();
+            _pad = pad;
         }
         catch (Exception ex)
         {
+            try { pad?.Disconnect(); } catch { }
+            _pad = null;
             throw new InvalidOperationException($"连接 ViGEm 失败：{ex.Message}。请确认 ViGEmBus 驱动已正确安装并重启过电脑。", ex);
         }
 
@@ -254,7 +258,7 @@ public sealed class VigemPad : IVirtualPad
     /// </summary>
     public void Disconnect()
     {
-        if (!_connected) return;
+        if (!_connected && _pad is null) return;
         _connected = false;
         lock (_ioLock)
         {

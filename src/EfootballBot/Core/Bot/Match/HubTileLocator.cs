@@ -129,6 +129,15 @@ public static class HubTileLocator
     /// </summary>
     public static int VisibleTitleCount(OcrResult ocr) => CollectTiles(ocr).Count;
 
+    /// <summary>
+    /// 确认当前真的是多卡比赛页（至少读出 2 枚磁贴标题，或含「我的联赛」磁贴词），
+    /// 避免单卡「锦标赛」子页被共享分类误判成 MatchHub 提前终止退回引导。
+    /// </summary>
+    public static bool IsRealMatchHub(MatchScreen screen, OcrResult ocr) =>
+        screen == MatchScreen.MatchHub &&
+        (VisibleTitleCount(ocr) >= 2 ||
+         ocr.Lines.Any(l => l.Text.Replace(" ", "").Contains("我的联赛")));
+
     /// <summary>磁贴行里能认出的标题（x 升序未排序；同一格的碎词/合并整行只留第一次命中）。</summary>
     private static List<(double X, string Title)> CollectTiles(OcrResult ocr)
     {

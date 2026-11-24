@@ -187,6 +187,12 @@ public sealed class WindowCapture : ICaptureProvider
 #endif
                     _session.StartCapture();
                     _running = true;
+                    if (_minFrameIntervalMs > 33 && _throttleTimer is null)
+                    {
+                        _throttleTimer = new global::System.Threading.Timer(_ => ReleaseHeldFrames(), null,
+                            _minFrameIntervalMs, _minFrameIntervalMs);
+                        _throttleTimerPeriod = _minFrameIntervalMs;
+                    }
                     Step($"⑥ 捕获已开始（{_size.Width}×{_size.Height}）");
                 }
                 finally
@@ -219,24 +225,27 @@ public sealed class WindowCapture : ICaptureProvider
     {
         ms = Math.Max(0, ms);
         if (ms > 0 && ms < 33) ms = 33;
-        if (_minFrameIntervalMs == ms) return;
-        _minFrameIntervalMs = ms;
-        Step($"节流档位切换 → {(ms <= 33 ? "全速" : $"{ms}ms")}");
+        lock (_gate)
+        {
+            if (_minFrameIntervalMs == ms) return;
+            _minFrameIntervalMs = ms;
 
-        if (ms <= 33)
-        {
-            // 回全速：停定时器 + 立即释放压住的帧
-            _throttleTimer?.Dispose();
-            _throttleTimer = null;
-            _throttleTimerPeriod = 0;
-            ReleaseHeldFrames();
+            if (!_running || ms <= 33)
+            {
+                // 回全速或未运行：停定时器 + 立即释放压住的帧
+                _throttleTimer?.Dispose();
+                _throttleTimer = null;
+                _throttleTimerPeriod = 0;
+                ReleaseHeldFrames();
+            }
+            else if (_throttleTimerPeriod != ms)
+            {
+                _throttleTimer?.Dispose();
+                _throttleTimer = new global::System.Threading.Timer(_ => ReleaseHeldFrames(), null, ms, ms);
+                _throttleTimerPeriod = ms;
+            }
         }
-        else if (_throttleTimerPeriod != ms)
-        {
-            _throttleTimer?.Dispose();
-            _throttleTimer = new global::System.Threading.Timer(_ => ReleaseHeldFrames(), null, ms, ms);
-            _throttleTimerPeriod = ms;
-        }
+        Step($"节流档位切换 → {(ms <= 33 ? "全速" : $"{ms}ms")}");
     }
 
     /// <summary>释放所有压住的帧（允许 DWM 恢复生产）。</summary>
@@ -358,11 +367,12 @@ public sealed class WindowCapture : ICaptureProvider
             int effInterval = Math.Max(33, interval);
             if (tick - _lastProduceTick < effInterval)
             {
-                if (interval > 33 && _heldFrames.Count < 2)
+                if (interval > 33)
                 {
                     lock (_heldFrames)
                     {
-                        if (_heldFrames.Count < 2)
+                        // 持锁二次确认：防止与 SetMinFrameInterval(<=33)/Stop 交错造成帧滞留无定时器释放
+                        if (_running && _minFrameIntervalMs > 33 && _heldFrames.Count < 2)
                         {
                             _heldFrames.Add(frame);
                             frame = null; // 所有权移交流单，防止 finally 释放
@@ -411,10 +421,17 @@ public sealed class WindowCapture : ICaptureProvider
                 // CPU 侧降采样（高≤720）：下游 OCR/ROI 只接触小图，全尺寸数组随本次 GC 释放
                 data = DownscaleIfNeeded(full, w, h, out ow, out oh);
             }
-            if (!_running) return;
-            _latest = new FrameData(data, ow, oh, tick);
-            _lastFrameAt = DateTime.Now;
-            FrameUpdated?.Invoke(this, EventArgs.Empty);
+            bool published = false;
+            lock (_gate)
+            {
+                if (_running)
+                {
+                    _latest = new FrameData(data, ow, oh, tick);
+                    _lastFrameAt = DateTime.Now;
+                    published = true;
+                }
+            }
+            if (published) FrameUpdated?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex) when (ex is COMException or InvalidCastException or ObjectDisposedException)
         {
@@ -521,8 +538,8 @@ public sealed class WindowCapture : ICaptureProvider
             _session = null;
             _pool = null;
             FreeDevice();
+            _latest = null;
         }
-        _latest = null;
     }
 
     private void FreeDevice()

@@ -362,35 +362,56 @@ public partial class MainWindow
     // 表头排序：两列映射到 VM 属性；延迟列把未测(-int.MinValue)排最后
     private string _sortKey = "";
     private bool _sortDesc;
+    private string _githubSortKey = "";
+    private bool _githubSortDesc;
+
+    private static string? MapHeaderSortKey(string header) => header switch
+    {
+        "名称" or "域名" => "SortLabel",
+        "IP" => "SortIp",
+        "类型" => "Kind",
+        "延迟" => "SortMs",
+        "状态" => "StateText",
+        _ => null,
+    };
+
+    private static void ApplySortDescription(System.Windows.Controls.ItemsControl list, string key, bool desc)
+    {
+        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(list.ItemsSource);
+        if (view is null) return;
+        view.SortDescriptions.Clear();
+        view.SortDescriptions.Add(new System.ComponentModel.SortDescription(key,
+            desc ? System.ComponentModel.ListSortDirection.Descending
+                 : System.ComponentModel.ListSortDirection.Ascending));
+        view.Refresh();
+    }
 
     private void ColumnHeader_Click(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is not System.Windows.Controls.Primitives.DataGridColumnHeader { Column: { } dcol }) return;
-        // 表头带过 ▲/▼ 标记，映射前先剥掉
-        string header = (dcol.Header as string ?? "").TrimEnd('▲', '▼', ' ');
-        string? key = header switch
+        if (e.OriginalSource is System.Windows.Controls.Primitives.DataGridColumnHeader { Column: { } dcol })
         {
-            "名称" or "域名" => "SortLabel",
-            "IP" => "SortIp",
-            "类型" => "Kind",
-            "延迟" => "SortMs",
-            _ => null,
-        };
-        if (key is null) return;
-        var list = (System.Windows.Controls.ItemsControl)LvServers;
-        if (_sortKey == key) _sortDesc = !_sortDesc; else { _sortKey = key; _sortDesc = false; }
-        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(list.ItemsSource);
-        view.SortDescriptions.Clear();
-        view.SortDescriptions.Add(new System.ComponentModel.SortDescription(key,
-            _sortDesc ? System.ComponentModel.ListSortDirection.Descending
-                      : System.ComponentModel.ListSortDirection.Ascending));
-        view.Refresh();
-
-        // 表头小箭头：当前排序列显示 ▲/▼
-        foreach (var c in LvServers.Columns)
+            string header = (dcol.Header as string ?? "").TrimEnd('▲', '▼', ' ');
+            if (MapHeaderSortKey(header) is not { } key) return;
+            if (_sortKey == key) _sortDesc = !_sortDesc; else { _sortKey = key; _sortDesc = false; }
+            ApplySortDescription(LvServers, key, _sortDesc);
+            foreach (var c in LvServers.Columns)
+            {
+                string baseText = (c.Header as string ?? "").TrimEnd('▲', '▼', ' ');
+                c.Header = ReferenceEquals(c, dcol) ? baseText + (_sortDesc ? " ▼" : " ▲") : baseText;
+            }
+            return;
+        }
+        if (e.OriginalSource is GridViewColumnHeader { Column: { } gcol } && LvGithub.View is GridView gv)
         {
-            string baseText = (c.Header as string ?? "").TrimEnd('▲', '▼', ' ');
-            c.Header = ReferenceEquals(c, dcol) ? baseText + (_sortDesc ? " ▼" : " ▲") : baseText;
+            string header = (gcol.Header as string ?? "").TrimEnd('▲', '▼', ' ');
+            if (MapHeaderSortKey(header) is not { } key) return;
+            if (_githubSortKey == key) _githubSortDesc = !_githubSortDesc; else { _githubSortKey = key; _githubSortDesc = false; }
+            ApplySortDescription(LvGithub, key, _githubSortDesc);
+            foreach (var c in gv.Columns)
+            {
+                string baseText = (c.Header as string ?? "").TrimEnd('▲', '▼', ' ');
+                c.Header = ReferenceEquals(c, gcol) ? baseText + (_githubSortDesc ? " ▼" : " ▲") : baseText;
+            }
         }
     }
 
@@ -565,23 +586,33 @@ public partial class MainWindow
         AppendLog("开始测量国际服服务器延迟…", LogLevel.Info);
         int n = 0;
         var ct = _measureCts.Token;
-        bool completed = await Probe.MeasureAllAsync(ct, (t, ms) => Dispatcher.BeginInvoke(() =>
+        try
         {
-            var row = _serverRows.FirstOrDefault(r => r.Id == t.Id);
-            if (row is null) return;
-            row.Ip = t.Ip;
-            row.Ms = ms;
-            n++;
-            UpdateServerSummary();
-        }), t => t.Domain is null);
-        _measureCts.Dispose();
-        _measureCts = null;
-        BtnMeasureAll.IsEnabled = true;
-        BtnMeasureCancel.IsEnabled = false;
-        AppendLog(completed
-            ? $"延迟测量完成（{n} 个目标）。"
-            : "延迟测量已取消。", completed ? LogLevel.Success : LogLevel.Info);
-        ((System.ComponentModel.ICollectionView)LvServers.Items).Refresh();
+            bool completed = await Probe.MeasureAllAsync(ct, (t, ms) => Dispatcher.BeginInvoke(() =>
+            {
+                var row = _serverRows.FirstOrDefault(r => r.Id == t.Id);
+                if (row is null) return;
+                row.Ip = t.Ip;
+                row.Ms = ms;
+                n++;
+                UpdateServerSummary();
+            }), t => t.Domain is null);
+            AppendLog(completed
+                ? $"延迟测量完成（{n} 个目标）。"
+                : "延迟测量已取消。", completed ? LogLevel.Success : LogLevel.Info);
+            ((System.ComponentModel.ICollectionView)LvServers.Items).Refresh();
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"延迟测量异常：{ex.Message}", LogLevel.Warn);
+        }
+        finally
+        {
+            _measureCts?.Dispose();
+            _measureCts = null;
+            BtnMeasureAll.IsEnabled = true;
+            BtnMeasureCancel.IsEnabled = false;
+        }
     }
 
     private async void BtnGithubMeasure_Click(object sender, RoutedEventArgs e)
@@ -591,20 +622,30 @@ public partial class MainWindow
         BtnGithubMeasure.IsEnabled = false;
         int n = 0;
         var ct = _measureCts.Token;
-        bool completed = await Probe.MeasureAllAsync(ct, (t, ms) => Dispatcher.BeginInvoke(() =>
+        try
         {
-            var row = _githubRows.FirstOrDefault(r => r.Id == t.Id);
-            if (row is null) return;
-            row.Ip = t.Ip;
-            row.Ms = ms;
-            n++;
-            UpdateGithubSummary();
-        }), t => t.Domain is not null);
-        _measureCts.Dispose();
-        _measureCts = null;
-        BtnGithubMeasure.IsEnabled = true;
-        AppendLog(completed ? $"GitHub 域名测量完成（{n} 个）。" : "GitHub 域名测量已取消。",
-            completed ? LogLevel.Success : LogLevel.Info);
+            bool completed = await Probe.MeasureAllAsync(ct, (t, ms) => Dispatcher.BeginInvoke(() =>
+            {
+                var row = _githubRows.FirstOrDefault(r => r.Id == t.Id);
+                if (row is null) return;
+                row.Ip = t.Ip;
+                row.Ms = ms;
+                n++;
+                UpdateGithubSummary();
+            }), t => t.Domain is not null);
+            AppendLog(completed ? $"GitHub 域名测量完成（{n} 个）。" : "GitHub 域名测量已取消。",
+                completed ? LogLevel.Success : LogLevel.Info);
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"GitHub 域名测量异常：{ex.Message}", LogLevel.Warn);
+        }
+        finally
+        {
+            _measureCts?.Dispose();
+            _measureCts = null;
+            BtnGithubMeasure.IsEnabled = true;
+        }
     }
 
     private void UpdateGithubSummary()

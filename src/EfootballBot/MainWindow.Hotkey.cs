@@ -14,7 +14,7 @@ public partial class MainWindow
     /// <summary>主热键：运行中第一次按=暂停；暂停中再按=彻底停止。</summary>
     private void Hotkey_PauseStop_Triggered()
     {
-        if (_workerHost is not { ScenarioRunning: true }) return;
+        if (_starting || _stopping || _workerHost is not { ScenarioRunning: true }) return;
         if (_paused)
         {
             AppendLog($"已通过快捷键「{_cfg.Hotkey.DisplayString()}」停止。", LogLevel.Success);
@@ -55,21 +55,36 @@ public partial class MainWindow
     /// <summary>统一停止（GUI 按钮与热键共用）。allowAutoClose=false 用于手动停止后仍需弹窗交互的场景。</summary>
     private async Task StopScenarioAsync(bool allowAutoClose = true)
     {
+        if (_stopping) return;
         var host = _workerHost;
         if (host is null) return;
+        _stopping = true;
         _hotkey.Unregister();
         AppendLog("正在停止…", LogLevel.Info);
-        ResetButtons();
-        await host.StopAsync();
-        MuteGameOnScenarioStopped(); // 停挂机即恢复游戏声音（只静音了游戏，系统音量不受影响）
-        AppendLog("已停止。", LogLevel.Info);
-        if (allowAutoClose && _cfg.AutoCloseWhenDone)
+        RefreshRunButtons(); // _stopping=true 期间禁用所有启动/切换/暂停按钮，防止在 StopAsync 等待期间重入
+        try
         {
-            AppendLog("全部流程完毕，2 秒后自动关闭…", LogLevel.Success);
-            var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-            timer.Tick += (_, _) => { timer.Stop(); Close(); };
-            timer.Start();
+            await host.StopAsync();
+            MuteGameOnScenarioStopped(); // 停挂机即恢复游戏声音（必须在按钮恢复可点之前，防止误取消新会话静音）
+            AppendLog("已停止。", LogLevel.Info);
         }
+        finally
+        {
+            _stopping = false;
+            ResetButtons();
+        }
+        if (allowAutoClose && _cfg.AutoCloseWhenDone)
+            ScheduleAutoClose();
+    }
+
+    private void ScheduleAutoClose()
+    {
+        if (_autoCloseScheduled) return;
+        _autoCloseScheduled = true;
+        AppendLog("全部流程完毕，2 秒后自动关闭…", LogLevel.Success);
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        timer.Tick += (_, _) => { timer.Stop(); Close(); };
+        timer.Start();
     }
 
     /// <summary>各模块页头部的热键胶囊（全部模块覆盖，懒初始化）。</summary>

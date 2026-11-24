@@ -33,6 +33,8 @@ public partial class MainWindow
     private readonly DispatcherTimer _statsTimer;
     private bool _previewOn;
     private bool _starting;
+    private bool _stopping;
+    private bool _autoCloseScheduled;
     private string _pendingTheme = ThemeManager.Dark;
     private string _pendingWorld = ThemeManager.WorldFluent;
     private string _origTheme = ThemeManager.Dark;
@@ -180,17 +182,27 @@ public partial class MainWindow
         _workerHost.PreviewReceived += pngB64 => Dispatcher.BeginInvoke(() => ShowPreviewPng(pngB64));
         _workerHost.Exited += reason => Dispatcher.BeginInvoke(() =>
         {
-            AppendLog($"场景已结束：{reason}", LogLevel.Success);
+            // 若正在启动/切换/手动停止或新会话已在运行，忽略上一代迟到的退出回调
+            if (_starting || _stopping || _workerHost is { ScenarioRunning: true }) return;
+            bool isError = reason.StartsWith("启动失败", StringComparison.Ordinal)
+                        || reason.StartsWith("异常停止", StringComparison.Ordinal);
+            AppendLog($"场景已结束：{reason}", isError ? LogLevel.Error : LogLevel.Success);
             ResetButtons();
             _statsTimer.Stop();
             _hotkey.Unregister();
+            MuteGameOnScenarioStopped();
+            if (!isError && _cfg.AutoCloseWhenDone)
+                ScheduleAutoClose();
         });
         _workerHost.Disconnected += () => Dispatcher.BeginInvoke(() =>
         {
+            // 若正在启动/切换/手动停止或新会话已运行，忽略旧 Worker 的迟到断开回调
+            if (_starting || _stopping || _workerHost is { ScenarioRunning: true }) return;
             AppendLog("Worker 进程已断开，场景已停止。", LogLevel.Warn);
             ResetButtons();
             _statsTimer.Stop();
             _hotkey.Unregister();
+            MuteGameOnScenarioStopped();
             // Worker 非正常退出（更新重启/崩溃/强杀）可能没机会还原停靠的窗口：兜底还原
             EfootballBot.Core.System.BackgroundParker.TryRestoreFromRecord();
             // Worker 非正常退出（崩溃/强杀）没走停止流程：兜底恢复被禁用的真实手柄
@@ -332,7 +344,7 @@ public partial class MainWindow
 
     private async Task ToggleScenarioAsync(Button btn, string? mode)
     {
-        if (_starting) return;
+        if (_starting || _stopping) return;
         var host = GetOrCreateWorkerHost();
 
         bool switching = false;
@@ -344,22 +356,6 @@ public partial class MainWindow
                 return;
             }
             switching = true;
-            _starting = true;
-            try
-            {
-                SetStartButtonsEnabled(false);
-                btn.Content = "切换中…";
-                string targetName = BotModuleCatalog.Find(mode ?? "")?.DisplayName ?? mode ?? "目标模式";
-                AppendLog($"正在切换至「{targetName}」…", LogLevel.Info);
-                await StopScenarioAsync(allowAutoClose: false);
-            }
-            catch
-            {
-                _starting = false;
-                RefreshRunButtons();
-                throw;
-            }
-            _starting = false;
         }
 
         // 开始前必须手动确认的两点（运行中直接切换模式时免二次弹窗）：
@@ -387,8 +383,17 @@ public partial class MainWindow
         _starting = true;
         try
         {
+            if (switching)
+            {
+                RefreshRunButtons();
+                btn.Content = "切换中…";
+                string targetName = BotModuleCatalog.Find(mode ?? "")?.DisplayName ?? mode ?? "目标模式";
+                AppendLog($"正在切换至「{targetName}」…", LogLevel.Info);
+                await StopScenarioAsync(allowAutoClose: false);
+            }
+
             SaveUiToConfig();
-            SetStartButtonsEnabled(false);
+            RefreshRunButtons();
 
             // 立即反馈：Worker 冷启动握手最长 30s，期间按钮必须显示"启动中…"而非无响应
             btn.Content = switching ? "切换中…" : "启动中…";
@@ -420,6 +425,10 @@ public partial class MainWindow
                         AppendLog($"全局热键注册异常：{ex.Message}", LogLevel.Warn);
                     }
                 }
+            }
+            else
+            {
+                ResetButtons();
             }
         }
         catch (Exception ex)
@@ -628,7 +637,7 @@ public partial class MainWindow
         StPerf.Visibility = string.IsNullOrEmpty(s.PerfNote) ? Visibility.Collapsed : Visibility.Visible;
 
         // 场景自动结束（正常跑完 / 异常退出）：ScenarioRunning 变 false 后按钮需从"停止"恢复为"开始"
-        if (_workerHost is { ScenarioRunning: false } && _statsTimer.IsEnabled)
+        if (!_starting && !_stopping && _workerHost is { ScenarioRunning: false } && _statsTimer.IsEnabled)
         {
             _hotkey.Unregister();
             MuteGameOnScenarioStopped(); // 声音一并恢复（静音只服务于挂机期间）

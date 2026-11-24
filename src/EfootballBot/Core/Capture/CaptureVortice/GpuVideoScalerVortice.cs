@@ -52,18 +52,27 @@ internal sealed class GpuVideoScalerVortice : IDisposable
         // 这里对属主（WindowCapture）借来的设备指针先自行 AddRef 一份独立引用，
         // 让包装的生命周期与属主解耦（Dispose 时 Release 恰好归还，绝不提前释放属主设备）
         Marshal.AddRef(_devicePtr);
-        _device = new ID3D11Device(d3dDevicePtr);
         try
         {
-            // 多线程保护（帧回调线程与 WGC 内部线程可能都触碰设备）
-            using var mt = _device.QueryInterface<ID3D11Multithread>();
-            mt.SetMultithreadProtected(true);
-        }
-        catch { /* 部分设备无此接口，忽略 */ }
+            _device = new ID3D11Device(d3dDevicePtr);
+            try
+            {
+                // 多线程保护（帧回调线程与 WGC 内部线程可能都触碰设备）
+                using var mt = _device.QueryInterface<ID3D11Multithread>();
+                mt.SetMultithreadProtected(true);
+            }
+            catch { /* 部分设备无此接口，忽略 */ }
 
-        _context = _device.ImmediateContext;
-        _videoDevice = _device.QueryInterface<ID3D11VideoDevice>();
-        _videoContext = _context.QueryInterface<ID3D11VideoContext>();
+            _context = _device.ImmediateContext;
+            _videoDevice = _device.QueryInterface<ID3D11VideoDevice>();
+            _videoContext = _context.QueryInterface<ID3D11VideoContext>();
+        }
+        catch
+        {
+            if (_device is null) Marshal.Release(_devicePtr);
+            Dispose();
+            throw;
+        }
     }
 
     /// <summary>

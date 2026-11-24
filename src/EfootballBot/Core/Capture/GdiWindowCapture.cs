@@ -178,6 +178,9 @@ public sealed class GdiWindowCapture : ICaptureProvider
         {
             if (hBmpOld != nint.Zero) { SelectObject(hdcMem, hBmpOld); hBmpOld = nint.Zero; }
             if (hBmp != nint.Zero) { DeleteObject(hBmp); hBmp = nint.Zero; }
+            bmpW = 0;
+            bmpH = 0;
+            bits = nint.Zero;
             var bi = new BITMAPINFOHEADER
             {
                 biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
@@ -190,7 +193,8 @@ public sealed class GdiWindowCapture : ICaptureProvider
             hBmp = CreateDIBSection(hdcMem, in bi, DIB_RGB_COLORS, out bits, nint.Zero, 0);
             if (hBmp == nint.Zero || bits == nint.Zero)
             {
-                hBmp = nint.Zero;
+                if (hBmp != nint.Zero) { DeleteObject(hBmp); hBmp = nint.Zero; }
+                bits = nint.Zero;
                 LastError = $"CreateDIBSection 失败（{w}×{h}）";
                 return false;
             }

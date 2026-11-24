@@ -97,4 +97,15 @@ public class WindowCaptureCapSizeTests
     {
         Assert.Equal(expected, WindowCapture.IsBorderOnlyContent(poolW, poolH, cw, ch));
     }
+
+    [Fact]
+    public void SetMinFrameInterval_BeforeStartAndStop_IsSafe()
+    {
+        using var wc = new WindowCapture();
+        wc.SetMinFrameInterval(300);
+        wc.SetMinFrameInterval(0);
+        wc.Stop();
+        Assert.False(wc.IsRunning);
+        Assert.False(wc.HasFrame);
+    }
 }

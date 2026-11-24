@@ -74,7 +74,7 @@ public static class Notifier
             }
 
             string? getUrl = BuildGetUrl(url, title, body, instance, text);
-            HttpResponseMessage resp2 = getUrl is not null
+            using HttpResponseMessage resp2 = getUrl is not null
                 ? await Http.GetAsync(getUrl)
                 : await Http.PostAsync(url, new StringContent(
                     JsonSerializer.Serialize(new

@@ -56,6 +56,7 @@ public partial class MainWindow
         // ★看场景而不是看进程：Worker 在场景结束/启动失败后会保活等重连，
         // 用进程存活判断会让「开始」永久禁用（用户报障：非正常退出后点不动）。
         bool running = _workerHost is { ScenarioRunning: true };
+        bool busy = _starting || _stopping;
         bool orphanRunning = running && _activeStartBtn is null; // 状态不一致的自愈出口
         // 热键提示：运行中直接标在按钮上（一键结束=再按一次即终止；暂停/继续=第一次按即暂停）
         string hk = HotkeyLabel is { } h ? $"（{h}）" : "";
@@ -65,13 +66,13 @@ public partial class MainWindow
             bool canSwitch = running && !orphanRunning && !active && m.CanSwitch;
             m.Start.Content = active ? $"一键结束{hk}" : (canSwitch ? "切换" : "开始");
             m.Start.Style = (Style)FindResource(active ? "DangerBtn" : (canSwitch ? "GhostBtn" : "PrimaryBtn"));
-            m.Start.IsEnabled = (!_starting && (!running || orphanRunning || canSwitch)) || active;
+            m.Start.IsEnabled = !busy && (!running || orphanRunning || canSwitch || active);
             // 暂停/手动停止作用于当前唯一运行的引擎：开始后所有模块页上都可用
-            m.Pause.IsEnabled = running;
+            m.Pause.IsEnabled = !busy && running;
             m.Pause.Content = (running && _paused ? "继续" : "暂停") + hk;
-            m.Manual.IsEnabled = running;
+            m.Manual.IsEnabled = !busy && running && !_manualStopBusy;
             if (m.Step is not null)
-                m.Step.IsEnabled = active && _paused;
+                m.Step.IsEnabled = !busy && active && _paused;
         }
         // 换人测试按钮：未激活时显示专用文案（ModuleRun 循环会把它改成「开始」）
         bool swapActive = running && _activeStartBtn == BtnTestSwap;
@@ -80,7 +81,7 @@ public partial class MainWindow
         // 不纳入的话，ToggleScenarioAsync 里设的「启动中…」永不复位——用户反馈的永久卡住。
         bool trainActive = running && _activeStartBtn == BtnCollectTrainFrames;
         BtnCollectTrainFrames.Content = trainActive ? $"停止采集{hk}" : "开始采集训练帧";
-        BtnCollectTrainFrames.IsEnabled = (!_starting && (!running || trainActive)) || trainActive;
+        BtnCollectTrainFrames.IsEnabled = !busy && (!running || trainActive);
     }
 
     private async void BtnManualStop_Click(object sender, RoutedEventArgs e)

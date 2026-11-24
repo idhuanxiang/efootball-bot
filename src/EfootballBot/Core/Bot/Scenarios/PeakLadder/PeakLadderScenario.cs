@@ -152,7 +152,7 @@ public sealed class PeakLadderScenario : IScenario
         if (ml == MatchScreen.MatchStartPage)
         {
             if (_streak < 1) return 800; // 过渡帧防抖
-            return await CnAdvance.AdvanceAsync(_engine, _mouse, _streak + 1, "起始页", "天梯巅峰赛", _log,
+            return await CnAdvance.AdvanceAsync(_engine, _mouse, _streak, "起始页", "天梯巅峰赛", _log,
                 obs.Ocr, obs.Detections, (0.850, 0.920), ct);
         }
         // Flow 阶段 HasConfirm 页面连续多轮无进展：国服键序（RT→A→鼠标）都用完仍不动才按 B 退出。
@@ -416,7 +416,7 @@ public sealed class PeakLadderScenario : IScenario
             if (_countUnknownRounds >= 16 && (DateTime.Now - _lastCountWarnAt).TotalMinutes >= 2)
             {
                 _lastCountWarnAt = DateTime.Now;
-                _countUnknownRounds = 8; // 回到 B 逃生节拍，持续尝试恢复
+                _countUnknownRounds = 7; // 下一轮前置自增刚好命中 8，重新触发 B 逃生节拍
                 _log($"[天梯巅峰赛] 可参赛场次持续无法读取（OCR 行：{OcrDigest(obs.Ocr)}），保持在活动主页等画面恢复", LogLevel.Error);
             }
             return 1800;

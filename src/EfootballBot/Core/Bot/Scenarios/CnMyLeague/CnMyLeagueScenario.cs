@@ -183,7 +183,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         if (screen == MatchScreen.MatchStartPage)
         {
             if (streak < 1) return 800; // 过渡帧防抖
-            return await CnAdvance.AdvanceAsync(_engine, _mouse, streak + 1, "起始页", "我的联赛",
+            return await CnAdvance.AdvanceAsync(_engine, _mouse, streak, "起始页", "我的联赛",
                 _log, obs.Ocr, obs.Detections, (0.850, 0.920), CancellationToken.None);
         }
         // ---- 国服「选择赛事等级」难度页接管。旧版页面（2026-10-18 实机）无「底行 取消/确认」

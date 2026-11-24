@@ -388,6 +388,9 @@ public static class UpdateApplier
         }
     }
 
+    internal static bool IsOlderThan(DateTime lastWriteUtc, DateTime nowUtc, TimeSpan maxAge)
+        => nowUtc - lastWriteUtc > maxAge;
+
     /// <summary>
     /// 清理历史更新残留（应用启动时后台调用，失败静默）：①临时下载目录 >24h；
     /// ②exe 旁 .old 旧版备份 >24h（正常由新实例启动 10 秒后清理，这里兜底
@@ -397,12 +400,13 @@ public static class UpdateApplier
     {
         try
         {
+            DateTime nowUtc = DateTime.UtcNow;
             string root = Path.Combine(AppPaths.TempDir, "update");
             if (Directory.Exists(root))
             {
                 foreach (string dir in Directory.EnumerateDirectories(root))
                 {
-                    if (DateTime.Now - Directory.GetLastWriteTime(dir) <= TimeSpan.FromDays(1)) continue;
+                    if (!IsOlderThan(Directory.GetLastWriteTimeUtc(dir), nowUtc, TimeSpan.FromDays(1))) continue;
                     try { Directory.Delete(dir, recursive: true); } catch { /* 占用中下轮再清 */ }
                 }
             }
@@ -411,7 +415,7 @@ public static class UpdateApplier
             {
                 string oldPath = OldPathFor(exePath);
                 if (File.Exists(oldPath) &&
-                    DateTime.Now - File.GetLastWriteTimeUtc(oldPath) > TimeSpan.FromDays(1))
+                    IsOlderThan(File.GetLastWriteTimeUtc(oldPath), nowUtc, TimeSpan.FromDays(1)))
                 {
                     try { File.Delete(oldPath); } catch { }
                 }

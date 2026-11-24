@@ -135,6 +135,7 @@ public sealed partial class CnWeeklyScenario : IScenario
             _menuApplied = false;
             _squadTries = 0;
             _coachSigned = false; // 活动级状态：下一个活动可能是要重新签教练的另一张卡
+            _coachSigns = 0;
             SetPhase(CwPhase.Flow);
             _log($"[国服周活动] 已退回活动列表，改刷槽位 {_slotIndex}", LogLevel.Success);
             return 800;

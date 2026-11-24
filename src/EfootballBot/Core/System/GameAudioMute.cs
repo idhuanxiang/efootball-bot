@@ -81,7 +81,8 @@ public static class GameAudioMute
         try
         {
             enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-            enumerator.EnumAudioEndpoints(EDataFlow.eRender, DeviceState.Active, out devices);
+            if (enumerator.EnumAudioEndpoints(EDataFlow.eRender, DeviceState.Active, out devices) != 0 || devices is null)
+                return;
             devices.GetCount(out int deviceCount);
 
             for (int d = 0; d < deviceCount; d++)
@@ -96,7 +97,7 @@ public static class GameAudioMute
                     var iid = typeof(IAudioSessionManager2).GUID;
                     device.Activate(ref iid, ClsCtx.All, IntPtr.Zero, out managerObject);
                     if (managerObject is not IAudioSessionManager2 manager) continue;
-                    manager.GetSessionEnumerator(out sessions);
+                    if (manager.GetSessionEnumerator(out sessions) != 0 || sessions is null) continue;
                     sessions.GetCount(out int sessionCount);
 
                     for (int s = 0; s < sessionCount; s++)

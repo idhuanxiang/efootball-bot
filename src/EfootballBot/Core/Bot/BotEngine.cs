@@ -257,6 +257,9 @@ public sealed class BotEngine : IDisposable
     /// <summary>感知摘要事件（Worker→GUI），Screen 为摘要文本（管道协议旧字段名）。</summary>
     public event Action<ScreenEvent>? ScreenChanged;
 
+    /// <summary>主观察循环退出时触发（参数为停止原因）：Worker 据此把场景自行结束/异常终止同步回 GUI。</summary>
+    public event Action<string>? Stopped;
+
     public bool IsRunning => _loop is { IsCompleted: false };
 
     public GameWindowInfo? Window => _window;
@@ -311,6 +314,9 @@ public sealed class BotEngine : IDisposable
     {
         if (IsRunning) return;
         _summaryWritten = false; // 新会话：允许再写一次摘要
+        Interlocked.Exchange(ref _stopped, 0);
+        Interlocked.Exchange(ref _stopReason, null);
+        _pendingRestoreTask = null;
         Stats.StartedAt ??= DateTime.Now;
         // 模块清单只在 BotModuleCatalog 里维护（国服/国际服、场景/工具、接力白名单都是那张表）。
         // 引擎这里只问两件事：「这个 id 是不是挂机场景」（要不要接管手柄）、「属于哪个服」
@@ -625,8 +631,8 @@ public sealed class BotEngine : IDisposable
                         }
                         Stats.LastError = ex.Message;
                         LogInternal(ex.Message, LogLevel.Error);
-                        SaveFailureDump("捕获熔断终停");
                         EmitStats();
+                        StopWithError("捕获熔断终停");
                         return;
                     }
                     catch (InputNotRespondingException ex)
@@ -635,9 +641,8 @@ public sealed class BotEngine : IDisposable
                         // 文案由 InputLivenessProbe 提供，只有一句人话 + 处理办法，不带堆栈。
                         Stats.LastError = "游戏未响应手柄输入";
                         LogInternal(ex.Message, LogLevel.Error);
-                        SaveFailureDump("手柄输入无响应");
                         EmitStats();
-                        Stop();
+                        StopWithError("手柄输入无响应");
                         return;
                     }
                     catch (PadSubmitException ex)
@@ -688,6 +693,9 @@ public sealed class BotEngine : IDisposable
             finally
             {
                 StatsChanged?.Invoke(Stats);
+                string reason = Volatile.Read(ref _stopReason)
+                    ?? (string.IsNullOrEmpty(Stats.LastError) ? "正常结束" : Stats.LastError);
+                try { Stopped?.Invoke(reason); } catch { }
             }
         }, token);
         EmitStats();
@@ -1531,6 +1539,8 @@ public sealed class BotEngine : IDisposable
     }
 
     private Task? _pendingRestoreTask;
+    private int _stopped;
+    private string? _stopReason;
 
     /// <summary>等待停止时触发的后台手柄恢复任务简要完成（避免 Worker 立刻被杀导致恢复中途中断）。</summary>
     internal async Task WaitPendingRestoreAsync(int timeoutMs = 1200)
@@ -1544,7 +1554,9 @@ public sealed class BotEngine : IDisposable
 
     private void StopInternal(string summaryReason, bool isError)
     {
+        Interlocked.CompareExchange(ref _stopReason, summaryReason, null);
         try { _cts?.Cancel(); } catch { }
+        if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
         try { Pad360.ResetAll(); } catch { }        // 停止即拔掉虚拟手柄：其他应用立即看不到任何手柄（旧实现保持在线到引擎销毁，
         // 用户停了挂机别的游戏里还挂着一只“幽灵手柄”）。下次开始重新连接。
         try { Pad360.Disconnect(); } catch { }

@@ -162,5 +162,27 @@ public class PostMatchActivityFlowTests
         Assert.True(pad.Calls.Count > before);
         Assert.Contains("dpad:Right", pad.Calls.Skip(before));
     }
+
+    [Fact]
+    public async Task AutoAdvanceFiveTimes_CompletesAllFiveWithoutEarlyExit()
+    {
+        var pad = new FakePad();
+        var c = new PostMatchActivityController();
+
+        // 首次进地图读出 5 次推进：先按 Y
+        Assert.Equal(1500, await c.StepAsyncCore(MapOcr(), true, _ => Task.FromResult<int?>(5), pad, NoLog, "测试"));
+        for (int i = 0; i < 5; i++)
+        {
+            Assert.Equal(2200, await c.StepAsyncCore(MapOcr(), true, _ => Task.FromResult<int?>(5), pad, NoLog, "测试")); // ↑ + A
+            Assert.Equal(2200, await c.StepAsyncCore(PopupOcr(), true, _ => Task.FromResult<int?>(5), pad, NoLog, "测试")); // 弹窗 ↑ + A
+        }
+        // 5 次全部消耗完后退出（→ + 下一步）
+        Assert.Equal(2200, await c.StepAsyncCore(MapOcr(), true, _ => Task.FromResult<int?>(5), pad, NoLog, "测试"));
+        Assert.Null(await c.StepAsyncCore(EmptyOcr, true, null, pad, NoLog, "测试"));
+        Assert.Equal(1, pad.Calls.Count(x => x == "Y"));
+        Assert.Equal(1, pad.Calls.Count(x => x == "dpad:Right"));
+        Assert.Equal(10, pad.Calls.Count(x => x == "dpad:Up")); // 5*(↑ + 弹窗↑) = 10
+        Assert.Equal(11, pad.Calls.Count(x => x == "A")); // 5*(↑+A + 弹窗↑+A) + 退出A = 11
+    }
 }
 

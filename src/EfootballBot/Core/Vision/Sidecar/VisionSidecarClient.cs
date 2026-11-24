@@ -22,10 +22,12 @@ public sealed class VisionSidecarClient : IAsyncDisposable
     private readonly StreamReader _reader;
     private readonly StreamWriter _writer;
     private readonly CancellationTokenSource _cts = new();
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ConcurrentDictionary<uint, TaskCompletionSource<VisionMsg>> _pending = new();
     private readonly StringBuilder _stderr;
     private readonly Task _readLoop;
     private int _nextId;
+    private int _disposed;
 
     public string PipeName { get; }
     /// <summary>帧环（init ack 之后必定非空）。</summary>
@@ -123,46 +125,57 @@ public sealed class VisionSidecarClient : IAsyncDisposable
         {
             TryKill(proc);
             try { pipe.Dispose(); } catch { }
+            try { proc.Dispose(); } catch { }
             string snapshot;
             lock (stderr) { snapshot = stderr.ToString(); }
             throw new TimeoutException($"vision-svc 在 20 秒内没有连上管道 {pipeName}（stderr: {snapshot}）");
         }
+        catch
+        {
+            TryKill(proc);
+            try { pipe.Dispose(); } catch { }
+            try { proc.Dispose(); } catch { }
+            throw;
+        }
 
         var client = new VisionSidecarClient(proc, pipeName, pipe, stderr);
-
-        var shmName = $"Local\\EfootballVision-v1-{pipeName}";
-        var init = new VisionMsg
-        {
-            Cmd = "init",
-            Shm = shmName,
-            Slots = 2,
-            W = (uint)Math.Max(2, width),
-            H = (uint)Math.Max(2, height),
-            Hwnd = hwnd,
-            Backend = cfg.Backend,
-            Models = SidecarModelLocator.Locate(cfg.ModelsDir),
-            Up = client.EnsureUploadRing(),
-        };
-
-        var ack = await client.SendAsync(init, 15000, ct).ConfigureAwait(false);
-        if (ack.Ev == "error")
-        {
-            await client.DisposeAsync().ConfigureAwait(false);
-            throw new InvalidOperationException($"vision-svc init 失败：{ack.Text}（stderr: {client.StderrSnapshot}）");
-        }
-
         try
         {
-            client.Ring = SharedFrameRing.Open(ack.Shm ?? shmName, 3000);
+            var shmName = $"Local\\EfootballVision-v1-{pipeName}";
+            var init = new VisionMsg
+            {
+                Cmd = "init",
+                Shm = shmName,
+                Slots = 2,
+                W = (uint)Math.Max(2, width),
+                H = (uint)Math.Max(2, height),
+                Hwnd = hwnd,
+                Backend = cfg.Backend,
+                Models = SidecarModelLocator.Locate(cfg.ModelsDir),
+                Up = client.EnsureUploadRing(),
+            };
+
+            var ack = await client.SendAsync(init, 15000, ct).ConfigureAwait(false);
+            if (ack.Ev == "error")
+                throw new InvalidOperationException($"vision-svc init 失败：{ack.Text}（stderr: {client.StderrSnapshot}）");
+
+            try
+            {
+                client.Ring = SharedFrameRing.Open(ack.Shm ?? shmName, 3000);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"帧环打开失败：{ex.Message}", ex);
+            }
+
+            client.Version = ack.Version;
+            return client;
         }
-        catch (Exception ex)
+        catch
         {
             await client.DisposeAsync().ConfigureAwait(false);
-            throw new InvalidOperationException($"帧环打开失败：{ex.Message}", ex);
+            throw;
         }
-
-        client.Version = ack.Version;
-        return client;
     }
 
     /// <summary>上传帧环名（init 时告知 sidecar；首次调用时创建）。</summary>
@@ -241,11 +254,21 @@ public sealed class VisionSidecarClient : IAsyncDisposable
     {
         var id = (uint)Interlocked.Increment(ref _nextId);
         cmd.Id = id;
+        var json = JsonSerializer.Serialize(cmd, VisionMsg.Json);
         var tcs = new TaskCompletionSource<VisionMsg>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = tcs;
         try
         {
-            await _writer.WriteLineAsync(JsonSerializer.Serialize(cmd, VisionMsg.Json)).ConfigureAwait(false);
+            if (!await _writeLock.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs), ct).ConfigureAwait(false))
+                return new VisionMsg { Ev = "error", Id = id, Text = $"等到 {timeoutMs}ms 无响应" };
+            try
+            {
+                await _writer.WriteLineAsync(json.AsMemory(), ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
             return await tcs.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs), ct).ConfigureAwait(false);
         }
         catch (TimeoutException)
@@ -260,13 +283,18 @@ public sealed class VisionSidecarClient : IAsyncDisposable
 
     private async Task ReadLoopAsync()
     {
+        string? disconnectReason = null;
         try
         {
             while (!_cts.IsCancellationRequested)
             {
                 var line = await _reader.ReadLineAsync(_cts.Token).ConfigureAwait(false);
                 try { RawTrace?.Invoke(line is null ? "<EOF>" : line); } catch { }
-                if (line is null) break;
+                if (line is null)
+                {
+                    disconnectReason = "管道已关闭 (EOF)";
+                    break;
+                }
                 if (line.Length == 0) continue;
 
                 VisionMsg? msg;
@@ -293,11 +321,26 @@ public sealed class VisionSidecarClient : IAsyncDisposable
                 try { Notification?.Invoke(msg); } catch { /* 订阅方异常不影响管道 */ }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            disconnectReason = "客户端已关闭";
+        }
         catch (Exception ex)
         {
+            disconnectReason = $"管道断开: {ex.Message}";
+        }
+        finally
+        {
             foreach (var kv in _pending)
-                kv.Value.TrySetResult(new VisionMsg { Ev = "error", Id = kv.Key, Text = $"管道断开: {ex.Message}" });
+            {
+                if (_pending.TryRemove(kv.Key, out var tcs))
+                    tcs.TrySetResult(new VisionMsg
+                    {
+                        Ev = "error",
+                        Id = kv.Key,
+                        Text = disconnectReason ?? "管道已断开",
+                    });
+            }
         }
     }
 
@@ -308,6 +351,7 @@ public sealed class VisionSidecarClient : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         try
         {
             if (_pipe.IsConnected)

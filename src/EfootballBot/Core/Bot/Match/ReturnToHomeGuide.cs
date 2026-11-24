@@ -2,14 +2,15 @@ namespace EfootballBot.Core.Bot.Match;
 
 /// <summary>
 /// 启动引导：挂机启动时若游戏停在其他模块的页面（不是主菜单、也不是本模块界面），
-/// 先连续按 B 收敛回主菜单，再交给模块自己的主页导航流程。
+/// 先连续按 B 收敛回主菜单（或共享比赛页 `MatchHub`，避免已退到比赛页磁贴行还要多退一步回主菜单），
+/// 再交给模块自己的导航流程。
 ///
 /// 为什么需要：各模块原本只有"从主菜单出发"这一条导航链（主菜单→比赛页→磁贴定位→目标模块）。
 /// 若启动时停在别的模块页（如在我的联赛页启动周活动），共享分类会把该页当成"前往比赛"类页面
-/// 直接开赛，导致"互相都去不了，只有从主页这条路才通"。
+/// 直接开赛，导致"互相都去不了，只有从主页/比赛页这条路才通"。
 ///
 /// 判定由调用方传入（本模块 Brain/共享分类的结果），本 helper 不引用任何 Scenarios 类型（架构锁）。
-/// "本模块界面命中即跳过"保留了半途启动直接续接的既有能力，主页启动路径完全不进入引导。
+/// "本模块界面命中即跳过"保留了半途启动直接续接的既有能力，主页/比赛页启动路径不进入引导。
 /// </summary>
 public sealed class ReturnToHomeGuide
 {
@@ -33,12 +34,25 @@ public sealed class ReturnToHomeGuide
     /// <param name="isOwnModulePage">当前是否本模块自己的界面——命中则跳过引导（半途续接）。</param>
     /// <param name="isOtherModulePage">当前是否其他模块的残留页——命中则进入/继续引导。</param>
     /// <param name="back">按 B 的动作。</param>
+    /// <param name="isMatchHub">当前是否国际服多卡比赛页（<c>MatchHub</c>）——共享比赛页的模块到此即止步，直接定位磁贴切换，不再多退一步回主菜单。</param>
     /// <returns>本轮等待毫秒；null = 不接管，继续模块正常流程。</returns>
-    public async Task<int?> StepAsync(Core.Capture.FrameData frame, bool isMainMenu, bool isOwnModulePage, bool isOtherModulePage, Func<Task> back)
+    public async Task<int?> StepAsync(
+        Core.Capture.FrameData frame,
+        bool isMainMenu,
+        bool isOwnModulePage,
+        bool isOtherModulePage,
+        Func<Task> back,
+        bool isMatchHub = false)
     {
-        if (isMainMenu)
+        if (isMainMenu || isMatchHub)
         {
-            if (_guiding) { _log($"[{_module}] 已收敛回主页，开始正常导航", Core.LogLevel.Success); _guiding = false; }
+            if (_guiding)
+            {
+                _log(isMatchHub
+                    ? $"[{_module}] 已退回比赛页，直接定位目标模块"
+                    : $"[{_module}] 已收敛回主页，开始正常导航", Core.LogLevel.Success);
+                _guiding = false;
+            }
             _escapeAttempts = 0;
             return null;
         }

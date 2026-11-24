@@ -120,6 +120,16 @@ public sealed class StudFlowController
 
     private int _playerIndex;
 
+    /// <summary>筛选后列表可见人数（>0 时作为遍历上限，避免末尾球员无空槽时越界死循环）。</summary>
+    private int _listPlayerCount;
+
+    private bool _listCountExact;
+
+    /// <summary>连续跳过无空槽球员计数（列表人数未识别时的防触底死循环兜底）。</summary>
+    private int _consecutiveSkips;
+
+    private const int MaxConsecutiveSkipsWhenCountUnknown = 12;
+
     private bool _skillCompleted;
 
     private bool _skillResultRecorded;
@@ -887,8 +897,11 @@ public sealed class StudFlowController
         }
         if (_trainAll)
         {
-            int visible = StudTrainingBrain.ReadVisiblePlayerCount(obs.Ocr) ?? 50;
+            int? visibleOpt = StudTrainingBrain.ReadVisiblePlayerCount(obs.Ocr);
+            int visible = visibleOpt ?? 50;
             _trainRemaining = Math.Clamp(visible, 0, 50);
+            _listPlayerCount = _trainRemaining;
+            _listCountExact = visibleOpt is not null;
             if (_trainRemaining == 0)
             {
                 _phase = Phase.TrainStopped;
@@ -901,11 +914,16 @@ public sealed class StudFlowController
         else
         {
             // 设定数量大于筛选结果时按实际人数收敛，避免列表走到头还在按 A。
-            int visible = StudTrainingBrain.ReadVisiblePlayerCount(obs.Ocr) ?? int.MaxValue;
-            if (visible < _trainRemaining)
+            int? visibleOpt = StudTrainingBrain.ReadVisiblePlayerCount(obs.Ocr);
+            if (visibleOpt is { } v)
             {
-                _trainRemaining = Math.Max(0, visible);
-                _log($"[种马培训] 筛选结果只有 {_trainRemaining} 名，按实际人数培训", LogLevel.Info);
+                _listPlayerCount = Math.Max(0, v);
+                _listCountExact = true;
+                if (_listPlayerCount < _trainRemaining)
+                {
+                    _trainRemaining = _listPlayerCount;
+                    _log($"[种马培训] 筛选结果只有 {_trainRemaining} 名，按实际人数培训", LogLevel.Info);
+                }
             }
             if (_trainRemaining == 0)
             {
@@ -1197,17 +1215,29 @@ public sealed class StudFlowController
         if (_skillCompleted)
         {
             _trainedRuns++;
+            _consecutiveSkips = 0;
             if (_trainRemaining > 0) _trainRemaining--;
             _log($"[种马培训] 已完成 {_trainedRuns} 名球员的技巧训练" +
                  (_trainRemaining > 0 ? $"，剩余 {_trainRemaining} 名" : ""), LogLevel.Success);
         }
         else
         {
+            _consecutiveSkips++;
             _log("[种马培训] 本名球员未执行训练（已跳过），继续下一名", LogLevel.Warn);
         }
         _skillCompleted = false;
         if (_trainRemaining <= 0)
             return await FinishTrainingAsync();
+        if (_listPlayerCount > 0 && _playerIndex >= _listPlayerCount)
+        {
+            _log($"[种马培训] 已遍历完列表全部 {_listPlayerCount} 名球员（剩余 {_trainRemaining} 个技能卡未用完），结束培训", LogLevel.Warn);
+            return await FinishTrainingAsync();
+        }
+        if (!_listCountExact && _consecutiveSkips >= MaxConsecutiveSkipsWhenCountUnknown)
+        {
+            _log($"[种马培训] 连续跳过 {_consecutiveSkips} 名无空槽球员（列表人数未识别，疑似已触底），提前结束培训", LogLevel.Warn);
+            return await FinishTrainingAsync();
+        }
         _phase = Phase.TrainPickPlayer;
         return 800;
     }

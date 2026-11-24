@@ -329,7 +329,7 @@ public sealed class MaxLevelSwapController
         CancellationToken ct = default)
     {
         if (_phase == Phase.Idle) return null;
-        if (++_rounds > MaxRounds)
+        if (_phase != Phase.Done && ++_rounds > MaxRounds)
             return await AbortAsync("巡检轮数超限", pad, log);
         var screen = MaxLevelSwapBrain.Classify(ocr);
         bool home = ocr.ContainsJoined("前往比赛");
@@ -959,6 +959,7 @@ public sealed class MaxLevelSwapController
     {
         log($"[我的联赛] 满级巡检放弃：{reason}。按 B 尝试退出，下次比赛结束后重试", LogLevel.Error);
         _phase = Phase.Done;
+        _rounds = 0;
         await pad.Back();
         return 2000;
     }

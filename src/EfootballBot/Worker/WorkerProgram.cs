@@ -97,8 +97,9 @@ public static class WorkerProgram
         }
 
         BotEngine? engine = null;
-        bool previewOn = false;
+        int previewOn = 0;
         CancellationTokenSource? previewCts = null;
+        Task? previewTask = null;
         NamedPipeServerStream? pipe = null;
         CancellationTokenSource? readCts = null;
 
@@ -139,9 +140,9 @@ public static class WorkerProgram
                 }
                 catch { /* 父进程早已不在：直接收尾 */ }
                 try { FileLogger.Instance.Write("GUI 进程已退出：Worker 自主收尾（停引擎 / 恢复真实手柄 / 还原停靠窗口）", LogLevel.Warn); } catch { }
+                StopPreviewLoop();
                 try { engine?.Stop(); } catch { }
                 try { engine?.Dispose(); } catch { }
-                try { previewCts?.Cancel(); } catch { }
                 try { EfootballBot.Core.Input.PhysicalPadControl.RestoreAll(); } catch { }
                 try { EfootballBot.Core.System.BackgroundParker.TryRestoreFromRecord(); } catch { }
                 DeleteSessionMarker();
@@ -178,21 +179,33 @@ public static class WorkerProgram
                 if (console) Console.WriteLine($"[cap] {s}");
                 _ = SendAsync(PipeProtocol.EvLog("Info", $"[捕获] {s}"));
             };
+            e.Stopped += reason =>
+            {
+                // 若已由 cmd == "stop" 摘除 engine 引用，说明是 GUI 主动停止（后续会发 EvStopped），不再补发 EvExited
+                if (!ReferenceEquals(Volatile.Read(ref engine), e)) return;
+                StopPreviewLoop();
+                _ = SendAsync(PipeProtocol.EvExited(reason));
+            };
         }
 
         void StartPreviewLoop()
         {
-            previewCts?.Cancel();
-            previewCts = new CancellationTokenSource();
-            var ct = previewCts.Token;
-            long lastFrameStamp = -1;
-            _ = Task.Run(async () =>
+            var cts = new CancellationTokenSource();
+            var ct = cts.Token;
+            var prev = Interlocked.Exchange(ref previewCts, cts);
+            if (prev is not null)
             {
-                while (!ct.IsCancellationRequested && previewOn)
+                try { prev.Cancel(); } catch { }
+                try { prev.Dispose(); } catch { }
+            }
+            long lastFrameStamp = -1;
+            previewTask = Task.Run(async () =>
+            {
+                while (!ct.IsCancellationRequested && Volatile.Read(ref previewOn) != 0)
                 {
                     try
                     {
-                        var f = engine?.LatestFrame;
+                        var f = Volatile.Read(ref engine)?.LatestFrame;
                         // 帧去重：引擎停止/重建期间 LatestFrame 不更新，重复发同帧无意义
                         if (f is not null && f.TimestampMs != lastFrameStamp)
                         {
@@ -201,18 +214,36 @@ public static class WorkerProgram
                             string b64 = EncodePreviewJpeg(f.Bgra, f.Width, f.Height);
                             await SendAsync(PipeProtocol.EvPreview(b64));
                         }
+                        await Task.Delay(PreviewFrameIntervalMs, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
                     }
                     catch { }
-                    await Task.Delay(PreviewFrameIntervalMs, ct);
                 }
             }, ct);
         }
 
         void StopPreviewLoop()
         {
-            previewOn = false;
-            previewCts?.Cancel();
-            previewCts = null;
+            Volatile.Write(ref previewOn, 0);
+            var prev = Interlocked.Exchange(ref previewCts, null);
+            if (prev is not null)
+            {
+                try { prev.Cancel(); } catch { }
+                try { prev.Dispose(); } catch { }
+            }
+        }
+
+        async Task StopPreviewLoopAsync()
+        {
+            var pt = Interlocked.Exchange(ref previewTask, null);
+            StopPreviewLoop();
+            if (pt is not null)
+            {
+                try { await pt.WaitAsync(TimeSpan.FromMilliseconds(500)); } catch { }
+            }
         }
 
         // 监听管道连接（循环，GUI 断开后等待重连）
@@ -294,13 +325,13 @@ public static class WorkerProgram
                         if (console) Console.WriteLine($"[Worker] 场景已启动: {msg.Mode}");
                         // 预览开关若处于开启状态：引擎重建后重新启动推送循环
                         //（每次 start 都重建引擎，旧循环虽引用同一变量但重启更稳）
-                        if (previewOn) StartPreviewLoop();
+                        if (Volatile.Read(ref previewOn) != 0) StartPreviewLoop();
                     }
                     catch (Exception ex)
                     {
                         // 启动失败的引擎里可能残留已开启的捕获会话等资源，整套释放防僵尸抓帧
-                        engine?.Dispose();
-                        engine = null;
+                        var failed = Interlocked.Exchange(ref engine, null);
+                        failed?.Dispose();
                         await SendAsync(PipeProtocol.EvLog("Error", $"启动失败：{ex.Message}"));
                         await SendAsync(PipeProtocol.EvExited($"启动失败：{ex.Message}"));
                         // 手柄未让路：记下退出码，GUI 据此弹窗且不再自动重启（用户不动手也是白跑）
@@ -310,19 +341,18 @@ public static class WorkerProgram
                 }
                 else if (msg.Cmd == "stop")
                 {
-                    if (engine is { IsRunning: true })
-                    {
-                        engine.Stop();
-                        await SendAsync(PipeProtocol.EvLog("Info", "已停止"));
-                    }
-                    var finishingEngine = engine;
-                    engine = null;
+                    await StopPreviewLoopAsync();
+                    var finishingEngine = Interlocked.Exchange(ref engine, null);
                     if (finishingEngine is not null)
                     {
+                        if (finishingEngine.IsRunning)
+                        {
+                            finishingEngine.Stop();
+                            await SendAsync(PipeProtocol.EvLog("Info", "已停止"));
+                        }
                         try { finishingEngine.Dispose(); } catch { }
                         try { await finishingEngine.WaitPendingRestoreAsync(1200); } catch { }
                     }
-                    StopPreviewLoop();
                     // 确认事件：GUI 收到后立即回收进程。先释放 ViGEmClient 并等进程内手柄恢复落盘再回 Stopped，
                     // 避免遗留内核槽位延迟或计划任务与下一轮「开始」竞争。
                     await SendAsync(PipeProtocol.EvStopped());
@@ -345,10 +375,11 @@ public static class WorkerProgram
                 }
                 else if (msg.Cmd == "preview")
                 {
-                    previewOn = msg.On == true;
-                    if (previewOn) StartPreviewLoop();
+                    bool on = msg.On == true;
+                    Volatile.Write(ref previewOn, on ? 1 : 0);
+                    if (on) StartPreviewLoop();
                     else StopPreviewLoop();
-                    if (console) Console.WriteLine($"[Worker] 预览={(previewOn ? "开" : "关")}");
+                    if (console) Console.WriteLine($"[Worker] 预览={(on ? "开" : "关")}");
                 }
                 else if (msg.Cmd == "reloadConfig")
                 {

@@ -3,6 +3,25 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v9.0.0
+
+### 跨模块快捷切换与设置排版修复
+- **比赛页（`MatchHub`）直切目标模块**：`HubTileLocator.IsRealMatchHub` 与 `ReturnToHomeGuide` 支持把国际服多卡比赛页作为收敛终点；「我的联赛」「周活动」「AI天梯联赛」互相切换时，按 `B` 退到比赛页即可直接定位磁贴切入目标模块，无需多退一步回主菜单。
+- **设置页排版对齐**：修复「画面与性能 → 捕获与识别」中 `CmbOcrEngine`（「OCR 识别引擎」）与 `TxtUnlimitedOcrEndpoint`（「服务地址」）在宽容器内被拉伸居中的偏移，统一左对齐紧贴左侧标题。
+
+### 生命周期、模式切换与 IPC 稳定性修复
+- **场景自停/报错即时同步 GUI**：`BotEngine` 新增 `Stopped` 事件并由 `WorkerProgram` 桥接为 `EvExited`；`CaptureUnrecoverableException` 与 `InputNotRespondingException` 统一走 `StopWithError()`，修正异常停机误判为正常结束并触发 `AutoCloseWhenDone` 自动关窗的问题。
+- **消除切换竞态与停止重入**：`WorkerHost` 引入 `_sessionId` 进程代际守卫并清零失败退出后的 `_expectedRunning`；`MainWindow` 新增 `_stopping` 守卫（覆盖停止等待期按钮、「一键结束/切换/手动停止」与延迟 `Exited`/`Disconnected` 回调），防止旧 Worker 看门狗或延迟退出事件冲毁新会话或误恢复声音/自动关窗。
+- **停止去重与推流线程安全**：`BotEngine.StopInternal` 用原子标志去重避免连续触发双次手柄恢复任务；`WorkerProgram` 改为先停预览推流再 `Dispose()` 引擎，并先在本地取好 `CancellationToken` 再原子发布 `previewCts`，修复并发置空引发管道读循环崩溃的问题；修复 `WorkerHost` 管道重试泄漏 `NamedPipeClientStream`。
+
+### 设置项接线与网络/系统修复
+- **补齐设置读写接线**：修复「画面捕获方式」（`CmbCaptureMode`）完全未读写、`CmbOcrEngine` 第 4 项 `Rust sidecar` 未持久化；修正国服周活动「完成场次停止」错用通用预设表与「全部完成后」接力下拉框索引 `1`/`2` 颠倒；修正 `AutoSwapEveryIndex` 回落索引，移除未受 `_loadingConfig` 守卫的重复赋值，并改为仅在配置版本升级时迁移 `HidePhysicalGamepad`（不再每次加载强行覆盖用户关闭设置）。
+- **捕获、OCR、手柄、网络与更新修复**：修复 `WindowCapture` 节流定时器/`_heldFrames`/`_latest` 与 `Stop()` 并发竞态、`GpuVideoScalerVortice` 构造失败 COM 引用泄漏、`GdiWindowCapture.CreateDIBSection` 失败残留旧尺寸、`OcrRecognizer.Dispose` 锁保护、`VisionSidecarClient` 并发写锁/EOF 快速失败/初始化清理；修复 `VigemPad.Connect` 异常残留；修复 `MainWindow.Network` `LvGithub` 表头点击排序失效与测速异常未清理 `_measureCts`；修复 `Notifier` 响应流泄漏、`GameAudioMute` 副设备异常阻断状态记录及 `UpdateApplier` 混用本地/UTC 时间。
+
+### 状态机与场景逻辑修复
+- **开赛复位与国服推进键序**：修复 `MatchPlay.Tick` 恒返回 `Started: false` 导致周活动/国服周活动/AI天梯开赛复位死代码问题；修正国服我的联赛/天梯巅峰赛/国服周活动 4 处 `CnAdvance.AdvanceAsync` 防抖参数偏移，确保第一顺位 `RT` 不被跳过。
+- **死锁与边界修复**：修复 `PostMatchActivity` 推进次数 `>= 4` 时提前退出、国服周活动 `_coachSigns` 误报及复位遗漏、AI天梯 `_hubTry` 下溢、种马培训末尾无空槽球员无限循环；修复我的联赛进错卡守卫 `Back()` 失败不升级、买道具 `GoingItems` 非目标页死锁、满级换人超 `MaxRounds` 后狂按 `B` 死循环、周活动 `MatchHub` 8 轮后死等与天梯巅峰赛 `_countUnknownRounds = 8` 跳过逃生节拍问题。
+
 ## v8.5.2
 
 ### 首页对齐与跨模式一键切换

@@ -24,6 +24,7 @@ public sealed class WorkerHost : IDisposable
     private BotStats _lastStats = new();
     private bool _disposed;
     private volatile int _remotePid;                   // Worker 通过 pid 事件上报（诊断/兜底反查进程）
+    private long _sessionId;                           // Worker 进程代际（防旧进程看门狗延迟回调误清新会话）
 
     // ---- 意外退出自动重启（3.2.0）----
     /// <summary>用户期望场景运行中（手动开始置位、手动停止/Dispose 复位）；仅此状态下才自动重启。</summary>
@@ -90,6 +91,7 @@ public sealed class WorkerHost : IDisposable
         {
             // 任何失败（连接超时/握手失败/NRE）都必须回收残留子进程与句柄，
             // 否则孤儿 Worker 会让下一次点击走进"进程还在但管道没连上"的死分支
+            _expectedRunning = false;
             await TeardownAsync();
             throw;
         }
@@ -135,6 +137,7 @@ public sealed class WorkerHost : IDisposable
         var process = Process.Start(psi)
             ?? throw new InvalidOperationException("无法启动 Worker 子进程");
         _process = process;
+        long sessionId = Interlocked.Increment(ref _sessionId);
 
         // 等待 Worker 建立管道服务器。单文件自包含 exe 冷启动需解压（可能 10s+），给足 30s。
         // 关键：超时的 ConnectAsync 残留底层 CreateFile，可能被服务器"幽灵授予"，
@@ -156,7 +159,7 @@ public sealed class WorkerHost : IDisposable
                 continue;
             }
 
-            NamedPipeClientStream cand;
+            NamedPipeClientStream? cand = null;
             try
             {
                 cand = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
@@ -165,6 +168,7 @@ public sealed class WorkerHost : IDisposable
             catch (Exception ex)
             {
                 lastConnectError = ex;
+                try { cand?.Dispose(); } catch { }
                 await Task.Delay(150);
                 continue;
             }
@@ -208,6 +212,7 @@ public sealed class WorkerHost : IDisposable
         // 读循环：复用握手 reader 接收 Worker 事件。回调内任何异常吞掉，绝不让它冒到 StartAsync
         _ = PipeProtocol.ReadLoopAsync(reader, msg =>
         {
+            if (Volatile.Read(ref _sessionId) != sessionId) return Task.CompletedTask;
             try
             {
                 switch (msg.Ev)
@@ -242,6 +247,7 @@ public sealed class WorkerHost : IDisposable
                         break;
                     case "exited":
                         _scenarioRunning = false;
+                        _expectedRunning = false;
                         // 手柄未让路这类"要用户动手"的退出：记下原因并通知 GUI 弹窗，
                         // 后续进程退出处理据此跳过自动重启（用户不解决重开也是同样结果）
                         if (EfootballBot.Core.Input.PadTakeoverBlockedException.IsBlocked(msg.Text))
@@ -273,7 +279,7 @@ public sealed class WorkerHost : IDisposable
             }
             catch { }
             try { readCts.Cancel(); } catch { }
-            await HandleProcessExitAsync(process);
+            await HandleProcessExitAsync(process, sessionId);
         });
 
         // 发送 start 命令（同样的先置位原因，见上）
@@ -288,28 +294,24 @@ public sealed class WorkerHost : IDisposable
     /// 重启期间 <see cref="IsRunning"/> 保持 true，GUI 不会把重启间隙误判成"场景已结束"；
     /// 预算耗尽或重启失败才触发 Disconnected（GUI 复位界面）。
     /// </summary>
-    private async Task HandleProcessExitAsync(Process? process)
+    private async Task HandleProcessExitAsync(Process? process, long sessionId)
     {
-        if (_disposed || !_expectedRunning)
-        {
-            FireDisconnected();
+        if (_disposed || Volatile.Read(ref _sessionId) != sessionId || !_expectedRunning)
             return;
-        }
         try { await _lifecycle.WaitAsync(); }
-        catch (ObjectDisposedException) { FireDisconnected(); return; }
+        catch (ObjectDisposedException) { return; }
         try
         {
-            if (_disposed || !_expectedRunning)
-            {
-                FireDisconnected();
+            if (_disposed || Volatile.Read(ref _sessionId) != sessionId || !_expectedRunning)
                 return;
-            }
 
             // 需要用户动手的退出（真实手柄占着玩家 1）：重开一次还是同样结果，
             // 直接收摊交回 GUI，由弹窗指引用户关手柄电源/拔线。
             if (_actionRequiredReason is { } blockedReason)
             {
                 _actionRequiredReason = null;
+                _expectedRunning = false;
+                _scenarioRunning = false;
                 EmitLog("Error", $"场景已终止：{blockedReason}");
                 await TeardownAsync();
                 FireDisconnected();
@@ -321,6 +323,8 @@ public sealed class WorkerHost : IDisposable
                 _autoRestartCount = 0; // 上一段稳定运行足够久：重置连续计数
             if (now - _lastAutoRestartAt < MinRestartSpacing)
             {
+                _expectedRunning = false;
+                _scenarioRunning = false;
                 EmitLog("Error", "Worker 意外退出，且距上次自动重启不足 5 分钟——不再重启，请查看日志排查后手动开始。");
                 await TeardownAsync();
                 FireDisconnected();
@@ -328,6 +332,8 @@ public sealed class WorkerHost : IDisposable
             }
             if (_autoRestartCount >= MaxConsecutiveRestarts)
             {
+                _expectedRunning = false;
+                _scenarioRunning = false;
                 EmitLog("Error", "Worker 意外退出，自动重启已连续 3 次——不再重启，请查看日志排查后手动开始。");
                 await TeardownAsync();
                 FireDisconnected();
@@ -356,7 +362,11 @@ public sealed class WorkerHost : IDisposable
                 _autoRestarting = false;
             }
             if ((_process is null or { HasExited: true }) && !(_pipe is { IsConnected: true }))
+            {
+                _expectedRunning = false;
+                _scenarioRunning = false;
                 FireDisconnected(); // 重启失败：交回 GUI 复位（子会话模式下管道在即视为已重启）
+            }
         }
         finally
         {
@@ -421,6 +431,9 @@ public sealed class WorkerHost : IDisposable
             }
             catch { }
         }
+
+        // 在强杀/回收前推进代际号：确保被替代或主动停止的旧进程看门狗不再派发迟到的 Disconnected/Exited
+        Interlocked.Increment(ref _sessionId);
 
         var process = _process ?? ResolveRemoteProcess();
         if (process is not null && !process.HasExited)
@@ -581,6 +594,7 @@ public sealed class WorkerHost : IDisposable
         if (_disposed) return;
         _disposed = true;
         _expectedRunning = false; // 关闭程序：自动重启链终止
+        Interlocked.Increment(ref _sessionId);
         try
         {
             // Dispose 可能在信号量被占用时调用，不等锁，直接硬回收

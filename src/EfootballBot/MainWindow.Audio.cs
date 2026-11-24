@@ -94,7 +94,7 @@ public partial class MainWindow
         if (!string.IsNullOrEmpty(error))
         {
             if (userAction) AppendLog($"静音游戏失败：{error}", LogLevel.Warn);
-            return;
+            if (!mute || sessions <= 0) return;
         }
         if (mute)
         {

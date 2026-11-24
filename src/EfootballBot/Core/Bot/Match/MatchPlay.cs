@@ -78,7 +78,8 @@ public sealed class MatchPlay
     {
         bool wasActive = _session.Active;
         bool ended = _session.Observe(screen, now, sawKeyMatchHint, isHome);
-        if (!wasActive && _session.Active)
+        bool started = !wasActive && _session.Active;
+        if (started)
             _log($"[{_module}] 比赛开始：{startNote}", LogLevel.Info);
         // 菜单类关场被最小感知时长拦下：让日志说清「哪一帧被判成菜单、本场走了多久」，
         // 下次再有「进球 CG 当比赛结束」的反馈，不必从上百行时间戳里倒推（2026-11-20）。
@@ -90,7 +91,7 @@ public sealed class MatchPlay
             _log($"[{_module}] 判到「{screen}」但本场刚开始（用时 {_session.LastDurationText}）——按识别误判处理，不计场次（这是导航识别护栏，不影响实际比赛；真正完赛会见到终场页或回菜单）",
                 LogLevel.Warn);
         }
-        if (!ended) return new MatchTick(false, false, false, false, _session.LastDurationText);
+        if (!ended) return new MatchTick(started, false, false, false, _session.LastDurationText);
         string duration = _session.LastDurationText;
         if (!_session.LastEndTrusted)
         {

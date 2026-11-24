@@ -1,5 +1,6 @@
 using EfootballBot.Core.Bot.Match;
 using EfootballBot.Core.Capture;
+using EfootballBot.Core.Vision;
 using Xunit;
 
 namespace EfootballBot.Tests;
@@ -99,5 +100,47 @@ public class ReturnToHomeGuideTests
         // 之后遇到过场过渡 Unknown 帧，也不得再继续按 B
         Assert.Null(await g.StepAsync(Frame(), false, false, false, () => { backs++; return Task.CompletedTask; }));
         Assert.Equal(1, backs);
+    }
+
+    [Fact]
+    public async Task OtherModulePage_BacksUntilMatchHub_StopsWithoutBackingToMainMenu()
+    {
+        var g = NewGuide();
+        int backs = 0;
+        // 停在别的模块页 → 按 B 一次退到比赛页 MatchHub 后立即收敛放行（不再多按一次 B 回主菜单）
+        Assert.NotNull(await g.StepAsync(Frame(), isMainMenu: false, isOwnModulePage: false,
+            isOtherModulePage: true, () => { backs++; return Task.CompletedTask; }, isMatchHub: false));
+        Assert.Equal(1, backs);
+
+        Assert.Null(await g.StepAsync(Frame(), isMainMenu: false, isOwnModulePage: false,
+            isOtherModulePage: false, () => { backs++; return Task.CompletedTask; }, isMatchHub: true));
+        // _guiding 已清零：下一帧过渡 Unknown 也不再按 B
+        Assert.Null(await g.StepAsync(Frame(), isMainMenu: false, isOwnModulePage: false,
+            isOtherModulePage: false, () => { backs++; return Task.CompletedTask; }, isMatchHub: false));
+        Assert.Equal(1, backs);
+    }
+
+    [Fact]
+    public void IsRealMatchHub_RequiresMultiTileOrMyLeague()
+    {
+        var multiTile = new OcrResult(new[]
+        {
+            new OcrWord("活动", 0.15, 0.75, 0.1, 0.04),
+            new OcrWord("eFootball™联赛", 0.45, 0.75, 0.15, 0.04),
+        }, 1280, 720);
+        Assert.True(HubTileLocator.IsRealMatchHub(MatchScreen.MatchHub, multiTile));
+        Assert.False(HubTileLocator.IsRealMatchHub(MatchScreen.MainMenu, multiTile));
+
+        var myLeagueOnly = new OcrResult(new[]
+        {
+            new OcrWord("我的联赛", 0.70, 0.48, 0.12, 0.04),
+        }, 1280, 720);
+        Assert.True(HubTileLocator.IsRealMatchHub(MatchScreen.MatchHub, myLeagueOnly));
+
+        var singleTournament = new OcrResult(new[]
+        {
+            new OcrWord("锦标赛", 0.20, 0.70, 0.10, 0.04),
+        }, 1280, 720);
+        Assert.False(HubTileLocator.IsRealMatchHub(MatchScreen.MatchHub, singleTournament));
     }
 }

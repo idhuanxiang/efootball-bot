@@ -639,6 +639,7 @@ public sealed class OcrRecognizer : IDisposable
     /// 从根上消除这类只在快速重启时才出现的偶发异常。
     /// </summary>
     private readonly global::System.Threading.SemaphoreSlim _gate = new(1, 1);
+    private bool _disposed;
 
     /// <summary>最近一帧的行级重读统计（诊断用；未开启行级重读时恒为 default）。</summary>
     public LineReread.Stats LastRereadStats { get; private set; }
@@ -648,6 +649,7 @@ public sealed class OcrRecognizer : IDisposable
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             var scaled = ImageScaling.DownscaleBilinear(frame, _downscaleLongSide);
             var result = await _backend.RecognizeAsync(scaled, ct).ConfigureAwait(false);
             result = OcrResult.FilterWindowTitlebar(result);
@@ -670,7 +672,20 @@ public sealed class OcrRecognizer : IDisposable
         }
     }
 
-    public void Dispose() => _backend.Dispose();
+    public void Dispose()
+    {
+        _gate.Wait();
+        try
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _backend.Dispose();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 }
 
 /// <summary>

@@ -803,13 +803,15 @@ public sealed class AppConfig
 
     public static string ConfigPath => ConfigDir + "\\config.json";
 
-    public static AppConfig Load()
+    public static AppConfig Load() => LoadFrom(ConfigPath, saveOnUpgrade: true);
+
+    internal static AppConfig LoadFrom(string path, bool saveOnUpgrade = false)
     {
         try
         {
-            if (File.Exists(ConfigPath))
+            if (File.Exists(path))
             {
-                string text = File.ReadAllText(ConfigPath);
+                string text = File.ReadAllText(path);
                 var cfg = JsonSerializer.Deserialize<AppConfig>(text, JsonOpts) ?? new AppConfig();
                 // 老配置没有 SchemaVersion 字段：反序列化会保留属性默认值（=当前版本），
                 // 单看属性无法区分「新配置」与「老配置」。以原始文本为准判定。
@@ -818,9 +820,9 @@ public sealed class AppConfig
                 bool upgraded = cfg.SchemaVersion < CurrentSchemaVersion;
                 cfg.Migrate();
                 cfg.Timing.MigrateIdleTapDefaults();
-                cfg.HidHide.MigrateDefaults();
+                if (upgraded) cfg.HidHide.MigrateDefaults();
                 cfg.Pad.MigrateDefaults();
-                if (upgraded)
+                if (upgraded && saveOnUpgrade)
                 {
                     // 升级结果立即回写：下次启动不再重复走迁移，也让用户能看到新增字段
                     try { cfg.Save(); } catch { /* 回写失败不影响本次运行 */ }
@@ -834,9 +836,9 @@ public sealed class AppConfig
             // 防止「静默回退默认值 → 运行中任何一次 Save 用默认值覆盖用户全部配置」后无从排查
             try
             {
-                var bad = ConfigPath + ".bad";
+                var bad = path + ".bad";
                 if (File.Exists(bad)) File.Delete(bad);
-                File.Move(ConfigPath, bad);
+                File.Move(path, bad);
             }
             catch { /* 留档失败不阻塞启动 */ }
         }

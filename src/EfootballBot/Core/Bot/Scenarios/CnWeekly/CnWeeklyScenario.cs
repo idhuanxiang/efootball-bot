@@ -270,7 +270,7 @@ public sealed partial class CnWeeklyScenario : IScenario
         if (ml == MatchScreen.MatchStartPage)
         {
             if (_streak < 1) return 800; // 过渡帧防抖
-            return await CnAdvance.AdvanceAsync(_engine, _mouse, _streak + 1, "起始页", "国服周活动", _log,
+            return await CnAdvance.AdvanceAsync(_engine, _mouse, _streak, "起始页", "国服周活动", _log,
                 obs.Ocr, obs.Detections, (0.850, 0.920), ct);
         }
         int? cnWait = await HandleCnAsync(cw, ml, obs, ct);
@@ -666,7 +666,7 @@ public sealed partial class CnWeeklyScenario : IScenario
                 {
                     // 赛后可能回到对阵表：下一步回活动主页再开赛（国服键序 RT → A → 鼠标）
                     if (_streak < 2) return 900;
-                    return await CnAdvance.AdvanceAsync(_engine, _mouse, _streak + 1, "对阵表下一步",
+                    return await CnAdvance.AdvanceAsync(_engine, _mouse, _streak - 1, "对阵表下一步",
                         "国服周活动", _log, obs.Ocr, obs.Detections, (0.900, 0.920), ct);
                 }
                 if (cw == CwScreen.Squad || cw == CwScreen.SquadMenu)

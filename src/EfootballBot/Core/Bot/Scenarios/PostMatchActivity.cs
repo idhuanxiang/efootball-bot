@@ -191,6 +191,8 @@ public sealed class PostMatchActivityController
 
     private Phase _phase = Phase.Idle;
 
+    private int _initialCount;
+
     private int _remaining;
 
     private int _steps;
@@ -260,6 +262,7 @@ public sealed class PostMatchActivityController
                 }
                 else
                 {
+                    _initialCount = x.Value;
                     _remaining = x.Value;
                     _steps = 0;
                     _popupMiss = 0;
@@ -273,7 +276,7 @@ public sealed class PostMatchActivityController
         switch (_phase)
         {
             case Phase.Advance:
-                if (_remaining > 0 && _steps < _remaining + 2)
+                if (_remaining > 0 && _steps < _initialCount + 2)
                 {
                     _popupMiss = 0;
                     if (!_yPressed)
@@ -284,7 +287,7 @@ public sealed class PostMatchActivityController
                         return 1500;
                     }
                     _steps++;
-                    log($"[{module}] 赛后活动：推进第 {_steps}/{_remaining} 次（↑ → 下一步）", LogLevel.Info);
+                    log($"[{module}] 赛后活动：推进第 {_steps}/{_initialCount} 次（↑ → 下一步）", LogLevel.Info);
                     await pad.Dpad(PadDir.Up);
                     await pad.Confirm();
                     _phase = Phase.AwaitPopup;
@@ -336,6 +339,7 @@ public sealed class PostMatchActivityController
     private void Reset()
     {
         _phase = Phase.Idle;
+        _initialCount = 0;
         _remaining = 0;
         _steps = 0;
         _popupMiss = 0;

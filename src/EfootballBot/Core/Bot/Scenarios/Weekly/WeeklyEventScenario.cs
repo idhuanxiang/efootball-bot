@@ -191,7 +191,8 @@ public sealed partial class WeeklyEventScenario : IScenario
         bool ownPage = wk != WkScreen.None || inMatchFlow;
         int? guideWait = await _homeGuide.StepAsync(obs.Frame,
             ml == MatchScreen.MainMenu, ownPage, otherModule,
-            () => _engine.Pad.Back());
+            () => _engine.Pad.Back(),
+            isMatchHub: HubTileLocator.IsRealMatchHub(ml, obs.Ocr));
         if (guideWait is not null) return guideWait.Value;
         if (!_takeoverLogged)
         {
@@ -444,7 +445,12 @@ public sealed partial class WeeklyEventScenario : IScenario
                 }
                 if (ml == MatchScreen.MatchHub)
                 {
-                    if (_streak >= MatchBrain.StuckStreak) return 5000;
+                    if (_streak >= MatchBrain.NavEscapeStreak && (_streak - MatchBrain.NavEscapeStreak) % 5 == 0)
+                    {
+                        _log("[周活动] 比赛页多轮无进展，B 退回主菜单重导航", LogLevel.Warn);
+                        await _engine.Pad.Back();
+                        return 2400;
+                    }
                     // 【识别重做同款模式】国际服比赛页是 4 卡横排、无预览区，磁贴标签词
                     // 聚焦/非聚焦尺寸几乎无差（实机帧：锦标赛聚焦 H=0.058 vs 活动 0.056），
                     // OCR 判焦点不可行——改为「饱和左移归一起点 → 右×N 试第 N 格 → 按 A 后

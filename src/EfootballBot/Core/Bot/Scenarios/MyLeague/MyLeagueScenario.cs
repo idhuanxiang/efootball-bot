@@ -238,7 +238,8 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
                            or MatchScreen.DifficultyPage or MatchScreen.HasConfirm or MatchScreen.LeagueInfoPage);
             int? guideWait = await _homeGuide.StepAsync(obs.Frame,
                 screen == MatchScreen.MainMenu, ownPage, otherModule,
-                () => _engine.Pad.Back());
+                () => _engine.Pad.Back(),
+                isMatchHub: HubTileLocator.IsRealMatchHub(screen, obs.Ocr));
             if (guideWait is not null) return guideWait.Value;
         }
         // 进错页兜底：刚从比赛页按 A 想进「我的联赛」，若落到别的板块页（活动/天梯/巅峰赛），
@@ -282,9 +283,7 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
             bool isMyLeagueHome = MyLeagueBrain.LooksLikeLeagueHome(obs.Ocr) ||
                                   (noOtherModule && mainButton && screen == MatchScreen.LeaguePage);
             // 比赛页磁贴行（3~4 张卡时至少读出两枚标题；单枚「锦标赛」是子页而不是磁贴行）
-            bool isRealHub = screen == MatchScreen.MatchHub &&
-                             (HubTileLocator.VisibleTitleCount(obs.Ocr) >= 2 ||
-                              obs.Ocr.Lines.Any(l => l.Text.Replace(" ", "").Contains("我的联赛")));
+            bool isRealHub = HubTileLocator.IsRealMatchHub(screen, obs.Ocr);
             // 正确进了我的联赛主页 / 本模块流程 / 回到比赛页 → 结束监视，清退回计数
             if (isMyLeagueHome || isLeagueFlow || isRealHub)
             {
@@ -316,14 +315,13 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
                 {
                     await _engine.Pad.Back();
                 }
-                // 退回比赛页后换焦点重定位：磁贴定位器刚在这张卡上读到了「我的联赛」，
-                // 不右移就会在同一张卡上再按一次 A，永远进同一个错页。
-                _enteredFromHub = false;
+                // 保持 _enteredFromHub = true：若 Back() 被吞或未退出，下一帧继续进本守卫以触发 ≥3 次升级（上→A→B）；
+                // 成功退回比赛页（isRealHub）时会统一清零 _enteredFromHub 与 _wrongCardBacks。
                 _entryVerifyRounds = 0;
                 _entryLoadingRounds = 0;
                 _entryDialogAdvances = 0;
                 _hubForceRight = true;
-                _hubWrongEntries++;
+                if (_wrongCardBacks == 1) _hubWrongEntries++;
                 return 2200;
             }
             else if ((screen is MatchScreen.HasConfirm or MatchScreen.PurchaseDialog
@@ -991,7 +989,8 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
                     _itemRow = 1;
                     return 1200;
                 }
-                if (screen == MatchScreen.PointsPage && ++_navAttempts <= 3)
+                if (++_navAttempts > 3) { ResetPhase("进入物品页失败"); return null; }
+                if (screen == MatchScreen.PointsPage)
                 {
                     // 没进去：换导航序列重试（右→A / 右×2→A / 直接 A）
                     _log($"[我的联赛] 重试进入我的联赛物品（第 {_navAttempts} 次）", LogLevel.Warn);
@@ -1000,7 +999,6 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
                     await _engine.Pad.Confirm();
                     return 2500;
                 }
-                if (_navAttempts > 3) { ResetPhase("进入物品页失败"); return null; }
                 return 1500;
             }
             case PurchasePhase.Buying:

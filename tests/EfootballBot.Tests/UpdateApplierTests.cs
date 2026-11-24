@@ -90,4 +90,13 @@ public class UpdateApplierTests : IDisposable
         Assert.Equal("NEW-VERSION-IMAGE", File.ReadAllText(exe));
         Assert.Equal("OLD-VERSION-IMAGE", File.ReadAllText(old));
     }
+
+    [Fact]
+    public void IsOlderThan_UsesExactUtcElapsedTime()
+    {
+        var nowUtc = new DateTime(2026, 11, 25, 12, 0, 0, DateTimeKind.Utc);
+        Assert.False(UpdateApplier.IsOlderThan(nowUtc.AddHours(-16), nowUtc, TimeSpan.FromDays(1)));
+        Assert.False(UpdateApplier.IsOlderThan(nowUtc.AddHours(-24), nowUtc, TimeSpan.FromDays(1)));
+        Assert.True(UpdateApplier.IsOlderThan(nowUtc.AddHours(-24).AddSeconds(-1), nowUtc, TimeSpan.FromDays(1)));
+    }
 }

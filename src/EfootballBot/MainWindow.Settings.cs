@@ -31,6 +31,9 @@ public partial class MainWindow
     /// <summary>场次计数停止固定档位（索引=下拉序，0=无限跑）；索引 6 = 自定义（读输入框）。</summary>
     private static readonly int[] StopAfterPresets = { 0, 1, 3, 5, 10, 20 };
 
+    /// <summary>国服周活动「完成场次停止」固定档位（对应 XAML 中的 0/1/3/5/7/10）；索引 6 = 自定义。</summary>
+    private static readonly int[] CnWeeklyStopAfterPresets = { 0, 1, 3, 5, 7, 10 };
+
     /// <summary>种马购买数量档位（索引=下拉序）；索引 4 = 自定义（读输入框）。</summary>
     private static readonly int[] StudBuyCountPresets = { 0, 1, 5, 10 };
 
@@ -54,11 +57,11 @@ public partial class MainWindow
     /// <summary>满级自动换人间隔档位（索引=下拉序）；非档位值载入时就近收敛，缺省每 5 场。</summary>
     private static readonly int[] AutoSwapEveryPresets = { 1, 2, 3, 5, 10 };
 
-    /// <summary>把换人间隔场次映射到下拉索引（越界值收敛到最近档位）。</summary>
+    /// <summary>把换人间隔场次映射到下拉索引（越界值收敛到最近档位；≤0 回落默认每 5 场 = 索引 3）。</summary>
     private static int AutoSwapEveryIndex(int value)
     {
         if (AutoSwapEveryPresets.Contains(value)) return Array.IndexOf(AutoSwapEveryPresets, value);
-        return value <= 0 ? 2 : AutoSwapEveryPresets.Select((p, i) => (p, i))
+        return value <= 0 ? 3 : AutoSwapEveryPresets.Select((p, i) => (p, i))
             .OrderBy(t => Math.Abs(t.p - value)).First().i;
     }
 
@@ -66,9 +69,10 @@ public partial class MainWindow
         index >= 0 && index < AutoSwapEveryPresets.Length ? AutoSwapEveryPresets[index] : 5;
 
     /// <summary>把计数值映射到下拉/自定义输入框（非预设值进自定义并回填数字）。</summary>
-    private static void LoadStopAfterUi(ComboBox cmb, TextBox txt, int value)
+    private static void LoadStopAfterUi(ComboBox cmb, TextBox txt, int value, int[]? presets = null)
     {
-        int idx = Array.IndexOf(StopAfterPresets, value);
+        presets ??= StopAfterPresets;
+        int idx = Array.IndexOf(presets, value);
         if (idx >= 0)
         {
             cmb.SelectedIndex = idx;
@@ -76,17 +80,18 @@ public partial class MainWindow
         }
         else
         {
-            cmb.SelectedIndex = StopAfterPresets.Length; // 自定义
+            cmb.SelectedIndex = presets.Length; // 自定义
             txt.Text = value.ToString();
             txt.Visibility = Visibility.Visible;
         }
     }
 
     /// <summary>下拉+自定义输入框 → 计数值。自定义输入非法/非正数回退 0（无限）。</summary>
-    private static int SaveStopAfterUi(ComboBox cmb, TextBox txt)
+    private static int SaveStopAfterUi(ComboBox cmb, TextBox txt, int[]? presets = null)
     {
-        if (cmb.SelectedIndex >= 0 && cmb.SelectedIndex < StopAfterPresets.Length)
-            return StopAfterPresets[cmb.SelectedIndex];
+        presets ??= StopAfterPresets;
+        if (cmb.SelectedIndex >= 0 && cmb.SelectedIndex < presets.Length)
+            return presets[cmb.SelectedIndex];
         return int.TryParse(txt.Text.Trim(), out int v) && v > 0 ? v : 0;
     }
 
@@ -186,21 +191,22 @@ public partial class MainWindow
         int suspendIdx = Array.IndexOf(suspendSecValues, _cfg.Learning.ThrottleSeconds);
         CmbSuspiciousThrottle.SelectedIndex = suspendIdx >= 0 ? suspendIdx : 2; // 缺省 60 秒
 
-        // OCR 引擎（下拉项：0=SimdPaddle 默认 / 1=RapidV6 / 2=Unlimited-OCR 外部服务；
+        // 画面捕获方式（0=WGC 默认 / 1=DXGI 桌面复制）
+        CmbCaptureMode.SelectedIndex = _cfg.CaptureMode == EfootballBot.Core.Config.CaptureMode.Dxgi ? 1 : 0;
+
+        // OCR 引擎（下拉项：0=SimdPaddle 默认 / 1=RapidV6 / 2=Unlimited-OCR 外部服务 / 3=Rust sidecar；
         // 旧配置 Windows 值已删引擎，一并落 SimdPaddle）
         CmbOcrEngine.SelectedIndex = _cfg.OcrEngine switch
         {
             OcrEngineKind.RapidV6 => 1,
             OcrEngineKind.UnlimitedOcr => 2,
+            OcrEngineKind.Sidecar => 3,
             _ => 0,
         };
         TxtUnlimitedOcrEndpoint.Text = _cfg.UnlimitedOcr.Endpoint;
         PnlUnlimitedOcr.Visibility = CmbOcrEngine.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
 
-        // 全权接管（挂机禁用真实手柄）：开关见「手柄接管」卡
-        ChkPadTakeover.IsChecked = _cfg.HidHide.HidePhysicalGamepad;
-
-        // 手柄后端（进程内代理 / ViGEmBus）：下拉项由 PadBackendInfo.UiOrder 生成
+        // 手柄后端（进程内代理 / ViGEmBus）：下拉项由 PadBackendInfo.UiOrder 生成（ChkPadTakeover 见末尾 _loadingConfig 守卫段）
         LoadPadBackendUi();
 
         // OCR 性能档（0=默认 / 1=提速：检测长边 640）
@@ -276,7 +282,7 @@ public partial class MainWindow
         // 周活动（国服）：难度（默认标准，索引 2）+ 场次停止 + 全部完成后接力
         int cnWeeklyDiffIdx = Array.IndexOf(MyLeagueDifficulties, _cfg.CnWeekly.Difficulty);
         CmbCnWeeklyDifficulty.SelectedIndex = cnWeeklyDiffIdx >= 0 ? cnWeeklyDiffIdx : 2;
-        LoadStopAfterUi(CmbCnWeeklyStopAfter, TxtCnWeeklyStopAfter, _cfg.CnWeekly.StopAfterMatches);
+        LoadStopAfterUi(CmbCnWeeklyStopAfter, TxtCnWeeklyStopAfter, _cfg.CnWeekly.StopAfterMatches, CnWeeklyStopAfterPresets);
         int cnWeeklyAfterIdx = Array.IndexOf(CnWeeklyAfterModules, _cfg.CnWeekly.AfterCompleteModule);
         CmbCnWeeklyAfter.SelectedIndex = cnWeeklyAfterIdx >= 0 ? cnWeeklyAfterIdx : 0;
 
@@ -425,11 +431,17 @@ public partial class MainWindow
             int[] suspendSec = { 10, 30, 60, 120, 300 };
             _cfg.Learning.ThrottleSeconds = suspendSec[CmbSuspiciousThrottle.SelectedIndex];
         }
-        // 下拉项 → 引擎（0=SimdPaddle 默认 / 1=RapidV6-small / 2=Unlimited-OCR 外部服务）
+        // 画面捕获方式（0=WGC 默认 / 1=DXGI 桌面复制）
+        _cfg.CaptureMode = CmbCaptureMode.SelectedIndex == 1
+            ? EfootballBot.Core.Config.CaptureMode.Dxgi
+            : EfootballBot.Core.Config.CaptureMode.Wgc;
+
+        // 下拉项 → 引擎（0=SimdPaddle 默认 / 1=RapidV6-small / 2=Unlimited-OCR 外部服务 / 3=Rust sidecar）
         _cfg.OcrEngine = CmbOcrEngine.SelectedIndex switch
         {
             1 => OcrEngineKind.RapidV6,
             2 => OcrEngineKind.UnlimitedOcr,
+            3 => OcrEngineKind.Sidecar,
             _ => OcrEngineKind.SimdPaddle,
         };
         string endpoint = TxtUnlimitedOcrEndpoint.Text.Trim();
@@ -494,7 +506,7 @@ public partial class MainWindow
         // 周活动（国服）
         if (CmbCnWeeklyDifficulty.SelectedIndex >= 0)
             _cfg.CnWeekly.Difficulty = MyLeagueDifficulties[CmbCnWeeklyDifficulty.SelectedIndex];
-        _cfg.CnWeekly.StopAfterMatches = SaveStopAfterUi(CmbCnWeeklyStopAfter, TxtCnWeeklyStopAfter);
+        _cfg.CnWeekly.StopAfterMatches = SaveStopAfterUi(CmbCnWeeklyStopAfter, TxtCnWeeklyStopAfter, CnWeeklyStopAfterPresets);
         _cfg.CnWeekly.AfterCompleteModule = CnWeeklyAfterModules[
             CmbCnWeeklyAfter.SelectedIndex >= 0 && CmbCnWeeklyAfter.SelectedIndex < CnWeeklyAfterModules.Length
                 ? CmbCnWeeklyAfter.SelectedIndex : 0];

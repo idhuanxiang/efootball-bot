@@ -1670,8 +1670,8 @@
                                         <ComboBox x:Name="CmbCnWeeklyAfter" Width="136" Height="30" HorizontalAlignment="Left" SelectedIndex="0"
                                                   ToolTip="活动全部刷完后自动接力：切到所选模块继续挂机（同一会话，场次从 0 重新计数）；选「不跳转」则停止挂机">
                                             <ComboBoxItem Content="不跳转（停止）"/>
-                                            <ComboBoxItem Content="我的联赛（国服）"/>
                                             <ComboBoxItem Content="天梯巅峰赛"/>
+                                            <ComboBoxItem Content="我的联赛（国服）"/>
                                         </ComboBox>
                                     </StackPanel>
                                 </WrapPanel>
@@ -2168,7 +2168,7 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="OCR 识别引擎" Style="{StaticResource FieldLabel}" VerticalAlignment="Center"/>
-                                <ComboBox x:Name="CmbOcrEngine" Grid.Column="1" HorizontalAlignment="Stretch" MaxWidth="300" Margin="10,0,0,0" SelectedIndex="0"
+                                <ComboBox x:Name="CmbOcrEngine" Grid.Column="1" HorizontalAlignment="Left" Width="280" Margin="10,0,0,0" SelectedIndex="0"
                                           SelectionChanged="CmbOcrEngine_SelectionChanged">
                                     <ComboBoxItem Content="SimdPaddle（推荐，默认）"/>
                                     <ComboBoxItem Content="RapidOCR Small（备用）"/>
@@ -2182,7 +2182,7 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="服务地址" Style="{StaticResource FieldLabel}" VerticalAlignment="Center"/>
-                                <TextBox x:Name="TxtUnlimitedOcrEndpoint" Grid.Column="1" HorizontalAlignment="Stretch" MaxWidth="420" Margin="10,0,0,0" VerticalAlignment="Center"
+                                <TextBox x:Name="TxtUnlimitedOcrEndpoint" Grid.Column="1" HorizontalAlignment="Left" Width="420" Margin="10,0,0,0" VerticalAlignment="Center"
                                          ToolTip="OpenAI 兼容的 chat/completions 地址（vLLM / SGLang 官方默认 10000 端口）"/>
                             </Grid>
                             <Grid Margin="0,6,0,9">

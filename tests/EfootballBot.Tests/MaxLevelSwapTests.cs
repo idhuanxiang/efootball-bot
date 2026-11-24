@@ -1062,6 +1062,27 @@ public class MaxLevelSwapTests
         exp.Add("B");                                            // Done 收尾
         Assert.Equal(exp, pad.Log);
     }
+
+    [Fact]
+    public async Task ExceedingMaxRounds_TransitionsCleanlyToIdleOnNextTick()
+    {
+        var c = new MaxLevelSwapController();
+        var reader = new ScriptReader();
+        var pad = new FakePad();
+        await c.StartCore(pad, SilentLog);
+
+        // 连续遇到错误弹窗 701 轮触发 ++_rounds > MaxRounds (700) → AbortAsync → Phase.Done
+        var err = Ocr(W("功能目前无法使用", 0.5, 0.30), W("不便之处,敬请原谅", 0.5, 0.45), W("OK", 0.5, 0.60));
+        for (int i = 0; i < 701; i++)
+            await c.StepCore(err, BlackFrame(), pad, reader.Read, SilentLog, null, null, CT);
+
+        // 处于 Phase.Done（尚未退回主页，Idle 仍为 false）
+        Assert.False(c.Idle);
+        // 下一轮回到主页必须进入 case Phase.Done 并退出到 Idle（旧实现会被 ++_rounds > 700 永远抢占死循环）
+        int? doneWait = await c.StepCore(HomeOcr(), BlackFrame(), pad, reader.Read, SilentLog, null, null, CT);
+        Assert.Null(doneWait);
+        Assert.True(c.Idle);
+    }
 }
 
 

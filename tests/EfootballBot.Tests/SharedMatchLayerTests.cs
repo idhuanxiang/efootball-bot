@@ -162,4 +162,23 @@ public class SharedMatchLayerTests
         Assert.False(t.Observe(MatchScreen.InMatch, T0.AddMinutes(30)));
         Assert.True(t.Active);
     }
+
+    [Fact]
+    public void MatchPlay_Tick_仅在开赛首帧返回_Started()
+    {
+        var play = new MatchPlay(null!, "单测", (_, _) => { });
+        var tick1 = play.Tick(MatchScreen.InMatch, T0);
+        Assert.True(tick1.Started);
+        Assert.False(tick1.Ended);
+        Assert.True(play.InMatch);
+
+        var tick2 = play.Tick(MatchScreen.InMatch, T0.AddSeconds(5));
+        Assert.False(tick2.Started);
+        Assert.False(tick2.Ended);
+
+        var tick3 = play.Tick(MatchScreen.Unknown, T0.AddMinutes(10));
+        Assert.False(tick3.Started);
+        Assert.True(tick3.Ended);
+        Assert.False(tick3.EndedTrusted);
+    }
 }
