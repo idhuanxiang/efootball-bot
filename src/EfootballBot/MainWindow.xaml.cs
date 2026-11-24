@@ -361,7 +361,6 @@ public partial class MainWindow
             AppendLog(hdrWarn, LogLevel.Warn);
 
         _starting = true;
-        UpdateTopStatusPill();
         try
         {
             SaveUiToConfig();
@@ -603,7 +602,6 @@ public partial class MainWindow
         StError.Visibility = string.IsNullOrEmpty(s.LastError) ? Visibility.Collapsed : Visibility.Visible;
         StPerf.Text = string.IsNullOrEmpty(s.PerfNote) ? "" : $"性能：{s.PerfNote}";
         StPerf.Visibility = string.IsNullOrEmpty(s.PerfNote) ? Visibility.Collapsed : Visibility.Visible;
-        UpdateTopStatusPill();
 
         // 场景自动结束（正常跑完 / 异常退出）：ScenarioRunning 变 false 后按钮需从"停止"恢复为"开始"
         if (_workerHost is { ScenarioRunning: false } && _statsTimer.IsEnabled)
