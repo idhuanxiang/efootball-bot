@@ -3,6 +3,25 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v8.5.0
+
+### UI 视觉、排版与交互全面重构
+- **主题与对比度修复**：补齐 `TextOnDanger` / `ToggleThumbOn` / `DialogBg` / `LogTime` / `LogTag` 5 个语义令牌覆盖全部 6 套主题（Fluent/Glass × 深色/浅色/深蓝），修复 `GlassLight` 标签芯片底色与文字对比度问题并提升开关辨识度。
+- **控件手感与下拉交互优化**：`ComboBox` 弹层加入限高 `ScrollViewer`、非阻挡旋转箭头与完整悬停/禁用态；`TextBox` 消除聚焦边框 0.5px 抖动；主/危按钮按压缩放与文字对比统一；优化子页签、模块单选与滚动条悬停细节。
+- **布局与导航细节升级**：统一默认窗口尺寸（`1240×780`，最小 `1040×640`）与右侧状态栏宽度；顶栏新增可点击实时状态胶囊；主题浮层支持点选即时预览及「取消 / 点空白 / Esc」完整回滚；修复设置子页签与首页快捷入口跳转不同步问题；补全首页模块目录并统一 7 大模块操作卡与参数分组排版；统计卡片启用等宽数字，日志支持主题色分级、智能滚动锁定、一键复制与双击复制单行。
+
+### 启动偶发「手柄占用」根因修复
+- **消除延迟恢复竞态**：`BotEngine` 进入连接手柄流程即刻写入活动会话标记（失败时 `catch` 清理），`PadConfigJob.RunPadRestore` 与 `MainWindow.EnsurePadEnvironmentAsync` 校验活跃会话标记，避免上次停止残留的延迟恢复任务在启动瞬间把实体手柄重新启用抢占 0 号槽。
+- **管理员进程内直连禁用与设备覆盖扩展**：`PhysicalPadControl` 在已提权时优先进程内直连隐藏/恢复实体手柄，消除计划任务电池策略/冷启动抖动；增加 `slot0Occupied` 兜底禁用；`HidDeviceEnumerator.IsXInputStyleInstance` 放宽以匹配复合 USB/2.4GHz（`&MI_xx&IG_0x`）与经典蓝牙 XInput HID 手柄。
+- **停止彻底释放与多轮校验防误判**：`WorkerProgram` 收到停止指令时显式释放 `ViGEmClient` 并短等挂起恢复任务再回报停止；`VigemPad` 放宽 0 号槽就绪宽限至 `5000ms`；`PadSlotWitness` 升级为多轮短间隔轮询（40ms 步进至 480ms），并增加启动稳态复探、断连后释放等待、空槽重分配自动重试（`ShouldRetryEmptySlot0`）与节点禁用等待护栏（`ShouldExitHideWait`）。
+
+### 核心稳定性与逻辑 Bug 修复
+- **周活动赛事等级下拉精准控制**：按实机截图校准 `WeeklyBrain` 下拉选项检测与蓝勾/白底焦点识别（`DetectDropdownOptions` / `IsEventSettingsDropdown` / `DetectDropdownFocusedLevel` / `ComputeDropdownStepDelta`），改为闭环校验 + 单次按 A 确认并修正自相矛盾日志。
+- **可选/自适应外置性能浮窗过滤**：`OcrRecognizer` 与 `ObservationService` 在有 NVIDIA / Afterburner 等顶部 FPS 监控浮窗时动态识别并掩码过滤，用户无外置监控时自动清零掩码、不影响正常画面。
+- **局域网监控服务安全与健壮性加固**：修复 `MonitorServer` 空令牌鉴权反转、命令接口仅限 POST、恒定时间令牌比对、异常分支监听器泄漏、LAN 地址缓存及 SSE 超时与连接数上限。
+- **弹窗与满级换人修复**：`PopupBrain` 仅读出单枚非推进键（如「取消」）时改为返回 `None` 交由兜底策略处理，并补充「购买/使用」确认词；`MaxLevelSwapController` 修复取消回退 `Back()`、上移等待、BGRA 通道顺序及排序箭头状态缓存。
+- **捕获、热键、停靠与系统层修复**：`ObservationService` / `WindowCapture` 修复 WGC WARP 探测、停止标记可见性与 GPU 缩放同步；`SmartHotkey` 改为按需挂载钩子并支持丢失 `KEYUP` 自愈；`BackgroundParker` 补齐并发锁与停靠后缩窗异步复核；`WorkerHost` / `Pad` / `BotEngine` 修复自动重启状态竞争与取消时按键释放；修复 ≥60 分钟比赛时长显示与 `UpdateApplier` 大小写无关 SHA256 校验、空值告警清零。
+
 ## v8.4.0
 
 ### 核心稳定性与状态机 Bug 修复
