@@ -3,6 +3,29 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v8.4.0
+
+### 核心稳定性与状态机 Bug 修复
+- **周活动跳过已完成卡位双倍右移修复**：`WeeklyEventScenario.EnterNextEventAsync` 抽取 `ResolveNextEventSlot` 纯函数计算目标槽位，删除跳过绿勾循环内多余的单步右移，仅在循环外统一按目标索引右移一次，避免有绿勾时连跳两格错过未完成活动。
+- **周活动入场弹窗关后未清超时计数修复**：`HandlePlayerCardRestrictAsync` 正常按 A 关闭「球员卡限制」弹窗时重置阶段 `_attempts = 0`，避免切页加载瞬间撞上 `IntroPopups` 的 `>15` 预算误按 B 退回列表。
+- **我的联赛「积分不足」跳过本场重复空转**：新增 `MyLeagueScenario.IsInsufficientPointsDialog` 检测「积分不足」提示后标记跳过本场道具核验并直接前往比赛，不再在 `4,560 < 9,000` 等余额不足场景下每场反复进出商店空转 3 轮。
+- **我的联赛进卡空白加载帧宽限延长**：`MatchHub` 按 A 进联赛后的纯空白加载过渡帧（`Unknown / TitleScreen` 且 `0 词 + 0 框`）独立按 `_entryLoadingRounds` 宽限至多 8 帧（不消耗错卡计数），有正文的陌生页面仍保持 3 帧立即 B 退回。
+- **主菜单最左「比赛」第 1 格不再误报 OCR 未读全**：统一改为 `is int matchOff` 区分返回值 `0` 与 `null`，消除每次进主菜单误记警告与频繁转储 `menu_tile_ocr_incomplete` 的问题。
+- **异常停止摘要修复**：`BotEngine.StopWithError` 拆走 `StopInternal(summaryReason, isError)`，修复原先先调 `Stop()` 置位 `_summaryWritten = true` 导致 `异常停止` 被覆盖记录成 `正常停止` 的问题。
+- **捕获健康熔断重置条件修正**：`ObservationService.MarkFreshFrame` 改按 `ShouldResetBreakerOnFreshFrame(_firstFreshAfterRestartAt, now)` 计算本轮重启后连续健康时长（≥120s 清空熔断计数），修复原实现误用 `_lastFreshFrameAt` 导致正常出帧永远无法清零熔断的 Bug。
+
+### 性能与内存占用优化
+- **窗口化顶部 Windows 标题栏 OCR 噪声过滤**：`OcrResult.FilterWindowTitlebar` 在 OCR 输出层精准剔除顶部标题栏 `D | eΓootball™ | X` 噪声词（不裁切传给 YOLO/像素探针的原图），恢复比赛中 `Ocr.Words.Count == 0` 触发 3 倍 OCR 降频，并消除空白加载页误判 `TitleScreen`。
+- **消除主循环每轮双调 `ObserveAsync` 与 `[性能]` 埋点失真**：`BotEngine` 主循环与单步分支通过 `_roundObs` 传递给场景首行一次性复用本轮观察结果，并将 `ObservationService._lastOcrTick` 改为记录识别完成时刻，彻底消除同帧连跑两遍 OCR+YOLO 及 `[性能]` 统计归零问题。
+- **WGC 720p 窗口免无效降采样与 LOH 降耗**：`WindowCapture.CapSize` 容忍高度上限放宽至 `MaxUnscaledHeight = 780`（覆盖 `1282×759` 等 720p 窗口 + 标题栏），避免无意义 759→720 最近邻重采样带来的小字毛糙和双倍大对象堆（LOH）分配。
+- **GPU 硬件缩放兼容增强与重复日志清理**：`GpuVideoScalerVortice` 对输入宽高按偶数对齐并优先使用 `BindFlags.None`（失败再回退 `BindFlags.Decoder`）兼容 NVIDIA 驱动；清理 `WindowCapture` / `GpuVideoScalerVortice` 中多余的 `[捕获]` 双重前缀。
+- **`OcrResult` 共享行聚类缓存**：抽取 `GetGroupedLines()` 缓存并用增量累加替代循环内重复 `Average(...)`，消除 `Lines` / `MergedWords` / `JoinedText` 同帧重复跑 3 遍 $O(N^2)$ 行聚类的开销。
+
+### 架构重构与训练防回归护栏
+- **抽取共享层 `MatchActionExecutor`**：将原本在 6 个场景里各自复制的手柄动作 `switch` 与主菜单进「比赛」磁贴导航统一收敛到 `Core/Bot/Match/MatchActionExecutor`，一次修改全模块生效，符合 `arch-guard` 架构锁约束。
+- **自动标注防「自我投毒」护栏**：`training/collect_new_frames.py` 新增 `validate_boxes`（拦截右半屏 `btn_back`、左下返回位 `btn_confirm`、高重叠冲突框、居中弹窗遮罩下低分背景 `btn_back`）。
+- **回归测试补齐**：新增 `AuditOptimizationTests` 与 `WindowCaptureCapSizeTests.CapSize_Windowed720pWithTitlebar_KeepsOriginal`。
+
 ## v8.3.1
 
 ### 赛前热身/替补与首发名单页推进修复

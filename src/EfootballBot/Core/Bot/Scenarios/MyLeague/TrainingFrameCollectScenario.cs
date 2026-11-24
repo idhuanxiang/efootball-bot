@@ -129,14 +129,7 @@ public sealed class TrainingFrameCollectScenario : IScenario
                     // 从主菜单 → 下×5 → 定位「比赛」磁贴 → 左×6 → 右×offset → A
                     if (_rounds == 0)
                     {
-                        await _engine.Pad.DpadRepeat(PadDir.Down, 5);
-                        int off = HubTileLocator.FindMainMenuMatchOffset(ocr) ?? 0;
-                        await _engine.Pad.DpadRepeat(PadDir.Left, 6);
-                        if (off > 0) await _engine.Pad.DpadRepeat(PadDir.Right, off);
-                        _log(off > 0
-                            ? $"[训练帧] 主菜单→比赛页：下×5→左×6→右×{off}→A（「比赛」第 {off + 1} 格）"
-                            : "[训练帧] 主菜单→比赛页：下×5→左×6→A（OCR 未读全，饱和归位）", LogLevel.Info);
-                        await _engine.Pad.Confirm();
+                        await MatchActionExecutor.EnterMatchFromMainMenuAsync(_engine, obs, _log, "训练帧");
                     }
                     if (++_rounds > 10)
                     {
