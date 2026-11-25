@@ -408,6 +408,9 @@ public partial class MainWindow
                 _statsTimer.Start();
                 AutoOpenPreview(); // 自动开预览（非阻塞，帧看门狗负责重发直到引擎就绪出帧）
                 MuteGameOnScenarioStarted(); // 勾了「挂机时静音游戏」就立刻静音（只静游戏，不动系统音量）
+                // 启动后重新检测一次环境（用户 2026-11-26 要求）：此时手柄已接管、游戏窗口已定位，
+                // 左栏「环境检测」显示的是本次挂机的真实状态，而不是启动前的旧快照。
+                RunEnvChecks();
 
                 // 引擎启动后注册全局热键（单热键：第一次暂停，第二次终止）
                 if (_cfg.Hotkey.Enabled)

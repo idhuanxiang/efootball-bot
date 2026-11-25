@@ -21,13 +21,12 @@ public static class Updater
     public const string DefaultRepository = "idhuanxiang/efootball-bot";
 
     /// <summary>
-    /// 编译期内置的主源基址（Cloudflare R2 公开桶）。空 = 未内置，客户端完全走
-    /// GitHub Release（版本检查 api.github.com + 下载 github.com + 加速镜像兜底）。
-    /// 本 fork 不使用原作者的 R2 桶（那个桶由原作者控制、版本不受我们发版影响），
-    /// 故置空；需用自建 R2 时可通过 config.json 的 Update.PrimaryBaseUrl 或环境变量配置，
-    /// 不必改代码。
+    /// 编译期内置的主源基址（自建 Cloudflare R2 公开桶，2026-11-26）：
+    /// 版本检查首选 Raw 清单 → 本桶（Mica/Glass 主源，国内直连、无 API 限流）→ GitHub API 兜底；
+    /// 下载候选链含本桶直连 → 加速镜像 → GitHub 直连。
+    /// 桶由本 fork 自己控制、CI 发版时自动上传 exe/zip/补丁/清单，不受原作者影响。
     /// </summary>
-    public const string BuiltInPrimaryBaseUrl = "";
+    public const string BuiltInPrimaryBaseUrl = "https://pub-e6a361994f044baaaf4850ed7c9f2449.r2.dev";
 
     /// <summary>
     /// GitHub Raw 清单基址（2026-11-26 改用）：raw.githubusercontent.com 不走 api.github.com
@@ -97,10 +96,12 @@ public static class Updater
     /// <summary>设置页展示用的一句话通道描述（真实生效值，不是配置意向）。</summary>
     public static string DescribeChannel()
     {
+        // 2026-11-26：版本检查已改走 Raw 清单（无 API 限流），这句描述的是"下载"通道，
+        // 不再用"未配置主源"制造误解——Raw 清单不是下载源，131MB 的 exe 仍走镜像/GitHub。
         if (string.IsNullOrEmpty(PrimaryBaseUrl))
-            return "加速镜像 → GitHub 直连（未配置主源）";
+            return "Raw 清单查版本 → 加速镜像 / GitHub 下载";
         string host = Uri.TryCreate(PrimaryBaseUrl, UriKind.Absolute, out var uri) ? uri.Host : PrimaryBaseUrl;
-        return $"主源 {host} → 加速镜像 → GitHub 直连";
+        return $"Raw 清单查版本 → 主源 {host} → 加速镜像 → GitHub 下载";
     }
 
     /// <summary>下载加速镜像前缀（第三方 GitHub 反代，拼在完整原始 URL 前）。镜像清单与「GitHub 访问加速」

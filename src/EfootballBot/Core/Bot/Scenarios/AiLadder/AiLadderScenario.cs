@@ -80,6 +80,9 @@ public sealed class AiLadderScenario : IScenario
     private DateTime _lastMaxLevelAt = DateTime.MinValue;
     /// <summary>上次已播报的组别（变化才记日志，防每轮刷屏；0=尚未读到）。</summary>
     private int _divisionLogged;
+    /// <summary>启动兜底：评分尚未读到时，第一次遇到类别页先 B 回组别主页读一次评分
+    /// （用户 2026-11-26：启动时若不在主页就永远看不到分数）。读到后本标志失效，不影响正常续场。</summary>
+    private bool _initialRatingProbeDone;
     /// <summary>比赛页卡行中「eFootball™联赛」卡槽位（0 起；实机 2026-10-14 截图：第 3 卡）。</summary>
     private const int HubStartSlot = 2;
 
@@ -436,6 +439,16 @@ public sealed class AiLadderScenario : IScenario
     private async Task<int> HandleCategoryAsync()
     {
         if (_streak < 1) return 800;
+        // 启动兜底：评分从未读到（值 0）且本会话还没探测过 → 先 B 回组别主页读一次评分。
+        // 只做一次、只在评分缺失时做；正常续场（评分已有值）完全不受影响。
+        if (!_initialRatingProbeDone && _engine.Stats.AiLadderRating <= 0)
+        {
+            _initialRatingProbeDone = true;
+            _log("[AI天梯联赛] 启动时评分未读到，先回组别主页读一次实力评分", LogLevel.Info);
+            await _engine.Pad.Back();
+            SetPhase(AlPhase.Home);
+            return 2400;
+        }
         if (++_attempts > 5)
         {
             _log("[AI天梯联赛] 类别页多次未进入组别主页，B 返回比赛页重新进入", LogLevel.Warn);

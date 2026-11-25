@@ -101,7 +101,7 @@ public class UpdateDownloadTests : IDisposable
     public void 主源基址_通道描述展示真实生效域名()
     {
         Updater.Configure("https://pub-abc123.r2.dev");
-        Assert.Equal("主源 pub-abc123.r2.dev → 加速镜像 → GitHub 直连", Updater.DescribeChannel());
+        Assert.Equal("Raw 清单查版本 → 主源 pub-abc123.r2.dev → 加速镜像 → GitHub 下载", Updater.DescribeChannel());
     }
 
     [Theory]
