@@ -170,6 +170,22 @@ public static class HubTileLocator
         { "比赛", "我的球队", "合约", "任务", "每日小游戏" };
 
     /// <summary>
+    /// 底部磁贴行是否已进入视野（宽松版，供「按需下移」迭代使用）：
+    /// 在 y≈0.62~0.92 认出 ≥1 个固定标签即认为已到底部行，不必读全 5 个。
+    /// 与严格版 FindMainMenuMatchOffset 的分工：本函数只判断"到了没"，格位仍交给严格版。
+    /// </summary>
+    public static bool IsMainMenuBottomRowVisible(OcrResult ocr)
+    {
+        foreach (var w in ocr.Words)
+        {
+            if (w.CenterY is < 0.62 or > 0.92) continue;
+            string norm = w.NormText.Replace(" ", "");
+            if (MainMenuLabels.Any(l => norm == l)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 主菜单「比赛」磁贴在底部卡片行的格位（0 起，按屏幕从左到右）。
     /// 只在底部行 y≈0.62~0.92 且认出 ≥3 个不同标签时才可信；否则返回 null 让调用方
     /// 回退原「下×2→左×6」饱和归位——主菜单标签 OCR 偶发读不全，绝不瞎猜格位。

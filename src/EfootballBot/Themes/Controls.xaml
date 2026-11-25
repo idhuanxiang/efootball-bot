@@ -618,6 +618,8 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="8"/>
         <Setter Property="Padding" Value="10,7"/>
+        <!-- 固定高度：动态模式下 2 格/3 格/4 格都保持同样大小，不因内容长短一大一小 -->
+        <Setter Property="Height" Value="42"/>
     </Style>
 
     <!-- ============ 操作栏容器（本次运行 / 主要操作） ============ -->

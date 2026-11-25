@@ -428,6 +428,10 @@ public sealed class AiLadderConfig
 
     /// <summary>完成场次后自动停止（本次挂机累计，无关键比赛概念）。0 = 无限跑。</summary>
     public int StopAfterMatches { get; set; } = 0;
+
+    /// <summary>达到实力评分后自动停止（2026-11-26）：0 = 不启用/无限；
+    /// 对应组别主页读到的「当前实力评分」（组 1~3 才有）。达到或超过即停。</summary>
+    public int StopAtRating { get; set; } = 0;
 }
 
 /// <summary>

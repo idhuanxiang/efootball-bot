@@ -28,4 +28,29 @@ public class UpdaterVersionTests
         Assert.True(v.Major >= 2);
         Assert.NotEqual(-1, v.Revision);
     }
+
+
+    // ---- GitHub Raw 清单方案（2026-11-26）：验证 CI 写入的清单格式与 Updater 读取契约一致 ----
+    [Fact]
+    public void RawManifest_版本化清单格式_能被解析()
+    {
+        // CI 写入仓库 update/latest.json 的实际格式
+        const string json = "{\"version\":\"9.0.3\",\"file\":\"EfootballBot.exe\"," +
+            "\"sha256\":\"2319aac85e0cc7fbbbb54ead5c6fb04c3080546157683ae5f87c06a944250c81\",\"size\":131449357}";
+        var opts = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var m = System.Text.Json.JsonSerializer.Deserialize<RawManifestProbe>(json, opts);
+        Assert.NotNull(m);
+        Assert.Equal("9.0.3", m!.Version);
+        Assert.Equal("EfootballBot.exe", m.File);
+        Assert.Equal(131449357, m.Size);
+        Assert.StartsWith("2319aac8", m.Sha256 ?? "");
+    }
+
+    // 与 Updater.R2Manifest 同形状的探针（私有类型不可直接测，验证反序列化契约）
+    private sealed record RawManifestProbe(string Version, long Size, string? Sha256, string? File);
+
+    [Fact]
+    public void RawManifestBaseUrl_指向本仓库main分支()
+        => Assert.Equal("https://raw.githubusercontent.com/idhuanxiang/efootball-bot/main/update",
+            Updater.RawManifestBaseUrl);
 }

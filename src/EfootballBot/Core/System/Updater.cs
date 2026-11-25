@@ -29,6 +29,14 @@ public static class Updater
     /// </summary>
     public const string BuiltInPrimaryBaseUrl = "";
 
+    /// <summary>
+    /// GitHub Raw 清单基址（2026-11-26 改用）：raw.githubusercontent.com 不走 api.github.com
+    /// 的 60 次/小时匿名限流，实测国内直连可通、ghfast.top 镜像可兜底。
+    /// CI 发版时把版本清单写入仓库 update/latest.json（与 exe 同仓、无需 Cloudflare 账号）。
+    /// </summary>
+    public const string RawManifestBaseUrl =
+        "https://raw.githubusercontent.com/idhuanxiang/efootball-bot/main/update";
+
     /// <summary>环境变量：临时把主源指向新桶/另一台机器做验证，不必改 config.json。</summary>
     public const string PrimaryBaseUrlEnvVar = "EFOOTBALL_UPDATE_BASE";
 
@@ -164,11 +172,51 @@ public static class Updater
         if (primary is not null)
             return Cache(primary, key);
 
+        // GitHub Raw 清单（2026-11-26）：与 api.github.com 不同域，不受 60 次/小时限流；
+        // 国内可直连、失败还有 ghfast.top 镜像兜底。优先于 GitHub API。
+        var raw = await CheckRawAsync(includePrerelease);
+        if (raw is not null)
+            return Cache(raw, key);
+
         var github = await CheckGitHubAsync(repository, includePrerelease);
         if (!github.IsError)
             return Cache(github, key);
 
-        return UpdateResult.Error("无法连接更新源（主源清单与 GitHub 均失败），请检查网络后重试");
+        return UpdateResult.Error("无法连接更新源（主源/Raw 清单与 GitHub 均失败），请检查网络后重试");
+    }
+
+    /// <summary>
+    /// GitHub Raw 清单检查（2026-11-26，替代 api.github.com 匿名限流的首选通道）：
+    /// 读仓库内 update/latest.json（CI 发版时写入），raw.githubusercontent.com 无限流、国内可直连。
+    /// 网络失败时按 镜像前缀 → raw 直连 顺序重试；清单不存在/损坏返回 null 交 GitHub 兜底。
+    /// </summary>
+    private static async Task<UpdateResult?> CheckRawAsync(bool includePrerelease)
+    {
+        string name = includePrerelease ? "latest-pre.json" : "latest.json";
+        string direct = $"{RawManifestBaseUrl}/{name}";
+        var urls = new List<string>();
+        urls.AddRange(FastGithubKernel.WithMirrors(direct)); // 镜像 → 直连（WithMirrors 内部去重、直连恒在最后）
+        foreach (string url in urls)
+        {
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+                http.DefaultRequestHeaders.UserAgent.ParseAdd("EfootballBot");
+                var m = await http.GetFromJsonAsync<R2Manifest>(url, JsonOpts);
+                if (m?.Version is null || !Version.TryParse(m.Version, out var remoteVer)) continue;
+                if (remoteVer <= CurrentVersion)
+                    return UpdateResult.AlreadyLatest($"已是最新版本 v{FormatVersion(CurrentVersion)}");
+                return UpdateResult.Available(remoteVer, $"v{remoteVer}",
+                    BuildDownloadUrls(remoteVer, ResolveManifestFileName(m.File), githubFileName: "EfootballBot.exe"),
+                    m.Size, null, singleExecutable: true,
+                    expectedSha256: string.IsNullOrWhiteSpace(m.Sha256) ? null : m.Sha256.ToLowerInvariant());
+            }
+            catch
+            {
+                continue; // 该通道不通，试下一个
+            }
+        }
+        return null;
     }
 
     /// <summary>主源检查：读桶内版本清单（匿名、无 API 限流、不用翻墙）。清单能读到就给出

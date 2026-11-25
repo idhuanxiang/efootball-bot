@@ -1,5 +1,8 @@
 using EfootballBot.Core.Input;
 
+// 迭代观察需要取消令牌（ObserveAsync 签名要求）
+
+
 // ===========================================================================
 // 架构锁 · 共享层 Core/Bot/Match（v7.2）
 // 本层职责：所有模块共用的能力 —— 界面分类、共享决策、赛中匹配 MatchPlay、流程记忆、像素探针、弹窗判定。
@@ -18,24 +21,47 @@ namespace EfootballBot.Core.Bot.Match;
 public static class MatchActionExecutor
 {
     /// <summary>
-    /// 主菜单进「比赛」磁贴：下×5 进底部卡行 → OCR 定位「比赛」格位（区分第 1 格 0 与未读全 null）
-    /// → 饱和左移归位 → 按需右移 → A。
+    /// 主菜单进「比赛」磁贴（2026-11-26 用户要求：像"自动左"一样按需定位，不盲写下×5）：
+    /// 逐次下移并用 OCR 确认底部磁贴行是否进入视野——读到就停（不再多按），
+    /// 再用严格 OCR 定位「比赛」格位 → 饱和左归位 → 按需右移 → A。
+    /// 最多下移 5 次仍读不出时回退原饱和路径（此时已按满 5 次下，行为与原逻辑等价，保底不退化）。
     /// </summary>
     public static async Task EnterMatchFromMainMenuAsync(
         BotEngine engine, Observation obs, Action<string, LogLevel> log, string module)
     {
-        await engine.Pad.DpadRepeat(PadDir.Down, 5); // 饱和下按到底部卡行（到底停住，防下少了按错）
-        if (HubTileLocator.FindMainMenuMatchOffset(obs.Ocr) is int matchOff)
+        const int MaxDownSteps = 5;
+        var current = obs;
+        int downSteps = 0;
+        // 若当前帧底部行已可见（焦点可能已在那一行），不必再下按
+        bool bottomVisible = HubTileLocator.IsMainMenuBottomRowVisible(current.Ocr);
+        while (!bottomVisible && downSteps < MaxDownSteps)
+        {
+            await engine.Pad.Dpad(PadDir.Down);
+            downSteps++;
+            try
+            {
+                current = await engine.ObserveAsync(CancellationToken.None, forceOcr: true);
+                bottomVisible = HubTileLocator.IsMainMenuBottomRowVisible(current.Ocr);
+            }
+            catch
+            {
+                break; // 观察失败不再继续盲按，交给下方兜底
+            }
+        }
+        if (HubTileLocator.FindMainMenuMatchOffset(current.Ocr) is int matchOff)
         {
             string rightPart = matchOff > 0 ? $"→右×{matchOff}" : "";
-            log($"[{module}] 主菜单导航：下×5→归位最左{rightPart}→A（OCR 定位比赛在第 {matchOff + 1} 格）", LogLevel.Info);
+            log($"[{module}] 主菜单导航：按需下×{downSteps}→归位最左{rightPart}→A（OCR 定位比赛在第 {matchOff + 1} 格）", LogLevel.Info);
             await engine.Pad.DpadRepeat(PadDir.Left, 6);
             if (matchOff > 0) await engine.Pad.DpadRepeat(PadDir.Right, matchOff);
         }
         else
         {
-            log($"[{module}] 主菜单导航：下×5→左×6→A（OCR 未读全底部磁贴，回退饱和归位）", LogLevel.Info);
-            engine.DumpSuspiciousFrame(obs.Frame, "menu_tile_ocr_incomplete", "主菜单底部磁贴 OCR 读不全，回退固定左×6 导航");
+            log($"[{module}] 主菜单导航：下×{downSteps}(OCR 未读全)→左×6→A（回退饱和归位）", LogLevel.Info);
+            engine.DumpSuspiciousFrame(current.Frame, "menu_tile_ocr_incomplete", "主菜单底部磁贴 OCR 读不全，回退固定左×6 导航");
+            // 若因为观察失败提前退出循环，补齐剩余下按，保持与原逻辑等价
+            if (downSteps < MaxDownSteps)
+                await engine.Pad.DpadRepeat(PadDir.Down, MaxDownSteps - downSteps);
             await engine.Pad.DpadRepeat(PadDir.Left, 6);
         }
         await engine.Pad.Confirm();

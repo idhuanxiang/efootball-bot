@@ -357,12 +357,23 @@ public sealed class AiLadderScenario : IScenario
                 if (_streak < 1) return 800; // 过渡帧防抖：主页稳定一拍再开始判断
                 // 当前实力评分：只在组别主页（用户指定这一页）读取，更新一次即长期显示。
                 // 组 1~3 才有该字段；组 4~10 主页无「当前实力评分」标签，读不到自然不显示。
-                if (AiLadderBrain.ParseHomeRating(obs.Ocr) is { } homeRating &&
-                    homeRating != _engine.Stats.AiLadderRating)
+                if (AiLadderBrain.ParseHomeRating(obs.Ocr) is { } homeRating)
                 {
-                    _engine.Stats.AiLadderRating = homeRating;
-                    _engine.EmitStatsNow();
-                    _log($"[AI天梯联赛] 当前实力评分 {homeRating}（组别主页）", LogLevel.Success);
+                    if (homeRating != _engine.Stats.AiLadderRating)
+                    {
+                        _engine.Stats.AiLadderRating = homeRating;
+                        _engine.EmitStatsNow();
+                        _log($"[AI天梯联赛] 当前实力评分 {homeRating}（组别主页）", LogLevel.Success);
+                    }
+                    // 达到设定分数停止（2026-11-26）：0=不启用；达到或超过即停。
+                    // 只认主页读到的真实评分，不用会话残留值，避免误停。
+                    int stopRating = _engine.Config.AiLadder.StopAtRating;
+                    if (stopRating > 0 && homeRating >= stopRating)
+                    {
+                        _log($"[AI天梯联赛] 实力评分已达 {homeRating}（目标 {stopRating}），自动停止挂机", LogLevel.Success);
+                        _engine.Stop();
+                        return 0;
+                    }
                 }
                 // 组别检测（可选停止条件）：主页左上角 组别X；变化才播报，防刷屏
                 int? div = AiLadderBrain.ParseDivision(obs.Ocr);

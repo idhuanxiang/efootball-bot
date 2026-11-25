@@ -627,11 +627,10 @@ public partial class MainWindow
         StKey.Text = s.KeyMatches.ToString();
         StMaxed.Text = s.PlayersMaxed.ToString();
         StElapsed.Text = s.StartedAt is null ? "—" : (DateTime.Now - s.StartedAt.Value).ToString(@"hh\:mm\:ss");
-        StRating.Text = s.AiLadderRating > 0 ? s.AiLadderRating.ToString("N0") : "—";
-        // 组别：AI天梯下把标签写成「组别X · 实力评分」，一格同时给出两个信息（用户 2026-11-25 要求）
-        RatingLabel.Text = s.AiLadderDivision is >= 1 and <= 10
-            ? $"组别{s.AiLadderDivision} · 评分"
-            : "实力评分";
+        // 软件内不带千位逗号显示（游戏画面带，用户 2026-11-26：软件里不需要）
+        StRating.Text = s.AiLadderRating > 0 ? s.AiLadderRating.ToString() : "—";
+        // 标签固定为「实力评分」（用户 2026-11-26 更正：不显示组别）
+        RatingLabel.Text = "实力评分";
         StError.Text = string.IsNullOrEmpty(s.LastError) ? "" : $"最近错误：{s.LastError}";
         StError.Visibility = string.IsNullOrEmpty(s.LastError) ? Visibility.Collapsed : Visibility.Visible;
         StPerf.Text = string.IsNullOrEmpty(s.PerfNote) ? "" : $"性能：{s.PerfNote}";

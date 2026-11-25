@@ -148,7 +148,9 @@ public partial class MainWindow
         {
             if (panel.Children[j] is TextBox txt)
             {
-                txt.Visibility = cmb.SelectedIndex == StopAfterPresets.Length
+                // 按 ComboBox 自身项数判断最后一项「自定义」——评分停止预设数是 5，
+                // 场次停止是 6，不能统一用 StopAfterPresets.Length（否则评分永不出输入框）
+                txt.Visibility = cmb.SelectedIndex == cmb.Items.Count - 1
                     ? Visibility.Visible
                     : Visibility.Collapsed;
                 return;
@@ -305,6 +307,7 @@ public partial class MainWindow
         int aiDiv = _cfg.AiLadder.StopAtDivision;
         CmbAiStopAtDivision.SelectedIndex = aiDiv is >= 1 and <= 10 ? 11 - aiDiv : 0;
         LoadStopAfterUi(CmbAiStopAfterMatches, TxtAiStopAfterMatches, _cfg.AiLadder.StopAfterMatches);
+        TxtAiStopAtRating.Text = _cfg.AiLadder.StopAtRating > 0 ? _cfg.AiLadder.StopAtRating.ToString() : "0";
 
         // 种马球员培训（购买）：两类买入数量 + 培训开关 + 技能卡消耗数量
         _loadingConfig = true;
@@ -531,6 +534,9 @@ public partial class MainWindow
             ? 11 - CmbAiStopAtDivision.SelectedIndex
             : 0;
         _cfg.AiLadder.StopAfterMatches = SaveStopAfterUi(CmbAiStopAfterMatches, TxtAiStopAfterMatches);
+        // 用户直接填数字：0=无限；非法输入（负/非数字）按 0 处理，避免误停
+        _cfg.AiLadder.StopAtRating = int.TryParse(TxtAiStopAtRating.Text.Trim(), out int stopRating) && stopRating > 0
+            ? stopRating : 0;
 
         // 种马球员培训（购买）：两类数量分开保存，默认非门将 1、门将 0
         _cfg.StudTraining.BuyGoalkeeperCount =

@@ -17,6 +17,7 @@ public partial class StartConfirmDialog : Window
     public StartConfirmDialog()
     {
         InitializeComponent();
+        ApplyShellBackdrop(); // 跟随本体外观世界：Glass=毛玻璃薄透 / Fluent=云母薄透
         // 取消或点标题栏 X 关闭时也要停表，避免 timer 持有已关闭 Window 继续 tick 5 秒
         Closed += (_, _) => _countdown.Stop();
         if (AlreadyRead())
@@ -59,6 +60,48 @@ public partial class StartConfirmDialog : Window
     {
         DialogResult = false;
         Close();
+    }
+
+    /// <summary>
+    /// 外壳透明度跟随软件本体的外观世界（用户 2026-11-26 要求）：
+    /// Glass（黑玻璃）= 0x8C 明显透出壁纸；Fluent（Win11 云母）= 0xF2 薄透。
+    /// 优先复用主窗口已应用的 WindowBg 资源（含正确透明度），读不到时读配置判定世界，
+    /// 全程不改全局资源、不影响主窗口材质。
+    /// </summary>
+    private void ApplyShellBackdrop()
+    {
+        try
+        {
+            System.Windows.Media.SolidColorBrush? baseBrush = null;
+            if (Application.Current?.Resources["WindowBg"] is System.Windows.Media.SolidColorBrush b)
+                baseBrush = b;
+            if (baseBrush is not null && baseBrush.Color.A < 0xFF)
+            {
+                // 主窗口已应用材质：直接沿用它的颜色与透明度
+                var c = baseBrush.Color;
+                var brush = new System.Windows.Media.SolidColorBrush(c);
+                brush.Freeze();
+                Shell.Background = brush;
+                return;
+            }
+            var cfg = EfootballBot.Core.Config.AppConfig.Load();
+            bool glass = EfootballBot.Core.UI.ThemeManager.IsGlassWorld(cfg.Appearance.World);
+            var fb = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromArgb(glass ? (byte)0x8C : (byte)0xF2, 0x17, 0x1A, 0x20));
+            fb.Freeze();
+            Shell.Background = fb;
+        }
+        catch
+        {
+            // 读取失败保持 XAML 默认（半透明黑），不影响弹窗可用
+        }
+    }
+
+    /// <summary>无边框窗口靠标题栏区域拖动（WindowStyle=None 没有系统拖拽）。</summary>
+    private void OnDrag(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
+            DragMove();
     }
 
     // ★用 AppPaths.DataDir 而非 AppContext.BaseDirectory：单文件发布下 BaseDirectory 是
