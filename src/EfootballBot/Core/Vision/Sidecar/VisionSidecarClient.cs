@@ -28,6 +28,9 @@ public sealed class VisionSidecarClient : IAsyncDisposable
     private readonly Task _readLoop;
     private int _nextId;
     private int _disposed;
+    private volatile string? _closedReason;
+
+    public bool IsDisconnected => _closedReason is not null;
 
     public string PipeName { get; }
     /// <summary>帧环（init ack 之后必定非空）。</summary>
@@ -40,6 +43,7 @@ public sealed class VisionSidecarClient : IAsyncDisposable
     public static event Action<string>? RawTrace;
     private UploadFrameRing? _up;
     private readonly object _upGate = new();
+    private readonly SemaphoreSlim _uploadRpcGate = new(1, 1);
 
     /// <summary>最近一次 detect 的 sidecar 诊断文本（dims/max_score）。</summary>
     public string? LastDetectInfo { get; private set; }
@@ -195,22 +199,29 @@ public sealed class VisionSidecarClient : IAsyncDisposable
     /// <param name="fromCapture">true = 这一帧就是本侧车刚捕获的帧，直接用，不写上传共享内存。</param>
     public async Task<OcrResult> RecognizeAsync(FrameData frame, bool fromCapture = false, CancellationToken ct = default)
     {
-        VisionMsg req;
+        VisionMsg reply;
         if (fromCapture)
         {
-            req = new VisionMsg { Cmd = "ocr", Src = "capture" };
+            reply = await SendAsync(new VisionMsg { Cmd = "ocr", Src = "capture" }, 60000, ct).ConfigureAwait(false);
         }
         else
         {
-            long seq;
-            lock (_upGate)
+            await _uploadRpcGate.WaitAsync(ct).ConfigureAwait(false);
+            try
             {
-                _up ??= new UploadFrameRing($"Local\\EfootballVision-up-{PipeName}", 3840, 2160);
-                seq = _up.Publish(frame);
+                long seq;
+                lock (_upGate)
+                {
+                    _up ??= new UploadFrameRing($"Local\\EfootballVision-up-{PipeName}", 3840, 2160);
+                    seq = _up.Publish(frame);
+                }
+                reply = await SendAsync(new VisionMsg { Cmd = "ocr", UpSeq = (ulong)seq }, 60000, ct).ConfigureAwait(false);
             }
-            req = new VisionMsg { Cmd = "ocr", UpSeq = (ulong)seq };
+            finally
+            {
+                _uploadRpcGate.Release();
+            }
         }
-        var reply = await SendAsync(req, 60000, ct).ConfigureAwait(false);
         if (reply.Ev == "error")
             throw new InvalidOperationException($"sidecar OCR 失败：{reply.Text}");
         var words = (reply.Words ?? new List<SidecarWord>())
@@ -225,22 +236,29 @@ public sealed class VisionSidecarClient : IAsyncDisposable
     public async Task<IReadOnlyList<(int C, float S, float X, float Y, float W, float H)>> DetectAsync(
         FrameData frame, bool fromCapture = false, CancellationToken ct = default)
     {
-        VisionMsg req;
+        VisionMsg reply;
         if (fromCapture)
         {
-            req = new VisionMsg { Cmd = "detect", Src = "capture" };
+            reply = await SendAsync(new VisionMsg { Cmd = "detect", Src = "capture" }, 60000, ct).ConfigureAwait(false);
         }
         else
         {
-            long seq;
-            lock (_upGate)
+            await _uploadRpcGate.WaitAsync(ct).ConfigureAwait(false);
+            try
             {
-                _up ??= new UploadFrameRing($"Local\\EfootballVision-up-{PipeName}", 3840, 2160);
-                seq = _up.Publish(frame);
+                long seq;
+                lock (_upGate)
+                {
+                    _up ??= new UploadFrameRing($"Local\\EfootballVision-up-{PipeName}", 3840, 2160);
+                    seq = _up.Publish(frame);
+                }
+                reply = await SendAsync(new VisionMsg { Cmd = "detect", UpSeq = (ulong)seq }, 60000, ct).ConfigureAwait(false);
             }
-            req = new VisionMsg { Cmd = "detect", UpSeq = (ulong)seq };
+            finally
+            {
+                _uploadRpcGate.Release();
+            }
         }
-        var reply = await SendAsync(req, 60000, ct).ConfigureAwait(false);
         if (reply.Ev == "error")
             throw new InvalidOperationException($"sidecar detect 失败：{reply.Text}");
         LastDetectInfo = reply.Text;
@@ -257,6 +275,11 @@ public sealed class VisionSidecarClient : IAsyncDisposable
         var json = JsonSerializer.Serialize(cmd, VisionMsg.Json);
         var tcs = new TaskCompletionSource<VisionMsg>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = tcs;
+        if (_closedReason is { } closed)
+        {
+            _pending.TryRemove(id, out _);
+            return new VisionMsg { Ev = "error", Id = id, Text = closed };
+        }
         try
         {
             if (!await _writeLock.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs), ct).ConfigureAwait(false))
@@ -331,6 +354,8 @@ public sealed class VisionSidecarClient : IAsyncDisposable
         }
         finally
         {
+            var reason = disconnectReason ?? "管道已断开";
+            _closedReason = reason;
             foreach (var kv in _pending)
             {
                 if (_pending.TryRemove(kv.Key, out var tcs))
@@ -338,7 +363,7 @@ public sealed class VisionSidecarClient : IAsyncDisposable
                     {
                         Ev = "error",
                         Id = kv.Key,
-                        Text = disconnectReason ?? "管道已断开",
+                        Text = reason,
                     });
             }
         }
@@ -352,6 +377,7 @@ public sealed class VisionSidecarClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        _closedReason ??= "客户端已关闭";
         try
         {
             if (_pipe.IsConnected)

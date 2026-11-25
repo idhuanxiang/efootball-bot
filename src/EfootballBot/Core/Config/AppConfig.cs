@@ -807,10 +807,11 @@ public sealed class AppConfig
 
     internal static AppConfig LoadFrom(string path, bool saveOnUpgrade = false)
     {
-        try
+        for (int attempt = 0; attempt < 3; attempt++)
         {
-            if (File.Exists(path))
+            try
             {
+                if (!File.Exists(path)) return new AppConfig();
                 string text = File.ReadAllText(path);
                 var cfg = JsonSerializer.Deserialize<AppConfig>(text, JsonOpts) ?? new AppConfig();
                 // 老配置没有 SchemaVersion 字段：反序列化会保留属性默认值（=当前版本），
@@ -829,18 +830,28 @@ public sealed class AppConfig
                 }
                 return cfg;
             }
-        }
-        catch
-        {
-            // 配置损坏（写入中途崩溃/被杀软占用截断）：把坏文件改名留档再回退默认启动，
-            // 防止「静默回退默认值 → 运行中任何一次 Save 用默认值覆盖用户全部配置」后无从排查
-            try
+            catch (JsonException)
             {
-                var bad = path + ".bad";
-                if (File.Exists(bad)) File.Delete(bad);
-                File.Move(path, bad);
+                // 配置损坏（写入中途崩溃/被杀软占用截断）：把坏文件改名留档再回退默认启动，
+                // 防止「静默回退默认值 → 运行中任何一次 Save 用默认值覆盖用户全部配置」后无从排查
+                try
+                {
+                    var bad = path + ".bad";
+                    if (File.Exists(bad)) File.Delete(bad);
+                    File.Move(path, bad);
+                }
+                catch { /* 留档失败不阻塞启动 */ }
+                return new AppConfig();
             }
-            catch { /* 留档失败不阻塞启动 */ }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 瞬时文件锁（例如 GUI/Worker 并发替换刚结束）：短暂重试，绝不误判为坏文件并改名留档
+                if (attempt < 2) Thread.Sleep(50 * (attempt + 1));
+            }
+            catch
+            {
+                return new AppConfig();
+            }
         }
         return new AppConfig();
     }
@@ -869,10 +880,16 @@ public sealed class AppConfig
     public void Save()
     {
         Directory.CreateDirectory(ConfigDir);
-        // 原子替换：先写临时文件再 Move 覆盖，绝不产生写了一半的截断 JSON
-        //（截断 → 下次启动静默回退默认 → 用户配置被默认值覆盖，数据丢失级故障）
-        var tmp = ConfigPath + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOpts));
-        File.Move(tmp, ConfigPath, overwrite: true);
+        // 原子替换：进程+GUID 唯一临时文件，防止 GUI 与 Worker 并发 Save 时互踩同一 .tmp
+        var tmp = $"{ConfigPath}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOpts));
+            File.Move(tmp, ConfigPath, overwrite: true);
+        }
+        finally
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+        }
     }
 }

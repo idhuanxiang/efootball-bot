@@ -133,9 +133,11 @@ public sealed class AiLadderScenario : IScenario
                             || PeakLadderBrain.Classify(obs.Ocr, obs.Detections) != PlScreen.None
                             || myLeagueResidual);
         bool ownPage = al != AlScreen.None || inMatchFlow;
-        int? guideWait = await _homeGuide.StepAsync(obs.Frame,
-            ml == MatchScreen.MainMenu, ownPage, otherModule, () => _engine.Pad.Back(),
-            isMatchHub: HubTileLocator.IsRealMatchHub(ml, obs.Ocr));
+        int? guideWait = _hubTry == 0
+            ? await _homeGuide.StepAsync(obs.Frame,
+                ml == MatchScreen.MainMenu, ownPage, otherModule, () => _engine.Pad.Back(),
+                isMatchHub: HubTileLocator.IsRealMatchHub(ml, obs.Ocr))
+            : null;
         if (guideWait is not null) return guideWait.Value;
         if (!_takeoverLogged)
         {
@@ -145,7 +147,8 @@ public sealed class AiLadderScenario : IScenario
         // ---- 赛中匹配（共享层 MatchPlay）：开赛/终场/超时判定 + 场次记账全在这里，
         //      模块只做自己的收尾（组别主页是本模块的"菜单"，到这里才允许开下一场）
         if (al == AlScreen.DivisionHome || al == AlScreen.CategorySelect) _matchPlay.MarkAtMenu();
-        var tick = _matchPlay.Tick(ml, now, sawKeyMatchHint: false, isHome: false);
+        var tick = _matchPlay.Tick(al == AlScreen.DivisionHome ? MatchScreen.LeaguePage : ml, now,
+            sawKeyMatchHint: false, isHome: al == AlScreen.DivisionHome);
         if (tick.Started) _homeRound = 0; // 开赛成功=盲试配方有效，重置主页重试轮数
         if (tick.Ended && tick.EndedTrusted)
         {
@@ -205,7 +208,7 @@ public sealed class AiLadderScenario : IScenario
                 // 扫格途中按 A 打开了别的板块页（我的联赛/锦标赛/活动列表等）：
                 // 不是类别页就 B 退回比赛页，下一轮换下一格（不落共享决策乱按）
                 if (_hubTry > 0 && al == AlScreen.None &&
-                    ml is MatchScreen.LeaguePage or MatchScreen.HasConfirm or MatchScreen.PointsPage or MatchScreen.ItemList)
+                    ml is MatchScreen.LeaguePage or MatchScreen.PointsPage or MatchScreen.ItemList)
                 {
                     _log($"[AI天梯联赛] 打开的是其他板块页面（{ml}），B 退回比赛页继续找 eFootball™联赛", LogLevel.Info);
                     // OCR 定位命中却仍进错：说明该格定位有偏差，下一轮换一格试（不重复按同一格）
@@ -222,6 +225,9 @@ public sealed class AiLadderScenario : IScenario
                         or WkScreen.ChallengeList)
                 {
                     _log($"[AI天梯联赛] 误入周活动板块（{wk}），B 退回比赛页", LogLevel.Info);
+                    if (_hubOcrPinned is int pinnedWk)
+                        _hubNextSlot = (pinnedWk + 1) % 4;
+                    _hubOcrPinned = null;
                     await _engine.Pad.Back();
                     return 2200;
                 }

@@ -109,8 +109,10 @@ public sealed class WorkerHost : IDisposable
         {
             // ★先置位再发命令：Worker 可能秒回 exited（如找不到游戏窗口），
             // 若置位在发送之后，读循环先清零、这里再置 true → 永久"在跑"（按钮全禁）
+            _actionRequiredReason = null;
             _scenarioRunning = true;
             await SendAsync(PipeProtocol.CmdStart(mode), CommandWriteTimeout);
+            _lastRunStartAt = DateTime.Now;
             return;
         }
         if (_process is not null)
@@ -207,7 +209,7 @@ public sealed class WorkerHost : IDisposable
         _pipe = connectedPipe;
         var readCts = new CancellationTokenSource();
         _readCts = readCts;
-        EmitLog("Info", $"Worker 管道已连接（耗时 {sw.ElapsedMilliseconds}ms），发送启动命令…");
+        EmitLog("Info", $"[启动] 工作进程已就绪（耗时 {sw.ElapsedMilliseconds}ms），正在初始化挂机场景…");
 
         // 读循环：复用握手 reader 接收 Worker 事件。回调内任何异常吞掉，绝不让它冒到 StartAsync
         _ = PipeProtocol.ReadLoopAsync(reader, msg =>
@@ -342,7 +344,7 @@ public sealed class WorkerHost : IDisposable
 
             _autoRestartCount++;
             _lastAutoRestartAt = now;
-            EmitLog("Warn", $"Worker 意外退出，{AutoRestartDelaySeconds} 秒后自动重启并恢复挂机（第 {_autoRestartCount}/{MaxConsecutiveRestarts} 次）…");
+            EmitLog("Warn", $"[恢复] Worker 意外退出，{AutoRestartDelaySeconds} 秒后自动重启并恢复挂机（第 {_autoRestartCount}/{MaxConsecutiveRestarts} 次）…");
             _autoRestarting = true;
             try
             {
@@ -351,11 +353,11 @@ public sealed class WorkerHost : IDisposable
                 if (_disposed || !_expectedRunning) return; // 用户恰好在延迟内点了停止
                 await StartInternalAsync(_lastMode!);
                 _lastRunStartAt = DateTime.Now;
-                EmitLog("Success", "Worker 已自动重启，挂机继续。");
+                EmitLog("Success", "[恢复] Worker 已自动重启，挂机继续。");
             }
             catch (Exception ex)
             {
-                EmitLog("Error", $"Worker 自动重启失败：{ex.Message}");
+                EmitLog("Error", $"[恢复] Worker 自动重启失败：{ex.Message}");
             }
             finally
             {
@@ -450,6 +452,8 @@ public sealed class WorkerHost : IDisposable
         _pipe = null;
         try { process?.Dispose(); } catch { }
         _process = null;
+        _remotePid = 0;
+        try { _readCts?.Dispose(); } catch { }
         _readCts = null;
     }
 
@@ -532,6 +536,8 @@ public sealed class WorkerHost : IDisposable
     /// </summary>
     private static readonly TimeSpan CommandWriteTimeout = TimeSpan.FromSeconds(25);
 
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+
     private Task SendAsync(PipeProtocol.Msg msg) => SendAsync(msg, PipeWriteTimeout);
 
     private async Task SendAsync(PipeProtocol.Msg msg, TimeSpan timeout)
@@ -540,13 +546,23 @@ public sealed class WorkerHost : IDisposable
         if (pipe is null || !pipe.IsConnected)
             throw new InvalidOperationException("Worker 管道未连接");
         using var cts = new CancellationTokenSource(timeout);
+        bool locked = false;
         try
         {
+            await _writeLock.WaitAsync(cts.Token);
+            locked = true;
             await PipeProtocol.WriteLineAsync(pipe, msg, cts.Token);
         }
         catch (OperationCanceledException)
         {
             throw new TimeoutException($"向 Worker 发送命令超时（{timeout.TotalSeconds:F0}s），Worker 可能已卡死");
+        }
+        finally
+        {
+            if (locked)
+            {
+                try { _writeLock.Release(); } catch { }
+            }
         }
     }
 
@@ -607,6 +623,7 @@ public sealed class WorkerHost : IDisposable
         }
         finally
         {
+            _writeLock.Dispose();
             _lifecycle.Dispose();
         }
     }

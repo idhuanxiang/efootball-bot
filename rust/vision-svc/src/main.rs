@@ -334,7 +334,7 @@ fn bench(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
             samples.push(t.elapsed().as_secs_f64() * 1000.0);
         }
     }
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    samples.sort_by(|a, b| a.total_cmp(b));
     if samples.is_empty() {
         println!("没有采到样本（桌面无变化时 Desktop Duplication 不产出新帧，属正常）");
         return Ok(());
@@ -535,6 +535,7 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
         yolo: Mutex::new(None),
     });
     let mut cap_stop: Option<Arc<AtomicBool>> = None;
+    let mut cap_thread: Option<std::thread::JoinHandle<()>> = None;
 
     loop {
         // 每轮先把捕获线程产出的事件全部写出去（写不与读互相阻塞，见 pipe.rs 顶部说明）
@@ -571,6 +572,12 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                         .shm
                         .clone()
                         .unwrap_or_else(|| format!("Local\\EfootballVision-v1-{name}"));
+                    if let Some(hwnd) = msg.hwnd {
+                        *shared.hwnd.lock().unwrap() = hwnd as isize;
+                    }
+                    if let Some(b) = msg.backend.clone() {
+                        *shared.backend.lock().unwrap() = b;
+                    }
                     if let Some(dir) = msg.models.clone() {
                         *shared.models_dir.lock().unwrap() = dir;
                     }
@@ -620,8 +627,11 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                         if let Some(stop) = cap_stop.take() {
                             stop.store(true, Ordering::Release);
                         }
+                        if let Some(h) = cap_thread.take() {
+                            let _ = h.join();
+                        }
                         let stop = Arc::new(AtomicBool::new(false));
-                        spawn_capture_thread(shared.clone(), stop.clone(), ev_tx.clone(), args.verbose);
+                        cap_thread = Some(spawn_capture_thread(shared.clone(), stop.clone(), ev_tx.clone(), args.verbose));
                         cap_stop = Some(stop);
                         conn.send(&Msg::ack(id, None).to_line())?;
                     }
@@ -629,6 +639,9 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                 "stop" => {
                     if let Some(stop) = cap_stop.take() {
                         stop.store(true, Ordering::Release);
+                    }
+                    if let Some(h) = cap_thread.take() {
+                        let _ = h.join();
                     }
                     conn.send(&Msg::ack(id, None).to_line())?;
                 }
@@ -642,12 +655,23 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                     match capture::Capturer::new(&backend, hwnd) {
                         Ok(mut cap) => {
                             let mut got = None;
+                            let mut grab_err: Option<String> = None;
                             for _ in 0..30 {
-                                if let Some(f) = cap.next_frame(60)? {
-                                    got = Some(f);
-                                    break;
+                                match cap.next_frame(60) {
+                                    Ok(Some(f)) => {
+                                        got = Some(f);
+                                        break;
+                                    }
+                                    Ok(None) => {}
+                                    Err(e) => {
+                                        grab_err = Some(e.to_string());
+                                        break;
+                                    }
                                 }
                             }
+                            if let Some(err_msg) = grab_err {
+                                conn.send(&Msg::err(id, format!("抓帧失败: {err_msg}")).to_line())?;
+                            } else {
                             // auto 模式：DXGI 抓到全黑且窗口有效 → 换 WGC 再抓一次
                             if backend == "auto" && hwnd != 0 {
                                 if let Some(f) = &got {
@@ -683,6 +707,7 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                                 None => {
                                     conn.send(&Msg::err(id, "60ms×30 次内没有新帧").to_line())?;
                                 }
+                            }
                             }
                         }
                         Err(e) => {
@@ -758,19 +783,28 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                                 guard.as_mut().and_then(|r| r.read(msg.up_seq.unwrap_or(0)))
                             }
                         };
-                        let snap = match from_ring.or(uploaded) {
-                            Some((bgra, w, h, stride)) => Some((bgra, w, h, stride)),
-                            None => shared
-                                .last
-                                .lock()
-                                .unwrap()
-                                .clone()
-                                .map(|s| (s.bgra.clone(), s.w, s.h, s.stride)),
+                        let snap = if msg.up_seq.is_some() && !from_capture {
+                            uploaded
+                        } else {
+                            match from_ring.or(uploaded) {
+                                Some((bgra, w, h, stride)) => Some((bgra, w, h, stride)),
+                                None => shared
+                                    .last
+                                    .lock()
+                                    .unwrap()
+                                    .clone()
+                                    .map(|s| (s.bgra.clone(), s.w, s.h, s.stride)),
+                            }
                         };
                         shared.want_frames.store(true, Ordering::Relaxed);
                         match snap {
                             None => {
-                                conn.send(&Msg::err(id, "还没有可用帧（先 start/grab，或通过 up 上传帧）").to_line())?;
+                                let reason = if msg.up_seq.is_some() && !from_capture {
+                                    "无法读取上传帧（up_seq 不可用或共享内存未就绪）"
+                                } else {
+                                    "还没有可用帧（先 start/grab，或通过 up 上传帧）"
+                                };
+                                conn.send(&Msg::err(id, reason).to_line())?;
                             }
                             Some(s) => {
                                 let img = preproc::Bgra { data: &s.0, w: s.1, h: s.2, stride: s.3 };
@@ -832,13 +866,22 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                             }
                             guard.as_mut().and_then(|r| r.read(msg.up_seq.unwrap_or(0)))
                         };
-                        from_ring.or(uploaded).or_else(|| {
-                            shared.last.lock().unwrap().clone().map(|s| (s.bgra.clone(), s.w, s.h, s.stride))
-                        })
+                        if msg.up_seq.is_some() && !from_capture {
+                            uploaded
+                        } else {
+                            from_ring.or(uploaded).or_else(|| {
+                                shared.last.lock().unwrap().clone().map(|s| (s.bgra.clone(), s.w, s.h, s.stride))
+                            })
+                        }
                     };
                     match (snap, dir.is_empty()) {
                         (None, _) => {
-                            conn.send(&Msg::err(id, "还没有可用帧").to_line())?;
+                            let reason = if msg.up_seq.is_some() && !from_capture {
+                                "无法读取上传帧（up_seq 不可用或共享内存未就绪）"
+                            } else {
+                                "还没有可用帧"
+                            };
+                            conn.send(&Msg::err(id, reason).to_line())?;
                         }
                         (Some(_), true) => {
                             conn.send(&Msg::err(id, "未提供 models 目录（init.models）").to_line())?;
@@ -910,6 +953,9 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(stop) = cap_stop.take() {
                         stop.store(true, Ordering::Release);
                     }
+                    if let Some(h) = cap_thread.take() {
+                        let _ = h.join();
+                    }
                     conn.send(&Msg::ack(id, None).to_line())?;
                     shutdown = true;
                 }
@@ -958,7 +1004,7 @@ fn spawn_capture_thread(
     stop: Arc<AtomicBool>,
     ev_tx: Sender<Msg>,
     verbose: bool,
-) {
+) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let hwnd = *shared.hwnd.lock().unwrap();
         let requested = shared.backend.lock().unwrap().clone();
@@ -1055,5 +1101,5 @@ fn spawn_capture_thread(
             }
         }
         let _ = ev_tx.send(Msg::log("Info", "捕获线程退出".to_string()));
-    });
+    })
 }

@@ -150,11 +150,24 @@ public static class WorkerProgram
             });
         }
 
+        var writeLock = new SemaphoreSlim(1, 1);
+        int previewIntervalMs = PreviewFrameIntervalMs;
+
         async Task SendAsync(PipeProtocol.Msg msg)
         {
-            if (pipe is null || !pipe.IsConnected) return;
-            try { await PipeProtocol.WriteLineAsync(pipe, msg); }
+            var p = pipe;
+            if (p is null || !p.IsConnected) return;
+            await writeLock.WaitAsync();
+            try
+            {
+                if (p.IsConnected)
+                    await PipeProtocol.WriteLineAsync(p, msg);
+            }
             catch { /* 管道断开 */ }
+            finally
+            {
+                writeLock.Release();
+            }
         }
 
         void BridgeEvents(BotEngine e)
@@ -214,7 +227,7 @@ public static class WorkerProgram
                             string b64 = EncodePreviewJpeg(f.Bgra, f.Width, f.Height);
                             await SendAsync(PipeProtocol.EvPreview(b64));
                         }
-                        await Task.Delay(PreviewFrameIntervalMs, ct);
+                        await Task.Delay(Math.Clamp(Volatile.Read(ref previewIntervalMs), 100, 2000), ct);
                     }
                     catch (OperationCanceledException)
                     {
@@ -307,20 +320,21 @@ public static class WorkerProgram
                         await SendAsync(PipeProtocol.EvLog("Warn", "场景已在运行中，忽略重复 start"));
                         return;
                     }
-                    // 每次 start 重建引擎（干净状态）
-                    engine?.Dispose();
-                    var freshCfg = AppConfig.Load(); // 每次 start 读最新配置
-                    // 瘦身发布（ExternalModels）：模型可能不在包里 → 首次开始前按需下载一次。
-                    // 失败不阻断启动：OCR 会给出明确的缺失提示，用户也可手动放 models 目录。
-                    await ModelPack.EnsureAsync((m, lv) =>
-                    {
-                        if (console) Console.WriteLine($"[{lv}] {m}");
-                        _ = SendAsync(PipeProtocol.EvLog(lv.ToString(), m));
-                    });
-                    engine = new BotEngine(freshCfg);
-                    BridgeEvents(engine);
                     try
                     {
+                        // 每次 start 重建引擎（干净状态）
+                        engine?.Dispose();
+                        var freshCfg = AppConfig.Load(); // 每次 start 读最新配置
+                        Volatile.Write(ref previewIntervalMs, freshCfg.PreviewIntervalMs);
+                        // 瘦身发布（ExternalModels）：模型可能不在包里 → 首次开始前按需下载一次。
+                        // 失败不阻断启动：OCR 会给出明确的缺失提示，用户也可手动放 models 目录。
+                        await ModelPack.EnsureAsync((m, lv) =>
+                        {
+                            if (console) Console.WriteLine($"[{lv}] {m}");
+                            _ = SendAsync(PipeProtocol.EvLog(lv.ToString(), m));
+                        });
+                        engine = new BotEngine(freshCfg);
+                        BridgeEvents(engine);
                         await engine.StartAsync(msg.Mode);
                         if (console) Console.WriteLine($"[Worker] 场景已启动: {msg.Mode}");
                         // 预览开关若处于开启状态：引擎重建后重新启动推送循环
@@ -332,6 +346,7 @@ public static class WorkerProgram
                         // 启动失败的引擎里可能残留已开启的捕获会话等资源，整套释放防僵尸抓帧
                         var failed = Interlocked.Exchange(ref engine, null);
                         failed?.Dispose();
+                        FileLogger.Instance.Write($"启动场景失败：{ex}", LogLevel.Error);
                         await SendAsync(PipeProtocol.EvLog("Error", $"启动失败：{ex.Message}"));
                         await SendAsync(PipeProtocol.EvExited($"启动失败：{ex.Message}"));
                         // 手柄未让路：记下退出码，GUI 据此弹窗且不再自动重启（用户不动手也是白跑）
@@ -345,12 +360,16 @@ public static class WorkerProgram
                     var finishingEngine = Interlocked.Exchange(ref engine, null);
                     if (finishingEngine is not null)
                     {
-                        if (finishingEngine.IsRunning)
+                        try
                         {
-                            finishingEngine.Stop();
-                            await SendAsync(PipeProtocol.EvLog("Info", "已停止"));
+                            if (finishingEngine.IsRunning)
+                                finishingEngine.Stop();
+                            finishingEngine.Dispose();
                         }
-                        try { finishingEngine.Dispose(); } catch { }
+                        catch (Exception ex)
+                        {
+                            FileLogger.Instance.Write($"Worker stop 回收引擎异常：{ex.Message}", LogLevel.Warn);
+                        }
                         try { await finishingEngine.WaitPendingRestoreAsync(1200); } catch { }
                     }
                     // 确认事件：GUI 收到后立即回收进程。先释放 ViGEmClient 并等进程内手柄恢复落盘再回 Stopped，
@@ -422,7 +441,7 @@ public static class WorkerProgram
                 engine = null;
                 if (console) Console.WriteLine("[Worker] 因 GUI 断开而停止并释放引擎");
             }
-            StopPreviewLoop();
+            await StopPreviewLoopAsync();
             readCts.Cancel();
             pipe.Dispose();
             pipe = null;

@@ -49,7 +49,7 @@ public sealed class ReturnToHomeGuide
             if (_guiding)
             {
                 _log(isMatchHub
-                    ? $"[{_module}] 已退回比赛页，直接定位目标模块"
+                    ? $"[{_module}] 已在「比赛」总览页，直接定位目标入口，无需退回主菜单"
                     : $"[{_module}] 已收敛回主页，开始正常导航", Core.LogLevel.Success);
                 _guiding = false;
             }
@@ -75,7 +75,7 @@ public sealed class ReturnToHomeGuide
             return 8000;
         }
         _dump(frame, "other_module_page", "启动时停在其他模块页，B 退主页");
-        _log($"[{_module}] 其他模块残留页面，B 退回主页（{_escapeAttempts}/6）", Core.LogLevel.Info);
+        _log($"[{_module}] 检测到其他模块残留页，按 B 返回上级菜单（{_escapeAttempts}/6）", Core.LogLevel.Info);
         await back();
         return 2400;
     }

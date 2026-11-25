@@ -3,6 +3,21 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v9.0.1
+- **运行日志与筛选优化**：统一 `[HH:mm:ss]` 时间戳与 `[启动]`、`[切换]`、`[停止]`、`[恢复]`、`[预览]`、`[音频]`、`[设置]`、`[测速]`、`[配置]`、`[退出]` 等 `[分类]` 前缀；补全热键/暂停/继续/自动关闭/手动停止/Worker 启动与恢复/换人排查/游戏重启等缺失事件日志；修复「仅关键流程」过滤掉 `Warn`/`Error` 的问题；UI 报错仅显示简要信息，完整异常堆栈自动写入日志文件；`FileLogger` 禁用时释放刷新定时器并以锁保护读写状态
+- **比赛与场景状态机修复**：
+  - 修复 `SessionScheduler` 跨午夜时段归一化与 `_nextBreakAt` 日切/非休息暂停/长时钟跳变重置逻辑；修复 `DryRunPad` 跳过内层代理手柄连接/断开但保留 `Inner` 访问
+  - 修复 `BotEngine` 静默日志计数与卡死签名重置、启动配置摘要输出；修复 `ReturnToHomeGuide` 清除 `MatchHub` 残留与未完成提示；修复 `PopupBrain` 高光像素占比（`AccentShare`）判断；修复 `MatchBrain.Decide` 与 `MatchPlay` 耗时展示
+  - 修复国际服/国服场景状态机：`MaxLevelSwapBrain` BGRA 亮度公式与整词 `OK`/`是` 弹窗识别、`MaxLevelSwapController` 卡死上限与「下个赛季」识别、`CnWeeklyBrain` / `CnWeeklyScenario` / `PeakLadderScenario` / `CnMyLeagueScenario` / `AiLadderScenario` / `WeeklyEventScenario` / `StudFlowController` / `CnAdvance` 状态流转与按钮定位问题
+- **捕获、视觉 Sidecar 与手柄输入加固**：
+  - 修复 `ForegroundMouse` (`INPUT` 结构体去除无效填充，x64 尺寸修正为 40B) 与 `DwmLivePreview` (`Pack = 1`) P/Invoke ABI；修复前台/后台键鼠发送取消后键位残留（`try/finally` 强制抬起）
+  - 修复 `SharedPadWriter` 序列号初始化与 `MemoryBarrier`；修复 `ProxyPad` 并发状态同步及断开时 50ms PANIC 归零脉冲；修复 `VigemPad` 连接代次与互斥锁、`PhysicalPadControl` 实体手柄过滤与 `PadNodeHygiene` 异步读取
+  - 修复 `VisionSidecarClient` 上传与 RPC 串行化、`IsDisconnected` 状态与 `SidecarCaptureProvider` 重连清理；修复 `SharedFrameRing` 步幅/时间戳校验；修复 `WindowCapture`、`ObservationService`、`SidecarDetector`、`GdiWindowCapture`、`DxgiDesktopCaptureVortice` 资源生命周期与并发竞态
+- **界面、IPC、配置与系统更新加固**：
+  - 修复 `WorkerProgram` / `WorkerHost` 管道写入锁（`SemaphoreSlim`）、预览帧率按配置生效及停止异步等待；修复 `AppConfig` 独立 `.tmp` 原子保存与短暂 `IOException` 重试；修复多屏负坐标下的覆盖层与热键录制窗口边界及点击穿透恢复；修复 `MainWindow` 切页签保存配置、`Sidecar` 环境自检与测速按钮互斥
+  - 修复 `DiagReporter` 导出反馈包自动脱敏密钥/Webhook/Token 与 OEMCP 解码、`DeltaPatch` 大块拆分与溢出校验、`UpdateApplier` 校验 `text/html`/长度与时间戳、`Updater` 自定义文件名参数、`FastGithubKernel` / `UpdateHostsOptimizer` 共享锁与失败恢复、`CrashReporter` 结构体对齐（16B）与 `BackgroundParker` 句柄安全
+  - 加固 Rust `vision-svc`（WGC/DXGI 捕获与窗口重定位、OCR 预处理边界与行带严格排序、YOLO `xyxy`/转置输出、共享内存句柄释放）及 `tools/xinput-proxy`（`DLL_PROCESS_DETACH`、64 位原子 `PatchJmp`、动态加载系统 `xinput1_3`/`xinput1_4`、`Enable`/`Log` 开关与 `#100`/音频接口转发）
+
 ## v9.0.0
 
 ### 跨模块快捷切换与设置排版修复

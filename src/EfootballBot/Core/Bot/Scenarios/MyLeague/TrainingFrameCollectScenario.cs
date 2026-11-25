@@ -51,6 +51,7 @@ public sealed class TrainingFrameCollectScenario : IScenario
     private int _rounds;               // 导航等待轮次
     private int _backAttempts;         // 回主页 B 次数
     private int _tileScanMoves;        // 磁贴逐格扫描步数
+    private int _targetRetries;        // 单目标尝试退回上限（防加载慢或未认出无限往返）
 
     // ---- 每页批量采集 ----
     private const int BatchDurationMs = 10_000;   // 每页停留 10 秒
@@ -85,7 +86,7 @@ public sealed class TrainingFrameCollectScenario : IScenario
         var dets = obs.Detections;
         var screen = MatchBrain.Classify(dets, ocr);
         bool isMainMenu = screen == MatchScreen.MainMenu || MatchBrain.HasMainMenuNavBar(ocr);
-        bool isHub = screen == MatchScreen.MatchHub;
+        bool isHub = HubTileLocator.IsRealMatchHub(screen, ocr);
 
         switch (_phase)
         {
@@ -144,9 +145,23 @@ public sealed class TrainingFrameCollectScenario : IScenario
                 // 子页（我的联赛/锦标赛/周活动）：从比赛页点磁贴 + 白框焦点确认
                 if (!isHub)
                 {
-                    // 不在比赛页：若已在目标子页就直接采集，否则 B 退回比赛页
+                    // 不在比赛页：若已在目标子页就直接采集；否则先给 4 拍加载宽限，再 B 退回比赛页
                     var here = MatchBrain.CollectTrainingFrame(ocr, dets);
                     if (here is { } h && h.Tag == tag) { StartBatch(); return 0; }
+                    if (++_rounds < 5)
+                    {
+                        _log($"[训练帧] 等待进入「{target.Label}」（第 {_rounds}/4 帧）", LogLevel.Debug);
+                        return 1200;
+                    }
+                    if (++_targetRetries >= 4)
+                    {
+                        _log($"[训练帧] 多次无法识别进入 {target.Label}，跳过该目标", LogLevel.Warn);
+                        _done.Add(tag);
+                        _targetIndex++;
+                        _tileScanMoves = 0; _rounds = 0; _targetRetries = 0;
+                        await _engine.Pad.Back();
+                        return 2200;
+                    }
                     await _engine.Pad.Back();
                     _rounds = 0;
                     return 2400;
@@ -174,7 +189,7 @@ public sealed class TrainingFrameCollectScenario : IScenario
                     $"比赛页右移 6 格仍未读到「{target.Tile}」");
                 _done.Add(tag);
                 _targetIndex++;
-                _tileScanMoves = 0; _rounds = 0;
+                _tileScanMoves = 0; _rounds = 0; _targetRetries = 0;
                 return 500;
 
             // ---------- ③ 批量采集当前页 10 秒 ----------
@@ -200,7 +215,7 @@ public sealed class TrainingFrameCollectScenario : IScenario
                     _log($"[训练帧] {cur.Label} 采集完成：{_batchFrames} 帧 / 10 秒", LogLevel.Success);
                     _done.Add(cur.Tag);
                     _targetIndex++;
-                    _tileScanMoves = 0; _rounds = 0;
+                    _tileScanMoves = 0; _rounds = 0; _targetRetries = 0;
                     if (_targetIndex >= Targets.Length) { Finish("全部目标已采集"); return 1000; }
                     // 只有「子页采完→下一个子页」才需要 B 回比赛页；
                     // 主菜单采完→导航阶段自己按 A 进比赛页，比赛页采完→导航阶段直接点磁贴，

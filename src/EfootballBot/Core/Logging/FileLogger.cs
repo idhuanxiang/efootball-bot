@@ -66,6 +66,8 @@ public sealed class FileLogger : IDisposable
 
         if (!enabled)
         {
+            try { _flushTimer?.Dispose(); } catch { }
+            _flushTimer = null;
             CurrentLogPath = "";
             return;
         }
@@ -141,13 +143,6 @@ public sealed class FileLogger : IDisposable
     /// <summary>写一条日志，级别低于 minLevel 的跳过。线程安全。</summary>
     public void Write(string message, LogLevel level)
     {
-        if (!_enabled) return;
-        if (_writer is null) return;
-        // 严重度排序（与枚举数值顺序不一致，不能直接用 level > minLevel）：
-        // Debug 最轻 → Info/Success → Warn → Error。minLevel 语义：只写严重度 ≥ minLevel 的，
-        // 例如 Info 级别必须保留 Warn/Error（旧写法把它们误过滤，故障日志全丢）
-        if (Severity(level) < Severity(_minLevel)) return;
-
         // BotEngine.LogInternal 传入的 message 已带 [HH:mm:ss] 前缀，前面补完整日期
         string fullMsg = message;
         if (fullMsg.Length > 11 && fullMsg.StartsWith("[") && fullMsg[9] == ']')
@@ -155,14 +150,23 @@ public sealed class FileLogger : IDisposable
             fullMsg = fullMsg[11..].TrimStart();
         }
 
+        bool flushNow = false;
         lock (_lock)
         {
-            try { WriteYamlLine(level, fullMsg); }
+            if (!_enabled || _writer is null) return;
+            // 严重度排序（与枚举数值顺序不一致，不能直接用 level > minLevel）：
+            // Debug 最轻 → Info/Success → Warn → Error。minLevel 语义：只写严重度 ≥ minLevel 的，
+            // 例如 Info 级别必须保留 Warn/Error（旧写法把它们误过滤，故障日志全丢）
+            if (Severity(level) < Severity(_minLevel)) return;
+            try
+            {
+                WriteYamlLine(level, fullMsg);
+                // Warn/Error 立即落盘：崩溃前最后几条关键信息绝不能停在缓冲区里
+                flushNow = Severity(level) >= 2;
+                if (flushNow) _writer?.Flush();
+            }
             catch { /* 磁盘满/句柄关闭等异常静默 */ }
         }
-
-        // Warn/Error 立即落盘：崩溃前最后几条关键信息绝不能停在缓冲区里
-        if (Severity(level) >= 2) FlushSafe();
     }
 
     private void WriteYamlLine(LogLevel level, string msg)
