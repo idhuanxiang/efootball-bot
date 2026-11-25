@@ -230,6 +230,8 @@ public sealed class WorkerHost : IDisposable
                         _lastStats.StartedAt = TryParseTimestamp(msg.StartedAt);
                         _lastStats.LastError = msg.LastError ?? "";
                         _lastStats.PerfNote = msg.Perf ?? "";
+                        _lastStats.AiLadderRating = msg.AiLadderRating;
+                        _lastStats.AiLadderDivision = msg.AiLadderDivision;
                         StatsChanged?.Invoke(_lastStats);
                         break;
                     case "screen":
@@ -284,6 +286,10 @@ public sealed class WorkerHost : IDisposable
             await HandleProcessExitAsync(process, sessionId);
         });
 
+        // 新会话换成一份新的 BotStats（引用赋值是原子的）：清空上一会话残留的展示值，
+        // 否则 AI 天梯新会话在首条 stats 到达前（最多 1 秒）会闪一下上一场的旧评分。
+        // 管道读循环每轮都从字段取当前实例，替换后自然写入新对象。
+        _lastStats = new BotStats();
         // 发送 start 命令（同样的先置位原因，见上）
         _scenarioRunning = true;
         await SendAsync(PipeProtocol.CmdStart(mode), CommandWriteTimeout);

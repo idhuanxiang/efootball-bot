@@ -44,6 +44,15 @@ public sealed class BotStats
     /// <summary>球员满级提示次数（比赛中"满级"通知检测；统计接口，GUI 可展示）。</summary>
     public int PlayersMaxed;
 
+    /// <summary>
+    /// AI 天梯实力评分：只在组别主页读「当前实力评分」（如 1869），开赛前读到一次即长期展示；
+    /// 组 1~3 才有该字段，组 4~10 读到 0 则不显示。仅展示用，不参与判定。IPC 序列化字段。
+    /// </summary>
+    public int AiLadderRating;
+
+    /// <summary>AI 天梯当前组别（1~10，0=未读到）；用于 GUI 展示「组别X · 评分」。</summary>
+    public int AiLadderDivision;
+
     public DateTime? StartedAt;
     /// <summary>最近一次感知摘要（如 "OCR 12 词 / 检测 3 框"）。</summary>
     public string LastScreen = "";
@@ -328,6 +337,11 @@ public sealed class BotEngine : IDisposable
         Interlocked.Exchange(ref _stopped, 0);
         Interlocked.Exchange(ref _stopReason, null);
         _pendingRestoreTask = null;
+        // 新会话场次基线 = 当前累计值（从现在起算）：当前 Worker 每次 start 都 new BotEngine
+        // （Stats 从 0 开始，等价于 0），但引擎若被复用则必须扣掉上一会话的累计，
+        // 否则 ModuleMatchesDone 会把旧场次算进来、提前触发「完成场次停止」。
+        _matchBaseline = Stats.MatchesDone;
+        _keyMatchBaseline = Stats.KeyMatches;
         Stats.StartedAt ??= DateTime.Now;
         // 模块清单只在 BotModuleCatalog 里维护（国服/国际服、场景/工具、接力白名单都是那张表）。
         // 引擎这里只问两件事：「这个 id 是不是挂机场景」（要不要接管手柄）、「属于哪个服」
@@ -2157,6 +2171,9 @@ public sealed class BotEngine : IDisposable
     }
 
     private void EmitStats() => StatsChanged?.Invoke(Stats);
+
+    /// <summary>场景主动触发统计推送（如赛后实力评分读到后立即刷新 GUI，不等统计周期）。</summary>
+    public void EmitStatsNow() => EmitStats();
 
     public void Dispose()
     {

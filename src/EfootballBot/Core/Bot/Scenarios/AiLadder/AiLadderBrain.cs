@@ -84,6 +84,35 @@ public static class AiLadderBrain
         }
         return null;
     }
+
+    // ---------------- 组别主页实力评分（2026-11-25 用户实机）----------------
+    /// <summary>
+    /// 从组别主页读「当前实力评分」下方的数值（实机：标签 @(0.525,0.240)、数值 1,869 @(0.538,0.284)）。
+    /// 只认标签正下方近邻（|Δx|&lt;0.08、Δy 0.02~0.12）的千位数字词，避免误取左右「当前排名 2,348」/胜场数。
+    /// 读不到返回 null（绝不猜）。
+    /// </summary>
+    public static int? ParseHomeRating(OcrResult ocr)
+    {
+        // ★用 FindLines 而非 Words.FirstOrDefault：Windows OCR 常把中文逐字拆开，
+        //   「当前实力评分」散在多个碎词里时没有任何单个 Words 含完整短语。
+        var label = ocr.FindLines("当前实力评分").FirstOrDefault();
+        if (label is null) return null;
+        // MergedWords 同时含原始碎词「869」与合并词「1869」，必须取**最长**的候选：
+        // 否则先撞到「869」会返回半截分数（实测 1869 被读成 869）。
+        OcrWord? best = null;
+        foreach (var w in ocr.MergedWords)
+        {
+            double dx = Math.Abs(w.CenterX - label.CenterX);
+            double dy = w.CenterY - label.CenterY;
+            // 数值在标签正下方（实机 Δy≈0.044）；合并词把「1」「869」拼回「1869」
+            if (dx >= 0.08 || dy < 0.02 || dy > 0.12) continue;
+            string t = w.NormText.Replace(",", "").Replace("，", "").Replace(" ", "");
+            if (t.Length < 3 || t.Length > 7 || !t.All(char.IsDigit)) continue;
+            if (best is null || t.Length > best.NormText.Length) best = w;
+        }
+        return best is not null && int.TryParse(best.NormText.Replace(",", ""), out int score) &&
+               score is >= 100 and <= 99999 ? score : null;
+    }
 }
 
 

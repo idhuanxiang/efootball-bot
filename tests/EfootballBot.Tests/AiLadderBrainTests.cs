@@ -222,4 +222,38 @@ public class AiLadderBrainTests
         Assert.Null(AiLadderBrain.ParseDivision(Ocr(W("组别88", 0.16, 0.055))));
         Assert.Null(AiLadderBrain.ParseDivision(Ocr(W("组别0", 0.16, 0.055))));
     }
+
+    // ---------------- 组别主页「当前实力评分」（2026-11-25 实机帧，唯一评分来源）----------------
+    private static OcrResult LadderHomeOcr() => Ocr(
+        W("组别1", 0.153, 0.119),
+        W("当前排名", 0.373, 0.238), W("2,348", 0.395, 0.283),
+        W("当前实力评分", 0.525, 0.240), W("1,869", 0.538, 0.284),
+        W("胜场", 0.639, 0.238), W("44", 0.640, 0.282),
+        W("组别分布", 0.381, 0.389));
+
+    [Fact]
+    public void HomeRating_读当前实力评分_不误取当前排名()
+    {
+        // 关键干扰：左侧「当前排名 2,348」与「当前实力评分 1,869」同行，必须按标签 x 对齐取后者
+        Assert.Equal(1869, AiLadderBrain.ParseHomeRating(LadderHomeOcr()));
+    }
+
+    [Fact]
+    public void HomeRating_无标签_返回Null()
+    {
+        var ocr = Ocr(W("当前排名", 0.373, 0.238), W("2,348", 0.395, 0.283));
+        Assert.Null(AiLadderBrain.ParseHomeRating(ocr));
+    }
+
+    [Fact]
+    public void HomeRating_中文逐字拆分_数值拆词_仍读到完整评分()
+    {
+        // Windows OCR 实机形态：标签被拆成单字、数值拆成「1」「869」两词。
+        // W() 生成词宽 0.1、高 0.03，同行相邻词 x 间距 0.06(<0.12) 会合并成整行。
+        var ocr = Ocr(
+            W("当", 0.46, 0.240), W("前", 0.52, 0.240), W("实", 0.58, 0.240),
+            W("力", 0.64, 0.240), W("评", 0.70, 0.240), W("分", 0.76, 0.240),
+            W("1", 0.51, 0.284), W("869", 0.57, 0.284));
+        Assert.Equal(1869, AiLadderBrain.ParseHomeRating(ocr));
+    }
 }

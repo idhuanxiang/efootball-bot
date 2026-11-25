@@ -45,6 +45,10 @@ public static class PipeProtocol
         public string? LastError { get; set; }
         /// <summary>分段耗时摘要（stats.perf：引擎 1 分钟刷新一次，GUI 侧栏直显）。</summary>
         public string? Perf { get; set; }
+        /// <summary>AI 天梯实力评分（组别主页读出；组 1~3 才有，0=未读到/组4~10）。</summary>
+        public int AiLadderRating { get; set; }
+        /// <summary>AI 天梯当前组别（1~10，0=未读到）。</summary>
+        public int AiLadderDivision { get; set; }
         public int Pid { get; set; }              // pid：Worker 进程号（跨会话跟踪用）
     }
 
@@ -72,7 +76,7 @@ public static class PipeProtocol
     /// <summary>stop 命令的确认事件：引擎已完全停止。GUI 收到即回收 Worker，不再固定等 5s。</summary>
     public static Msg EvStopped() => new() { Ev = "stopped" };
     public static Msg EvStats(int matches, int keyMatches, int playersMaxed, DateTime? startedAt, string? lastError,
-        int skipped = 0, string? perf = null)
+        int skipped = 0, string? perf = null, int aiLadderRating = 0, int aiLadderDivision = 0)
         => new()
         {
             Ev = "stats",
@@ -83,6 +87,8 @@ public static class PipeProtocol
             StartedAt = startedAt?.ToString("o"),
             LastError = lastError,
             Perf = perf,
+            AiLadderRating = aiLadderRating,
+            AiLadderDivision = aiLadderDivision,
         };
 
     // ---------------- JSON Lines 读写 ----------------

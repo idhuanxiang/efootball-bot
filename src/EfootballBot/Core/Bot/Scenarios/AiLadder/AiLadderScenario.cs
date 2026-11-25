@@ -150,6 +150,7 @@ public sealed class AiLadderScenario : IScenario
         var tick = _matchPlay.Tick(al == AlScreen.DivisionHome ? MatchScreen.LeaguePage : ml, now,
             sawKeyMatchHint: false, isHome: al == AlScreen.DivisionHome);
         if (tick.Started) _homeRound = 0; // 开赛成功=盲试配方有效，重置主页重试轮数
+        // 评分读到后一直保持显示（用户 2026-11-25 更正：开赛前更新一次即长期显示，不在开赛时隐藏）
         if (tick.Ended && tick.EndedTrusted)
         {
             var cfg = _engine.Config.AiLadder;
@@ -181,6 +182,8 @@ public sealed class AiLadderScenario : IScenario
         int? wait = await HandleAlAsync(al, wk, ml, obs);
         if (wait is > 0) return wait.Value;
         if (wait is not null) return 1500;
+        // 实力评分只在「组别主页」读取（用户 2026-11-25 最终确认）：赛后弹窗不再读，
+        // 更新一次后长期保持显示，直到下次经过主页读到新值或升到组 4+ 清值。
         // 未接管：走共用决策（比赛中/终场/弹窗/逃生）
         var action = MatchBrain.Decide(ml, obs.Ocr, _streak, matchContext, obs.Frame);
         MatchShared.DecisionSnapshot(_log, "AI天梯联赛", ml, _streak, action, obs.Ocr);
@@ -352,6 +355,15 @@ public sealed class AiLadderScenario : IScenario
                     return 2200;
                 }
                 if (_streak < 1) return 800; // 过渡帧防抖：主页稳定一拍再开始判断
+                // 当前实力评分：只在组别主页（用户指定这一页）读取，更新一次即长期显示。
+                // 组 1~3 才有该字段；组 4~10 主页无「当前实力评分」标签，读不到自然不显示。
+                if (AiLadderBrain.ParseHomeRating(obs.Ocr) is { } homeRating &&
+                    homeRating != _engine.Stats.AiLadderRating)
+                {
+                    _engine.Stats.AiLadderRating = homeRating;
+                    _engine.EmitStatsNow();
+                    _log($"[AI天梯联赛] 当前实力评分 {homeRating}（组别主页）", LogLevel.Success);
+                }
                 // 组别检测（可选停止条件）：主页左上角 组别X；变化才播报，防刷屏
                 int? div = AiLadderBrain.ParseDivision(obs.Ocr);
                 if (div is { } current)
@@ -359,7 +371,12 @@ public sealed class AiLadderScenario : IScenario
                     if (current != _divisionLogged)
                     {
                         _divisionLogged = current;
+                        _engine.Stats.AiLadderDivision = current;
                         _log($"[AI天梯联赛] 当前组别 {current}", LogLevel.Success);
+                        // 升到组 4+ 不再有赛后实力评分弹窗：清掉旧值，避免 UI 展示陈旧评分
+                        if (current >= 4 && current <= 10 && _engine.Stats.AiLadderRating != 0)
+                            _engine.Stats.AiLadderRating = 0;
+                        _engine.EmitStatsNow(); // 组别/评分变化立即推到 GUI
                     }
                     int stopAt = _engine.Config.AiLadder.StopAtDivision;
                     if (stopAt is >= 1 and <= 10 && current <= stopAt)

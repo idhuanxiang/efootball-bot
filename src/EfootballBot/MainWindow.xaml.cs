@@ -111,6 +111,8 @@ public partial class MainWindow
         _previewTimer.Tick += (_, _) => UpdatePreviewFrame();
         _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _statsTimer.Tick += (_, _) => UpdateStats();
+        // 首次启动尚未挂机：四格默认全隐藏（XAML 默认可见会摆着一组无意义的 0）
+        ApplyStatsLayoutForMode();
 
         // 挂机最小化时暂停预览重采样（300ms 逐帧缩放纯属浪费）；恢复窗口时若预览开着则重启
         StateChanged += (_, _) =>
@@ -364,16 +366,9 @@ public partial class MainWindow
         // ② 全屏（尤其超宽）下定位与捕获均不稳定，720p 窗口模式是实测可靠配置。
         if (!switching)
         {
-            var confirm = System.Windows.MessageBox.Show(
-                this,
-                "开始前请确认两件事：\n\n" +
-                "① 真实手柄随时可拿去玩\n挂机中检测到你在用真实手柄会自动让路（虚拟手柄暂时断开，你的手柄立刻可用）；" +
-                "停手后自动恢复继续挂机。注意：虚拟手柄占用玩家 1，挂机运行中请勿同时用两只手柄玩同一个游戏。\n\n" +
-                "② 游戏最好以 720p 窗口模式运行\n无边框窗口 1280×720 最稳定；独占全屏下挂机无法窗口化且定位易失效。",
-                "开始挂机前确认",
-                MessageBoxButton.OKCancel,
-                MessageBoxImage.Warning);
-            if (confirm != MessageBoxResult.OK) return;
+            // 软件本体主题风格的确认对话框；首次阅读确定键带 5s 倒计时，之后直接确认
+            var dialog = new EfootballBot.Views.StartConfirmDialog { Owner = this };
+            if (dialog.ShowDialog() != true) return;
         }
 
         // HDR 检测警告：HDR 开启时捕获帧整体过曝，绝对色探针/OCR 全线漂移——只警告不拦截
@@ -408,6 +403,7 @@ public partial class MainWindow
                 _activeStartBtn = btn;
                 _activeMode = mode ?? "";
                 _paused = false;
+                ApplyStatsLayoutForMode(); // 立即按新模式重排统计框，不等 1 秒后的 stats timer
                 RefreshRunButtons(); // 刷新三按钮：开始→一键结束，暂停/手动停止启用
                 _statsTimer.Start();
                 AutoOpenPreview(); // 自动开预览（非阻塞，帧看门狗负责重发直到引擎就绪出帧）
@@ -620,6 +616,7 @@ public partial class MainWindow
         RefreshRunButtons();
         RbCn.IsEnabled = RbIntl.IsEnabled = true;
         _statsTimer.Stop();
+        ApplyStatsLayoutForMode(); // 停止后按「未启动」隐藏全部统计框
     }
 
     private void UpdateStats()
@@ -630,10 +627,66 @@ public partial class MainWindow
         StKey.Text = s.KeyMatches.ToString();
         StMaxed.Text = s.PlayersMaxed.ToString();
         StElapsed.Text = s.StartedAt is null ? "—" : (DateTime.Now - s.StartedAt.Value).ToString(@"hh\:mm\:ss");
+        StRating.Text = s.AiLadderRating > 0 ? s.AiLadderRating.ToString("N0") : "—";
+        // 组别：AI天梯下把标签写成「组别X · 实力评分」，一格同时给出两个信息（用户 2026-11-25 要求）
+        RatingLabel.Text = s.AiLadderDivision is >= 1 and <= 10
+            ? $"组别{s.AiLadderDivision} · 评分"
+            : "实力评分";
         StError.Text = string.IsNullOrEmpty(s.LastError) ? "" : $"最近错误：{s.LastError}";
         StError.Visibility = string.IsNullOrEmpty(s.LastError) ? Visibility.Collapsed : Visibility.Visible;
         StPerf.Text = string.IsNullOrEmpty(s.PerfNote) ? "" : $"性能：{s.PerfNote}";
         StPerf.Visibility = string.IsNullOrEmpty(s.PerfNote) ? Visibility.Collapsed : Visibility.Visible;
+        ApplyStatsLayoutForMode();
+    }
+
+    /// <summary>
+    /// 统计框按当前挂机模式动态布局（2026-11-25 用户要求）：
+    ///   · 未启动：四格全部隐藏（不再摆着一组跟本模式无关的 0）
+    ///   · 我的联赛/种马培训：完成场次 / 关键比赛 / 球员满级 / 运行时长（原样 2×2）
+    ///   · 周活动：只显示 完成场次 + 运行时长（并排第一行）
+    ///   · AI天梯联赛：完成场次 + 运行时长 + 实力评分（组 1~3 每场读到才显示；组 4~10 无评分）
+    ///   · 其它模式（含国服系列）：保留原四格，行为不变。
+    /// Grid 单元格按需要重排，保证少数框时不出现对角留空。
+    /// </summary>
+    private void ApplyStatsLayoutForMode()
+    {
+        string mode = _activeMode ?? "";
+        bool running = !string.IsNullOrEmpty(mode);
+        bool weekly = mode == ModuleIds.IntlWeekly;   // 周活动：完成+时长
+        bool ladder = mode == ModuleIds.IntlAiLadder; // AI天梯：完成+时长+评分
+        // 其余全部（我的联赛/种马/国服系列/其它）保持原四格；仅这两种模式改布局。
+        // ★必须含 running：停止后 _activeMode="" 时 full 不能为真，否则「关键比赛/满级」两格残留
+        bool full = running && !weekly && !ladder;
+
+        TileMatches.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        TileKey.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
+        TileMaxed.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
+        TileElapsed.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
+        // 评分仅在 AI天梯 + 已读到数值时显示（组 1~3 才有；0=组 4~10/未读到）
+        // 评分在组别主页读到一次后长期保持显示（用户 2026-11-25 最终确认）；
+        // 组 4~10 读不到评分（值 0），不显示空框。
+        bool showRating = ladder && _workerHost?.LastStats?.AiLadderRating > 0;
+        TileRating.Visibility = showRating ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!running) return;
+        if (full)
+        {
+            Grid.SetRow(TileMatches, 0); Grid.SetColumn(TileMatches, 0);
+            Grid.SetRow(TileKey, 0); Grid.SetColumn(TileKey, 1);
+            Grid.SetRow(TileMaxed, 1); Grid.SetColumn(TileMaxed, 0);
+            Grid.SetRow(TileElapsed, 1); Grid.SetColumn(TileElapsed, 1);
+        }
+        else
+        {
+            // 周活动 / AI天梯 / 其它非四格模式：完成场次 + 运行时长并排第一行，
+            // 评分第二行左侧（AI天梯有数值时）；其它模式不显示额外格。
+            Grid.SetRow(TileMatches, 0); Grid.SetColumn(TileMatches, 0);
+            Grid.SetRow(TileElapsed, 0); Grid.SetColumn(TileElapsed, 1);
+            if (showRating)
+            {
+                Grid.SetRow(TileRating, 1); Grid.SetColumn(TileRating, 0);
+            }
+        }
     }
 
     /// <summary>将 Worker 传来的 PNG base64 解码显示到预览控件。</summary>
