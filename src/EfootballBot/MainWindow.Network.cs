@@ -793,6 +793,7 @@ public partial class MainWindow
             _overlay.Closed += (_, _) => _overlay = null;
         }
         _overlay.Topmost = true;
+        _overlay.ExitClickThrough();
         _overlay.Show();
         if (_inGame?.Last is { } last) _overlay.Update(last);
     }

@@ -634,15 +634,6 @@ public partial class MainWindow
         StError.Visibility = string.IsNullOrEmpty(s.LastError) ? Visibility.Collapsed : Visibility.Visible;
         StPerf.Text = string.IsNullOrEmpty(s.PerfNote) ? "" : $"性能：{s.PerfNote}";
         StPerf.Visibility = string.IsNullOrEmpty(s.PerfNote) ? Visibility.Collapsed : Visibility.Visible;
-
-        // 场景自动结束（正常跑完 / 异常退出）：ScenarioRunning 变 false 后按钮需从"停止"恢复为"开始"
-        if (!_starting && !_stopping && _workerHost is { ScenarioRunning: false } && _statsTimer.IsEnabled)
-        {
-            _hotkey.Unregister();
-            MuteGameOnScenarioStopped(); // 声音一并恢复（静音只服务于挂机期间）
-            AppendLog("[结束] 场景已结束，自动停止。", LogLevel.Success);
-            ResetButtons();
-        }
     }
 
     /// <summary>将 Worker 传来的 PNG base64 解码显示到预览控件。</summary>

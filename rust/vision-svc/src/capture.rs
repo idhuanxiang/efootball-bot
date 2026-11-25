@@ -8,7 +8,7 @@
 use std::io;
 
 use windows::core::Interface;
-use windows::Win32::Foundation::{HINSTANCE, HWND, POINT, RECT};
+use windows::Win32::Foundation::{HMODULE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDevice, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
@@ -211,7 +211,7 @@ impl DxgiCapturer {
             D3D11CreateDevice(
                 &chosen_adapter,
                 D3D_DRIVER_TYPE_UNKNOWN,
-                HINSTANCE::default(),
+                HMODULE::default(),
                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
                 Some(&levels),
                 D3D11_SDK_VERSION,

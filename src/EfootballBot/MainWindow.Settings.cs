@@ -577,8 +577,13 @@ public partial class MainWindow
         _cfg.Update.AutoDownloadInstall = ChkAutoDownloadInstall.IsChecked == true;
 
         // 手柄接管：DisabledPadDevs 恢复清单保存前从磁盘回读，避免 GUI 陈旧快照把
-        // 尚未消费的遗留记录清掉（LegacyPadRestore 靠它恢复旧版本卡禁用的手柄）
-        try { _cfg.HidHide.DisabledPadDevs = AppConfig.Load().HidHide.DisabledPadDevs; } catch { }
+        // 尚未消费的遗留记录清掉（LegacyPadRestore 靠它恢复旧版本卡禁用的手柄）；仅读取成功时覆盖
+        try
+        {
+            if (AppConfig.TryLoad(out var latest) && latest is not null)
+                _cfg.HidHide.DisabledPadDevs = latest.HidHide.DisabledPadDevs;
+        }
+        catch { }
 
         PersistConfigSafe("保存UI配置");
     }

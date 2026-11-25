@@ -128,6 +128,10 @@ impl FrameRing {
         self.total
     }
 
+    pub fn slots(&self) -> u32 {
+        self.slots
+    }
+
     /// 发布一帧 BGRA 数据（`stride >= w*4`，可为 0 表示 w*4）。返回新的 seq。
     pub fn publish(&mut self, w: u32, h: u32, stride: u32, data: &[u8]) -> u64 {
         let stride = if stride == 0 { w * 4 } else { stride };

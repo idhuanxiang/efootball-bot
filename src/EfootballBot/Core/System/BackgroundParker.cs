@@ -385,7 +385,7 @@ public sealed class BackgroundParker
                     {
                         using (p)
                         {
-                            if (p.MainWindowHandle != nint.Zero) { hwnd = p.MainWindowHandle; valid = true; break; }
+                            if (!valid && p.MainWindowHandle != nint.Zero) { hwnd = p.MainWindowHandle; valid = true; }
                         }
                     }
                 }

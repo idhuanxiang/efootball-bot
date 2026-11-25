@@ -212,6 +212,7 @@ public sealed class VisionSidecarClient : IAsyncDisposable
                 long seq;
                 lock (_upGate)
                 {
+                    ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
                     _up ??= new UploadFrameRing($"Local\\EfootballVision-up-{PipeName}", 3840, 2160);
                     seq = _up.Publish(frame);
                 }
@@ -249,6 +250,7 @@ public sealed class VisionSidecarClient : IAsyncDisposable
                 long seq;
                 lock (_upGate)
                 {
+                    ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
                     _up ??= new UploadFrameRing($"Local\\EfootballVision-up-{PipeName}", 3840, 2160);
                     seq = _up.Publish(frame);
                 }
@@ -377,13 +379,13 @@ public sealed class VisionSidecarClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        _closedReason ??= "客户端已关闭";
         try
         {
-            if (_pipe.IsConnected)
+            if (_pipe.IsConnected && _closedReason is null)
                 await SendAsync(VisionMsg.CmdOf("shutdown"), 800).ConfigureAwait(false);
         }
         catch { }
+        _closedReason ??= "客户端已关闭";
 
         _cts.Cancel();
         try { await _readLoop.ConfigureAwait(false); } catch { }

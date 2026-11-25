@@ -686,11 +686,15 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                             }
                             match got {
                                 Some(f) => {
-                                    let seq = {
+                                    let (seq, slot) = {
                                         let mut g = shared.ring.lock().unwrap();
                                         match g.as_mut() {
-                                            Some(ring) => ring.publish(f.w, f.h, f.stride, &f.bgra),
-                                            None => 0,
+                                            Some(ring) => {
+                                                let s = ring.publish(f.w, f.h, f.stride, &f.bgra);
+                                                let slots = ring.slots().max(1) as u64;
+                                                (s, ((s / 2) % slots) as u32)
+                                            }
+                                            None => (0, 0),
                                         }
                                     };
                                     let mut ev = Msg::ev("frame");
@@ -699,7 +703,7 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                                     ev.w = Some(f.w);
                                     ev.h = Some(f.h);
                                     ev.stride = Some(f.stride);
-                                    ev.slot = Some((((seq / 2) % 2) as u32).min(1));
+                                    ev.slot = Some(slot);
                                     ev.ms = Some(t.elapsed().as_secs_f64() * 1000.0);
                                     ev.dbg = Some(f.dbg);
                                     conn.send(&ev.to_line())?;
@@ -719,11 +723,15 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                     let w = msg.w.unwrap_or(640);
                     let h = msg.h.unwrap_or(360);
                     let photo = make_pattern(w, h, 1);
-                    let seq = {
+                    let (seq, slot) = {
                         let mut g = shared.ring.lock().unwrap();
                         match g.as_mut() {
-                            Some(ring) => ring.publish(w, h, w * 4, &photo),
-                            None => 0,
+                            Some(ring) => {
+                                let s = ring.publish(w, h, w * 4, &photo);
+                                let slots = ring.slots().max(1) as u64;
+                                (s, ((s / 2) % slots) as u32)
+                            }
+                            None => (0, 0),
                         }
                     };
                     let mut ev = Msg::ev("frame");
@@ -732,7 +740,7 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                     ev.w = Some(w);
                     ev.h = Some(h);
                     ev.stride = Some(w * 4);
-                    ev.slot = Some((((seq / 2) % 2) as u32).min(1));
+                    ev.slot = Some(slot);
                     ev.ms = Some(0.0);
                     conn.send(&ev.to_line())?;
                 }
@@ -1056,11 +1064,15 @@ fn spawn_capture_thread(
             let timeout = (1000 / fps).max(1);
             match cap.next_frame(timeout) {
                 Ok(Some(f)) => {
-                    let seq = {
+                    let (seq, slot) = {
                         let mut g = shared.ring.lock().unwrap();
                         match g.as_mut() {
-                            Some(ring) => ring.publish(f.w, f.h, f.stride, &f.bgra),
-                            None => 0,
+                            Some(ring) => {
+                                let s = ring.publish(f.w, f.h, f.stride, &f.bgra);
+                                let slots = ring.slots().max(1) as u64;
+                                (s, ((s / 2) % slots) as u32)
+                            }
+                            None => (0, 0),
                         }
                     };
                     if shared.want_frames.load(Ordering::Relaxed) {
@@ -1076,7 +1088,7 @@ fn spawn_capture_thread(
                     ev.w = Some(f.w);
                     ev.h = Some(f.h);
                     ev.stride = Some(f.stride);
-                    ev.slot = Some((((seq / 2) % 2) as u32).min(1));
+                    ev.slot = Some(slot);
                     ev.backend = Some(cap.backend_name().to_string());
                     if verbose {
                         ev.dbg = Some(f.dbg.clone());

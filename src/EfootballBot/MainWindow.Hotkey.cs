@@ -54,8 +54,8 @@ public partial class MainWindow
             AppendLog("[继续] 已恢复挂机执行。", LogLevel.Info);
     }
 
-    /// <summary>统一停止（GUI 按钮与热键共用）。allowAutoClose=false 用于手动停止后仍需弹窗交互的场景。</summary>
-    private async Task StopScenarioAsync(bool allowAutoClose = true)
+    /// <summary>统一停止（GUI 按钮与热键共用）。手动停止默认不自动关闭程序；自然结束由 WorkerHost.Exited 触发。</summary>
+    private async Task StopScenarioAsync(bool allowAutoClose = false)
     {
         if (!allowAutoClose) CancelAutoClose();
         if (_stopping) return;

@@ -358,6 +358,7 @@ public sealed class WorkerHost : IDisposable
             catch (Exception ex)
             {
                 EmitLog("Error", $"[恢复] Worker 自动重启失败：{ex.Message}");
+                await TeardownAsync().ConfigureAwait(false);
             }
             finally
             {
@@ -542,16 +543,20 @@ public sealed class WorkerHost : IDisposable
 
     private async Task SendAsync(PipeProtocol.Msg msg, TimeSpan timeout)
     {
-        var pipe = _pipe;
-        if (pipe is null || !pipe.IsConnected)
-            throw new InvalidOperationException("Worker 管道未连接");
         using var cts = new CancellationTokenSource(timeout);
         bool locked = false;
         try
         {
             await _writeLock.WaitAsync(cts.Token);
             locked = true;
+            var pipe = _pipe;
+            if (pipe is null || !pipe.IsConnected)
+                throw new InvalidOperationException("Worker 管道未连接");
             await PipeProtocol.WriteLineAsync(pipe, msg, cts.Token);
+        }
+        catch (ObjectDisposedException)
+        {
+            throw new InvalidOperationException("Worker 管道已释放");
         }
         catch (OperationCanceledException)
         {
@@ -561,7 +566,7 @@ public sealed class WorkerHost : IDisposable
         {
             if (locked)
             {
-                try { _writeLock.Release(); } catch { }
+                try { _writeLock.Release(); } catch (ObjectDisposedException) { }
             }
         }
     }

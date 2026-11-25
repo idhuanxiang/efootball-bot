@@ -14,7 +14,7 @@ use windows::Graphics::Capture::{
 };
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Graphics::DirectX::DirectXPixelFormat;
-use windows::Win32::Foundation::{HINSTANCE, HWND, POINT, RECT};
+use windows::Win32::Foundation::{HMODULE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDevice, D3D11_BOX, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
@@ -63,7 +63,7 @@ fn make_device() -> io::Result<(ID3D11Device, ID3D11DeviceContext)> {
         D3D11CreateDevice(
             None,
             D3D_DRIVER_TYPE_HARDWARE,
-            HINSTANCE::default(),
+            HMODULE::default(),
             D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             Some(&levels),
             D3D11_SDK_VERSION,
@@ -191,8 +191,13 @@ impl WgcCapturer {
         let texture: ID3D11Texture2D = access
             .GetInterface()
             .map_err(|e| io::Error::other(format!("GetInterface(ID3D11Texture2D) 失败: {e}")))?;
+        let mut tdesc = D3D11_TEXTURE2D_DESC::default();
+        texture.GetDesc(&mut tdesc);
+        let tw = tdesc.Width.max(1);
+        let th = tdesc.Height.max(1);
 
-        // 只回读目标客户区（WGC 帧含窗口外框与标题栏，需按 GetWindowRect/ClientToScreen 偏移裁剪）
+        // 只回读目标客户区（WGC 帧含窗口外框与标题栏，需按 GetWindowRect/ClientToScreen 偏移裁剪，
+        // 且上限严格夹到源纹理实际宽高，避免窗口变大过渡帧 src_box 越界）
         let (off_x, off_y, cw, ch) = {
             let mut wr = RECT::default();
             let mut cr = RECT::default();
@@ -205,13 +210,13 @@ impl WgcCapturer {
                 let oy = (pt.y - wr.top).max(0) as u32;
                 let rw = (cr.right - cr.left).max(0) as u32;
                 let rh = (cr.bottom - cr.top).max(0) as u32;
-                if ox < fw && oy < fh && rw > 0 && rh > 0 {
-                    (ox, oy, rw.min(fw - ox), rh.min(fh - oy))
+                if ox < tw && oy < th && rw > 0 && rh > 0 {
+                    (ox, oy, rw.min(tw - ox), rh.min(th - oy))
                 } else {
-                    (0, 0, fw, fh)
+                    (0, 0, tw, th)
                 }
             } else {
-                (0, 0, fw, fh)
+                (0, 0, tw, th)
             }
         };
 

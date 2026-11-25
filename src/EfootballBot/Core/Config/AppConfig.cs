@@ -805,13 +805,22 @@ public sealed class AppConfig
 
     public static AppConfig Load() => LoadFrom(ConfigPath, saveOnUpgrade: true);
 
+    internal static bool TryLoad(out AppConfig? cfg) => TryLoadFrom(ConfigPath, out cfg, saveOnUpgrade: false);
+
     internal static AppConfig LoadFrom(string path, bool saveOnUpgrade = false)
+        => TryLoadFrom(path, out var cfg, saveOnUpgrade) && cfg is not null ? cfg : new AppConfig();
+
+    internal static bool TryLoadFrom(string path, out AppConfig? result, bool saveOnUpgrade = false)
     {
         for (int attempt = 0; attempt < 3; attempt++)
         {
             try
             {
-                if (!File.Exists(path)) return new AppConfig();
+                if (!File.Exists(path))
+                {
+                    result = new AppConfig();
+                    return true;
+                }
                 string text = File.ReadAllText(path);
                 var cfg = JsonSerializer.Deserialize<AppConfig>(text, JsonOpts) ?? new AppConfig();
                 // 老配置没有 SchemaVersion 字段：反序列化会保留属性默认值（=当前版本），
@@ -828,7 +837,8 @@ public sealed class AppConfig
                     // 升级结果立即回写：下次启动不再重复走迁移，也让用户能看到新增字段
                     try { cfg.Save(); } catch { /* 回写失败不影响本次运行 */ }
                 }
-                return cfg;
+                result = cfg;
+                return true;
             }
             catch (JsonException)
             {
@@ -841,7 +851,8 @@ public sealed class AppConfig
                     File.Move(path, bad);
                 }
                 catch { /* 留档失败不阻塞启动 */ }
-                return new AppConfig();
+                result = null;
+                return false;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -850,10 +861,12 @@ public sealed class AppConfig
             }
             catch
             {
-                return new AppConfig();
+                result = null;
+                return false;
             }
         }
-        return new AppConfig();
+        result = null;
+        return false;
     }
 
     /// <summary>
@@ -885,7 +898,18 @@ public sealed class AppConfig
         try
         {
             File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOpts));
-            File.Move(tmp, ConfigPath, overwrite: true);
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    File.Move(tmp, ConfigPath, overwrite: true);
+                    break;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 2)
+                {
+                    Thread.Sleep(50 * (attempt + 1));
+                }
+            }
         }
         finally
         {

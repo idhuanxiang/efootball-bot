@@ -304,7 +304,6 @@ public sealed class YoloDetector : IDisposable
         finally
         {
             _gate.Release();
-            _gate.Dispose();
         }
     }
 }

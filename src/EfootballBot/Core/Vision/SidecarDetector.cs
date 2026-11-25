@@ -112,7 +112,6 @@ internal sealed class SidecarDetector : IDetector
         finally
         {
             _gate.Release();
-            _gate.Dispose();
         }
     }
 }

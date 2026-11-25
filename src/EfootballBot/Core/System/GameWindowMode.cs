@@ -188,7 +188,7 @@ public static class GameWindowMode
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
 
     [DllImport("user32.dll")]

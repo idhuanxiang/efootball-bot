@@ -52,6 +52,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     private readonly BackgroundMouse _mouse = new();
     /// <summary>国服确认页独立推进轮次（1=RT、2=A、≥3=鼠标，不因重定位浪费 A）。</summary>
     private int _cnConfirmAttempts;
+    private MatchScreen _lastConfirmScreen;
 
     public CnMyLeagueScenario(BotEngine engine, Action<string, LogLevel> log)
         : base(engine, log)
@@ -129,8 +130,11 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     /// </summary>
     protected override async Task<int?> InterceptAsync(Observation obs, MatchScreen screen, int streak, bool inMatchRecently)
     {
-        if (screen != MatchScreen.HasConfirm)
+        if (screen != _lastConfirmScreen || screen == MatchScreen.InMatch || IsCnHome)
+        {
             _cnConfirmAttempts = 0;
+            _lastConfirmScreen = screen;
+        }
         // ---- 国服「关键比赛」预告弹窗（按钮=确定/取消，不是国际服的 OK）----
         // 实机 2026-11-11 16:20:32 起死循环：前往比赛 → 弹窗 →「高光在确定」直接 A → 弹窗关掉
         // 回主页 → 再前往比赛 → 又弹，连 60+ 轮零场次。国服这枚弹窗的选中态是青色

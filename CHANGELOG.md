@@ -3,6 +3,19 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v9.0.2
+- **Rust Sidecar 编译与原生手柄代理加固**：
+  - 修复 Rust `vision-svc`（`capture.rs` / `capture_wgc.rs`）向 `D3D11CreateDevice` 传入 `HINSTANCE` 导致的 `E0308` 编译错误，改为 `HMODULE::default()`；修复 WGC 窗口放大过渡帧 `CopySubresourceRegion` 越界吐黑帧与 `"frame"` 事件槽位硬编码 `% 2` 问题
+  - 修复 `xinput-proxy` `DllMain(DLL_PROCESS_DETACH)` 持 OS Loader Lock 期间阻塞等待看门狗与调用 `FreeLibrary` 的死锁风险，以及 `OpenShared()` 映射失败重试时的内核句柄泄漏
+  - 修复 `SharedPadWriter`（主程序与代理测试版双端）`SetActive` / `SetTargets` / `ProxySeen` 无锁/释放后野指针崩溃风险，以及崩溃残留奇数 seqlock 未回写共享内存的问题
+- **比赛与场景状态机修复**：
+  - 修复 `CnMyLeagueScenario` 非 `HasConfirm` 界面每轮清空 `_cnConfirmAttempts`，导致终场/积分/物品等国服推进页永远锁死在 `RT` 的回归问题
+  - 修复 `MyLeagueScenario` 关闭自动换人时「一键测试换人」第 2 帧即中止、以及国际服难度页退出后 `_difficultyConfirmRound` 立即归零导致无限循环的问题
+- **UI、IPC、日志与系统工具稳定性**：
+  - 修复开启连接悬浮窗鼠标穿透后点击「显示悬浮窗」无法恢复交互、手动停机在勾选「完毕自动关闭」时误触发自动关机、`LogPrefixRegex` 缺 `Singleline` 导致多行日志双时间戳、`_logBuffer` 跨线程无锁竞争、`UpdateStats` 与 `Exited` 竞态重复打印 `[结束]`
+  - 修复 `FileLogger` 初始化未加锁及误删 `[MyLeague]` 等 8 字符标签；修复 `WorkerHost` 自动重启失败未回收孤儿进程、`SendAsync` 锁外判空与 `ObjectDisposedException`；修复 `WorkerProgram` 断连清理原子化与 `AppConfig.TryLoad` 防短暂锁误清禁用的真实手柄名单
+  - 修复 `DiagReporter` `FileShare.ReadWrite` 共享读取当前活跃会话日志与取消时 `dxdiag.exe` 进程残留；修复 `InGameConnectionMonitor` 丢包率恒为 0% 与无 ICMP 提示死代码、`VisionSidecarClient` 优雅关闭命令未发出及 66MB 上传环并发泄漏、检测/OCR 类幂等 `Dispose()`、`FastGithubKernel` `HostsFileLock`、`HdrStatus` 虚拟屏枚举中止、`GameWindowMode.SetWindowPos` `SetLastError`、`NetworkProbe` `AsyncWaitHandle` 泄漏、`WeChatFeed` 空 URL 误扣配额及零星 `Process` 句柄泄漏
+
 ## v9.0.1
 - **运行日志与筛选优化**：统一 `[HH:mm:ss]` 时间戳与 `[启动]`、`[切换]`、`[停止]`、`[恢复]`、`[预览]`、`[音频]`、`[设置]`、`[测速]`、`[配置]`、`[退出]` 等 `[分类]` 前缀；补全热键/暂停/继续/自动关闭/手动停止/Worker 启动与恢复/换人排查/游戏重启等缺失事件日志；修复「仅关键流程」过滤掉 `Warn`/`Error` 的问题；UI 报错仅显示简要信息，完整异常堆栈自动写入日志文件；`FileLogger` 禁用时释放刷新定时器并以锁保护读写状态
 - **比赛与场景状态机修复**：

@@ -616,7 +616,8 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
             return await HandleDifficultyAsync(obs.Frame, obs.Ocr);
         }
         _difficultyPageRounds = 0;
-        _difficultyConfirmRound = 0;
+        if (screen is MatchScreen.MatchStartPage or MatchScreen.InMatch or MatchScreen.FullTime or MatchScreen.MainMenu or MatchScreen.MatchHub)
+            _difficultyConfirmRound = 0;
         return await MatchActionExecutor.ExecuteAsync(
             _engine, _matchPlay, action, obs, _log, "我的联赛", ct,
             onConfirm: async () =>
@@ -821,7 +822,7 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
                 _log("[我的联赛] 手动测试：满级换人巡检已排队（回到联赛主页无弹窗时开始）", LogLevel.Success);
             }
         }
-        if (!LeagueConfig.AutoSwapMaxLevel && !_swapQueued) return null;
+        if (_maxSwap.Idle && !LeagueConfig.AutoSwapMaxLevel && !_swapQueued && !_swapTestOnly) return null;
         if (_maxSwap.Idle)
         {
             // 测试模式：巡检跑完（含中途放弃）即自动停止挂机；普通挂机继续正常流程

@@ -434,11 +434,11 @@ public static class WorkerProgram
 
             // 管道断开后停止场景（避免无头 Worker 空跑）。
             // 引擎一律整套释放：即使场景未在运行，捕获会话等资源也不能留（防僵尸抓帧）。
-            if (engine is not null)
+            var toDispose = Interlocked.Exchange(ref engine, null);
+            if (toDispose is not null)
             {
-                engine.Stop();
-                engine.Dispose();
-                engine = null;
+                try { toDispose.Stop(); } catch { }
+                try { toDispose.Dispose(); } catch { }
                 if (console) Console.WriteLine("[Worker] 因 GUI 断开而停止并释放引擎");
             }
             await StopPreviewLoopAsync();

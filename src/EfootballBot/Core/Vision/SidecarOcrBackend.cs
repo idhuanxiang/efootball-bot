@@ -82,7 +82,6 @@ internal sealed class SidecarOcrBackend : IOcrBackend
         finally
         {
             _gate.Release();
-            _gate.Dispose();
         }
     }
 }

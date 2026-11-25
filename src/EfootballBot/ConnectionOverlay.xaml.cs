@@ -272,6 +272,18 @@ public partial class ConnectionOverlay : Window
         e.Handled = true;
     }
 
+    /// <summary>供「显示悬浮窗」按钮在窗口已可见时强制退出鼠标穿透并恢复交互。</summary>
+    public void ExitClickThrough()
+    {
+        _userHidden = false;
+        if (_clickThrough)
+        {
+            _clickThrough = false;
+            ApplyClickThrough();
+        }
+        TxtHint.Text = "拖动移位 · 双击贴回 · 中键穿透 · 右键关闭";
+    }
+
     private void ApplyClickThrough()
     {
         try

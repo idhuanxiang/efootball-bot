@@ -38,9 +38,9 @@ public partial class MainWindow
     private ScrollViewer? _logScrollViewer;
     private int _copyLogBadgeSeq;
 
-    private static readonly System.Text.RegularExpressions.Regex LogPrefixRegex = new(
+    internal static readonly System.Text.RegularExpressions.Regex LogPrefixRegex = new(
         @"^\[(?<t>\d{2}:\d{2}:\d{2})\]\s*(?<tag>\[[^\]]+\])?\s*(?<rest>.*)$",
-        System.Text.RegularExpressions.RegexOptions.Compiled);
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.Singleline);
 
     private static Brush LevelBrush(LogLevel lv) => lv switch
     {
@@ -254,8 +254,10 @@ public partial class MainWindow
         _cfg.RuntimeLogFilter = _runtimeLogFilter;
         PersistConfigSafe("保存运行日志过滤设置");
         // 切档即时生效：从回放缓存重渲（切回「全部」可看到此前被隐藏的日志）
+        (string Msg, LogLevel Lv)[] snapshot;
+        lock (_logBuffer) snapshot = _logBuffer.ToArray();
         LogList.Items.Clear();
-        foreach (var (msg, lv) in _logBuffer)
+        foreach (var (msg, lv) in snapshot)
             if (PassesLogFilter(lv, _runtimeLogFilter))
                 AppendLogItem(msg, lv);
     }
@@ -274,7 +276,7 @@ public partial class MainWindow
 
     private void BtnClearLog_Click(object sender, RoutedEventArgs e)
     {
-        _logBuffer.Clear();
+        lock (_logBuffer) _logBuffer.Clear();
         LogList.Items.Clear();
     }
 

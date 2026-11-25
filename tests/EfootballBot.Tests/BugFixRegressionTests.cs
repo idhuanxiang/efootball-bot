@@ -1,4 +1,5 @@
 using System.IO;
+using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,7 @@ using EfootballBot.Core.Bot.Scenarios.PeakLadder;
 using EfootballBot.Core.Capture;
 using EfootballBot.Core.Config;
 using EfootballBot.Core.Input;
+using EfootballBot.Core.Logging;
 using EfootballBot.Core.System;
 using EfootballBot.Core.Vision;
 using Xunit;
@@ -314,5 +316,98 @@ public class BugFixRegressionTests
         var yesOcr = new OcrResult(new[] { new OcrWord("是", 0.5, 0.7, 0.05, 0.04, 0.99f) }, 1280, 720);
         Assert.True(MaxLevelSwapBrain.HasDialogConfirmWords(okOcr));
         Assert.True(MaxLevelSwapBrain.HasDialogConfirmWords(yesOcr));
+    }
+
+    [Fact]
+    public void DiagReporter_ReadAllTextShared_ReadsActiveLockedLog()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"efootball-diag-{Guid.NewGuid():N}.yml");
+        try
+        {
+            using (var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read))
+            using (var sw = new StreamWriter(fs, new UTF8Encoding(true)))
+            {
+                sw.WriteLine("WebhookUrl: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=secret-123");
+                sw.Flush();
+
+                string raw = DiagReporter.ReadAllTextShared(path);
+                string redacted = DiagReporter.RedactSecrets(raw);
+                Assert.Contains("WebhookUrl", redacted);
+                Assert.DoesNotContain("secret-123", redacted);
+            }
+        }
+        finally
+        {
+            try { File.Delete(path); } catch { }
+        }
+    }
+
+    [Fact]
+    public void MainWindowLogs_LogPrefixRegex_MatchesMultilineMessages()
+    {
+        var m = MainWindow.LogPrefixRegex.Match("[12:34:56] [测试] 第一行\n第二行");
+        Assert.True(m.Success);
+        Assert.Equal("12:34:56", m.Groups["t"].Value);
+        Assert.Equal("[测试]", m.Groups["tag"].Value);
+        Assert.Equal("第一行\n第二行", m.Groups["rest"].Value);
+    }
+
+    [Fact]
+    public void FileLogger_StripLeadingTimestamp_PreservesBracketedTags()
+    {
+        Assert.Equal("[MyLeague] 已完成", FileLogger.StripLeadingTimestamp("[MyLeague] 已完成"));
+        Assert.Equal("[CnWeekly] 进主页", FileLogger.StripLeadingTimestamp("[12:34:56] [CnWeekly] 进主页"));
+    }
+
+    [Fact]
+    public void SharedPadWriter_RecoversOddSeqAndIgnoresPostDisposeCalls()
+    {
+        string name = $"Local\\EfootballBot.Test.{Guid.NewGuid():N}";
+        using var holder = MemoryMappedFile.CreateOrOpen(name, SharedPadWriter.StructSize);
+        using (var accessor = holder.CreateViewAccessor(0, SharedPadWriter.StructSize))
+        {
+            accessor.Write(12, 3L);
+        }
+
+        var writer = new SharedPadWriter(name);
+        using (var accessor = holder.CreateViewAccessor(0, SharedPadWriter.StructSize))
+        {
+            Assert.Equal(4L, accessor.ReadInt64(12));
+        }
+
+        writer.Dispose();
+        writer.SetActive(true);
+        writer.SetTargets(SharedPadWriter.TargetGlobal);
+        Assert.False(writer.ProxySeen());
+    }
+
+    [Fact]
+    public void AppConfig_TryLoadFrom_ReturnsFalseOnCorruptJson()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"efootball-corrupt-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, "{ invalid json");
+            Assert.False(AppConfig.TryLoadFrom(path, out var cfg));
+            Assert.Null(cfg);
+        }
+        finally
+        {
+            try { File.Delete(path); } catch { }
+            try { File.Delete(path + ".bad"); } catch { }
+        }
+    }
+
+    [Fact]
+    public void SidecarDetectors_DoubleDispose_IsIdempotent()
+    {
+        var cfg = new VisionSidecarConfig { ExePath = typeof(SidecarDetector).Assembly.Location };
+        var det = new SidecarDetector(cfg);
+        det.Dispose();
+        det.Dispose();
+
+        var ocr = new SidecarOcrBackend(cfg);
+        ocr.Dispose();
+        ocr.Dispose();
     }
 }

@@ -327,7 +327,7 @@ public static class FastGithubKernel
         if (!IsInstalled) return;
         try
         {
-            Process.Start(new ProcessStartInfo(ExePath) { WorkingDirectory = Dir, UseShellExecute = true });
+            using var _ = Process.Start(new ProcessStartInfo(ExePath) { WorkingDirectory = Dir, UseShellExecute = true });
         }
         catch { }
     }
@@ -562,11 +562,14 @@ public static class FastGithubKernel
 
         if (repairs.Count > 0 || removed.Count > 0)
         {
-            string merged = StripBlock(ReadHosts()).TrimEnd('\r', '\n') + "\r\n\r\n" + BuildBlock(map);
-            if (WriteHosts(merged))
+            lock (HostsFileLock)
             {
-                SaveCache(map);
-                FlushDns();
+                string merged = StripBlock(ReadHosts()).TrimEnd('\r', '\n') + "\r\n\r\n" + BuildBlock(map);
+                if (WriteHosts(merged))
+                {
+                    SaveCache(map);
+                    FlushDns();
+                }
             }
         }
 

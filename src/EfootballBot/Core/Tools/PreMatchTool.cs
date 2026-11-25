@@ -143,7 +143,7 @@ public sealed class PreMatchTool : ITool
                 ctx.Log($"[赛前快捷设置] 未定位到{label}游戏安装目录：请先启动游戏再试。", LogLevel.Warn);
                 return ToolResult.Fail($"未定位到{label}游戏安装目录——请先启动游戏再点一次。");
             }
-            Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
+            using var _ = Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
             ctx.Log($"[赛前快捷设置] 已打开{label}游戏目录：{dir}", LogLevel.Success);
             return ToolResult.Success(dir, dir);
         }

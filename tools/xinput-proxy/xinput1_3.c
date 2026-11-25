@@ -277,8 +277,13 @@ static void OpenShared(void)
                                          sizeof(PadSharedV1), name);
         LogW(L"共享内存不存在，已自建空映射：名字=%ls（Worker 未启动或 ini 里的名字不一致）", name);
     }
-    if (g_shmHandle)
+    if (g_shmHandle) {
         g_shm = (PadSharedV1*)MapViewOfFile(g_shmHandle, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, sizeof(PadSharedV1));
+        if (!g_shm) {
+            CloseHandle(g_shmHandle);
+            g_shmHandle = NULL;
+        }
+    }
 }
 
 static void InitOnce(void)
@@ -563,16 +568,17 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
     (void)inst;
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(inst);
-    } else if (reason == DLL_PROCESS_DETACH && reserved == NULL) {
+    } else if (reason == DLL_PROCESS_DETACH) {
         InterlockedExchange(&g_watchdogStop, 1);
         if (g_watchdogThread) {
-            WaitForSingleObject(g_watchdogThread, 1500);
+            /* DllMain 持 OS Loader Lock，绝不可 WaitForSingleObject 等线程退出或调 FreeLibrary */
             CloseHandle(g_watchdogThread);
             g_watchdogThread = NULL;
         }
-        if (g_shm) { UnmapViewOfFile(g_shm); g_shm = NULL; }
-        if (g_shmHandle) { CloseHandle(g_shmHandle); g_shmHandle = NULL; }
-        if (g_realMod) { FreeLibrary(g_realMod); g_realMod = NULL; }
+        if (reserved == NULL) {
+            if (g_shm) { UnmapViewOfFile(g_shm); g_shm = NULL; }
+            if (g_shmHandle) { CloseHandle(g_shmHandle); g_shmHandle = NULL; }
+        }
     }
     return TRUE;
 }

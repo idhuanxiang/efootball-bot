@@ -48,6 +48,9 @@ public static class DiagReporter
         progress?.Invoke("启动 dxdiag（后台收集显卡信息）…");
         string dxPath = Path.Combine(dir, "dxdiag.txt");
         Process? dx = StartDxdiag(dxPath);
+        bool dxWaited = false;
+        try
+        {
 
         report.AppendLine("eFootball Bot diagnostic report");
         report.AppendLine($"Generated   : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
@@ -237,6 +240,16 @@ if ($steam) {
         progress?.Invoke("等待 dxdiag 完成…");
         Head("SECTION 18 - DXDIAG (full dxdiag.txt attached separately in this folder)");
         report.AppendLine(await WaitDxdiagAsync(dx, dxPath, ct));
+        dxWaited = true;
+        }
+        finally
+        {
+            if (!dxWaited && dx is not null)
+            {
+                try { if (!dx.HasExited) dx.Kill(true); } catch { }
+                try { dx.Dispose(); } catch { }
+            }
+        }
 
         report.AppendLine();
         report.AppendLine("End of report.");
@@ -276,7 +289,7 @@ if ($steam) {
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                     if (NeedsRedaction(file))
                     {
-                        var text = File.ReadAllText(file, Encoding.UTF8);
+                        var text = ReadAllTextShared(file);
                         File.WriteAllText(target, RedactSecrets(text), Utf8Bom);
                     }
                     else
@@ -302,6 +315,13 @@ if ($steam) {
                 : $"{n} | not present");
         }
         return $"app files copied: {copied}";
+    }
+
+    internal static string ReadAllTextShared(string path)
+    {
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var sr = new StreamReader(fs, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return sr.ReadToEnd();
     }
 
     /// <summary>
