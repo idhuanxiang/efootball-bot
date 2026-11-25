@@ -3421,6 +3421,19 @@
                                            HorizontalAlignment="Right" VerticalAlignment="Center"/>
                             </Grid>
                         </Border>
+                        <!-- AI天梯当前组别（默认隐藏，仅AI天梯模式显示；组别数据来自BotStats.AiLadderDivision） -->
+                        <Border x:Name="TileDivision" Grid.Row="0" Grid.Column="1" Style="{StaticResource StatTile}"
+                                Margin="4,0,0,4" Visibility="Collapsed">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="72"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="当前组别" Style="{StaticResource MetricLabel}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="StDivision" Grid.Column="1" Text="—" Style="{StaticResource MetricValue}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
                         <!-- AI 天梯赛后实力评分（组 1~3 才有；默认隐藏，按模式/数值显示） -->
                         <Border x:Name="TileRating" Grid.Row="0" Grid.Column="1" Style="{StaticResource StatTile}"
                                 Margin="4,0,0,4" Visibility="Collapsed">

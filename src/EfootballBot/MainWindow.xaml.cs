@@ -630,6 +630,8 @@ public partial class MainWindow
         StKey.Text = s.KeyMatches.ToString();
         StMaxed.Text = s.PlayersMaxed.ToString();
         StElapsed.Text = s.StartedAt is null ? "—" : (DateTime.Now - s.StartedAt.Value).ToString(@"hh\:mm\:ss");
+        // AI天梯当前组别（1~10；0=未读到）
+        StDivision.Text = s.AiLadderDivision is >= 1 and <= 10 ? s.AiLadderDivision.ToString() : "—";
         // 软件内不带千位逗号显示（游戏画面带，用户 2026-11-26：软件里不需要）
         StRating.Text = s.AiLadderRating > 0 ? s.AiLadderRating.ToString() : "—";
         // 标签固定为「实力评分」（用户 2026-11-26 更正：不显示组别）
@@ -646,7 +648,7 @@ public partial class MainWindow
     ///   · 未启动：四格全部隐藏（不再摆着一组跟本模式无关的 0）
     ///   · 我的联赛/种马培训：完成场次 / 关键比赛 / 球员满级 / 运行时长（原样 2×2）
     ///   · 周活动：只显示 完成场次 + 运行时长（并排第一行）
-    ///   · AI天梯联赛：完成场次 + 运行时长 + 实力评分（组 1~3 每场读到才显示；组 4~10 无评分）
+    ///   · AI天梯联赛：完成场次 + 当前组别 + 运行时长 + 实力评分（四格 2×2，与我的联赛同款；读不到显示「—」）
     ///   · 其它模式（含国服系列）：保留原四格，行为不变。
     /// Grid 单元格按需要重排，保证少数框时不出现对角留空。
     /// </summary>
@@ -664,11 +666,13 @@ public partial class MainWindow
         TileKey.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
         TileMaxed.Visibility = full ? Visibility.Visible : Visibility.Collapsed;
         TileElapsed.Visibility = running ? Visibility.Visible : Visibility.Collapsed;
-        // 评分仅在 AI天梯 + 已读到数值时显示（组 1~3 才有；0=组 4~10/未读到）
-        // 评分在组别主页读到一次后长期保持显示（用户 2026-11-25 最终确认）；
-        // 组 4~10 读不到评分（值 0），不显示空框。
-        bool showRating = ladder && _workerHost?.LastStats?.AiLadderRating > 0;
-        TileRating.Visibility = showRating ? Visibility.Visible : Visibility.Collapsed;
+        // AI天梯四格（2026-11-26 用户要求）：完成场次 / 当前组别 / 运行时长 / 实力评分。
+        // 组别与评分读到才显示，未读到隐藏（不摆空框）；Grid 位置固定，显示的框仍严格对齐。
+        var ladderStats = _workerHost?.LastStats;
+        TileDivision.Visibility = ladder && ladderStats?.AiLadderDivision is >= 1 and <= 10
+            ? Visibility.Visible : Visibility.Collapsed;
+        TileRating.Visibility = ladder && ladderStats?.AiLadderRating > 0
+            ? Visibility.Visible : Visibility.Collapsed;
 
         if (!running) return;
         if (full)
@@ -678,16 +682,20 @@ public partial class MainWindow
             Grid.SetRow(TileMaxed, 1); Grid.SetColumn(TileMaxed, 0);
             Grid.SetRow(TileElapsed, 1); Grid.SetColumn(TileElapsed, 1);
         }
-        else
+        else if (ladder)
         {
-            // 周活动 / AI天梯 / 其它非四格模式：完成场次 + 运行时长并排第一行，
-            // 评分第二行左侧（AI天梯有数值时）；其它模式不显示额外格。
+            // AI天梯四格 2×2（与我的联赛同款整齐布局）
+            // 左上完成场次 / 右上运行时长 / 左下当前组别 / 右下实力评分
             Grid.SetRow(TileMatches, 0); Grid.SetColumn(TileMatches, 0);
             Grid.SetRow(TileElapsed, 0); Grid.SetColumn(TileElapsed, 1);
-            if (showRating)
-            {
-                Grid.SetRow(TileRating, 1); Grid.SetColumn(TileRating, 0);
-            }
+            Grid.SetRow(TileDivision, 1); Grid.SetColumn(TileDivision, 0);
+            Grid.SetRow(TileRating, 1); Grid.SetColumn(TileRating, 1);
+        }
+        else
+        {
+            // 周活动等非四格模式：完成场次 + 运行时长并排第一行
+            Grid.SetRow(TileMatches, 0); Grid.SetColumn(TileMatches, 0);
+            Grid.SetRow(TileElapsed, 0); Grid.SetColumn(TileElapsed, 1);
         }
     }
 

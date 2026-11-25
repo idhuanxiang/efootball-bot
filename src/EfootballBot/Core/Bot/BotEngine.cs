@@ -148,7 +148,14 @@ public sealed class BotEngine : IDisposable
         _paused = on;
         if (on)
         {
-            try { Pad360.ResetAll(); } catch { }
+            // 连续提交多次全零报告（2026-11-26 用户反馈"暂停后角色还在动"）：
+            // 单次 ResetAll 在游戏端偶发丢失（尤其刚按住方向键的那一帧），多打几次确保读到"松开"。
+            // 本方法在 Worker 线程调用（非 UI），短暂延时不会卡界面。
+            for (int i = 0; i < 4; i++)
+            {
+                try { Pad360.ResetAll(); } catch { }
+                if (i < 3) global::System.Threading.Thread.Sleep(60);
+            }
             LogInternal("已暂停：已清空手柄输出，暂停观察与操作", LogLevel.Warn);
         }
         else

@@ -12,6 +12,8 @@ public partial class MainWindow
     // ---------------- 全局热键（暂停/停止 + 恢复） ----------------
 
     private System.Windows.Threading.DispatcherTimer? _autoCloseTimer;
+    /// <summary>暂停/恢复节流：防止按钮连点或双击导致「刚暂停就被恢复」（2026-11-26 用户反馈）。</summary>
+    private DateTime _lastPauseToggle = DateTime.MinValue;
 
     /// <summary>主热键：运行中第一次按=暂停；暂停中再按=彻底停止。</summary>
     private void Hotkey_PauseStop_Triggered()
@@ -32,6 +34,10 @@ public partial class MainWindow
     /// <summary>统一暂停/恢复切换（GUI 按钮与监控页共用），同步按钮文字与热键可视化。</summary>
     private async Task TogglePauseAsync()
     {
+        // 节流：600ms 内的重复点击忽略——按钮 Content 从「暂停」变「继续」时
+        // 用户容易连点第二次，导致刚暂停就被恢复（用户实测"暂停键失效"）。
+        if ((DateTime.Now - _lastPauseToggle).TotalMilliseconds < 600) return;
+        _lastPauseToggle = DateTime.Now;
         var host = _workerHost;
         if (host is not { ScenarioRunning: true }) return;
         bool next = !_paused;
