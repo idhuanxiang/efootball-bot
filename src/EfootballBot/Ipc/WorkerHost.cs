@@ -626,6 +626,9 @@ public sealed class WorkerHost : IDisposable
         {
             // Dispose 可能在信号量被占用时调用，不等锁，直接硬回收
             try { _readCts?.Cancel(); } catch { }
+            // 硬回收路径也要 Dispose（正常 TeardownAsync 已 Dispose，这里只补关闭时的泄漏）
+            try { _readCts?.Dispose(); } catch { }
+            _readCts = null;
             try { _process?.Kill(); } catch { }
             try { _pipe?.Dispose(); } catch { }
             try { _process?.Dispose(); } catch { }

@@ -293,6 +293,9 @@ public static class WorkerProgram
             }
             catch { pipe.Dispose(); continue; }
 
+            // 上一轮的 readCts 已 Cancel 且 pipe 已 Dispose（ReadLoop 退出），此处安全释放，
+            // 避免 GUI 反复断开重连时每次泄漏一个 CTS（2026-11-26 审查）
+            try { readCts?.Dispose(); } catch { }
             readCts = new CancellationTokenSource();
 
             // 首条消息握手标记：客户端冷启动期超时残留的 CreateFile 可能被幽灵授予本实例，
@@ -447,6 +450,7 @@ public static class WorkerProgram
             pipe = null;
         }
 
+        try { readCts?.Dispose(); } catch { }
         DeleteSessionMarker();
         return 0;
     }

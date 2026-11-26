@@ -3423,7 +3423,7 @@
                         </Border>
                         <!-- AI天梯当前组别（默认隐藏，仅AI天梯模式显示；组别数据来自BotStats.AiLadderDivision） -->
                         <Border x:Name="TileDivision" Grid.Row="0" Grid.Column="1" Style="{StaticResource StatTile}"
-                                Margin="4,0,0,4" Visibility="Collapsed">
+                                Margin="0,0,4,4" Visibility="Collapsed">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="72"/>

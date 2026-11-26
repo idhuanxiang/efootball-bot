@@ -34,10 +34,9 @@ public partial class MainWindow
     /// <summary>统一暂停/恢复切换（GUI 按钮与监控页共用），同步按钮文字与热键可视化。</summary>
     private async Task TogglePauseAsync()
     {
-        // 节流：600ms 内的重复点击忽略——按钮 Content 从「暂停」变「继续」时
-        // 用户容易连点第二次，导致刚暂停就被恢复（用户实测"暂停键失效"）。
-        if ((DateTime.Now - _lastPauseToggle).TotalMilliseconds < 600) return;
-        _lastPauseToggle = DateTime.Now;
+        // 纯时间节流（250ms）：只拦真正的机械连点/双击；250ms 足以让用户"暂停后立刻继续"。
+        // 记录时间戳放在成功之后——发送失败不消耗节流，允许立刻重试（审查修复）。
+        if ((DateTime.Now - _lastPauseToggle).TotalMilliseconds < 250) return;
         var host = _workerHost;
         if (host is not { ScenarioRunning: true }) return;
         bool next = !_paused;
@@ -48,8 +47,9 @@ public partial class MainWindow
         catch (System.Exception ex)
         {
             AppendLog($"[暂停] 命令发送失败：{ex.Message}", LogLevel.Error);
-            return;
+            return; // 发送失败不消耗节流
         }
+        _lastPauseToggle = DateTime.Now;
         _paused = next;
         RefreshRunButtons();
         // 全权接管（v3.3.0）：暂停=纯场景暂停并清空手柄输出。真实手柄挂机期间本就处于

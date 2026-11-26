@@ -148,18 +148,22 @@ public sealed class BotEngine : IDisposable
         _paused = on;
         if (on)
         {
-            // 连续提交多次全零报告（2026-11-26 用户反馈"暂停后角色还在动"）：
-            // 单次 ResetAll 在游戏端偶发丢失（尤其刚按住方向键的那一帧），多打几次确保读到"松开"。
-            // 本方法在 Worker 线程调用（非 UI），短暂延时不会卡界面。
+            // ①中断正在执行的按键序列（2026-11-26 实机：组别页暂停时正在跑的
+            //   「左×4+上×6」连按没停、游戏还在动）——Pad 用 session+pause 链接令牌，
+            //   取消 pause 即可让当前连按/等待立刻抛取消，不再发后续按键。
+            try { Pad.PauseActions(); } catch { }
+            // ②连续提交多次全零报告，确保游戏端读到"松开"、不留半按状态。
+            //   本方法在 Worker 线程调用（非 UI），短暂延时不会卡界面。
             for (int i = 0; i < 4; i++)
             {
                 try { Pad360.ResetAll(); } catch { }
                 if (i < 3) global::System.Threading.Thread.Sleep(60);
             }
-            LogInternal("已暂停：已清空手柄输出，暂停观察与操作", LogLevel.Warn);
+            LogInternal("已暂停：已中断当前按键并清空手柄输出，暂停观察与操作", LogLevel.Warn);
         }
         else
         {
+            try { Pad.ResumeActions(); } catch { }
             LogInternal("已继续", LogLevel.Info);
         }
     }
@@ -478,6 +482,9 @@ public sealed class BotEngine : IDisposable
                             {
                                 _stepOnce = false;
                                 Observation.ApplyCaptureThrottle(300);
+                                // 单步要真正走一拍按键：暂停令牌此刻是取消态，临时恢复让 Pad 动作能执行；
+                                // finally 里再 Pause 回去保持暂停（审查修复）
+                                try { Pad.ResumeActions(); } catch { }
                                 try
                                 {
                                     var stepObs = await ObserveAsync(token);
@@ -502,6 +509,7 @@ public sealed class BotEngine : IDisposable
                                 finally
                                 {
                                     Observation.ApplyCaptureThrottle(2000);
+                                    if (_paused) { try { Pad.PauseActions(); } catch { } }
                                 }
                             }
                             await Task.Delay(400, token);
@@ -648,7 +656,19 @@ public sealed class BotEngine : IDisposable
                             EmitStats();
                         }
                     }
-                    catch (OperationCanceledException) { throw; }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        // 会话停止令牌取消 → 正常退出循环（外层 catch 记"[停止]"）
+                        throw;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // 暂停中断按键序列产生的取消 ≠ 会话停止：绝不能让挂机终止。
+                        // 下一轮循环开头会看到 _paused 并进入等待分支。
+                        try { Pad360.ResetAll(); } catch { }
+                        if (!_paused)
+                            LogInternal("按键中断（非暂停/非停止），本轮跳过", LogLevel.Warn);
+                    }
                     catch (CaptureUnrecoverableException ex)
                     {
                         // 后台监察熔断：捕获链路短时间内反复中断，停止重建防止"重建→崩溃→再重建"
@@ -2192,6 +2212,9 @@ public sealed class BotEngine : IDisposable
         try { _dxgi?.Dispose(); } catch { }
         try { _gdi?.Dispose(); } catch { }
         try { Pad360.Dispose(); } catch { }
+        // 释放会话令牌源（每次 start 都 new 一个，反复启停会累积泄漏）
+        try { _cts?.Dispose(); } catch { }
+        _cts = null;
         GC.SuppressFinalize(this);
     }
 }
