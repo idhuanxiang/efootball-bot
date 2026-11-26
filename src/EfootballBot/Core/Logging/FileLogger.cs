@@ -239,6 +239,9 @@ public sealed class FileLogger : IDisposable
         }
         catch
         {
+            // 新 writer 已创建但写续段头失败：必须 Dispose，否则文件句柄一直占着，
+            // 用户想打包/删除日志会被"文件正被使用"拦住（审查修复）
+            try { _writer?.Dispose(); } catch { }
             _writer = null;
             CurrentLogPath = "";
         }

@@ -58,7 +58,14 @@ public partial class ConnectionOverlay : Window
         // （否则右键关掉再打开会停在旧位置、且不再跟随）
         IsVisibleChanged += (_, _) =>
         {
-            if (!IsVisible) return;
+            if (!IsVisible)
+            {
+                // 隐藏即停跟随（审查修复）：右键关闭只调 Hide()，不触发 Closed；
+                // 旧实现隐藏后 _followTimer 仍每 250ms 枚举进程 + 摆位置，白烧 CPU。
+                _followTimer.Stop();
+                return;
+            }
+            if (IsLoaded) _followTimer.Start();
             _userHidden = false;
             _clickThrough = false;
             TxtHint.Text = "拖动移位 · 双击贴回 · 中键穿透 · 右键关闭";

@@ -418,9 +418,12 @@ public partial class MainWindow
         return LogLevel.Info;
     }
 
-    private void LoadLogFile(string path)
+    private int _logLoadGen;
+
+    private async void LoadLogFile(string path)
     {
         LogFileContent.Items.Clear();
+        int gen = ++_logLoadGen;   // 连续切换文件/筛选档时，只让最后一次加载落地
         try
         {
             if (!File.Exists(path))
@@ -434,7 +437,15 @@ public partial class MainWindow
             // P2-19：旧实现"先数总行数 → 再回读尾部"= 两遍全文件扫描；这里改成单遍流式读取，
             // 用一个定长环形队列只保留最后 N 行（内存恒定，大文件也只扫一次）。
             const int MaxLoadedLines = 5000;
-            string[] lines = ReadLogTail(path, MaxLoadedLines, out long totalLines);
+            LogFileStatus.Text = $"{path} | 正在读取…";
+            // 扫描放后台（审查修复）：Debug 级日志可达数十万行/上百 MB，以前整份扫 + 建 5000 个
+            // TextBlock 全在 UI 线程，打开历史日志那一瞬界面卡死数秒——恰是远程排障要用的时刻。
+            (long totalLines, string[] lines) = await Task.Run(() =>
+            {
+                var tail = ReadLogTail(path, MaxLoadedLines, out long total);
+                return (total, tail);
+            });
+            if (gen != _logLoadGen) return;   // 期间用户已切到别的文件
             long skip = Math.Max(0, totalLines - MaxLoadedLines);
 
             int total = 0, shown = 0;

@@ -39,6 +39,10 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
     // 后台捕获线程
     private Thread? _captureThread;
     private volatile bool _stopRequested;
+    // 捕获会话代际（审查修复）：旧线程卡在 AcquireNextFrame/Map 时 Join 会超时，
+    // 之后 Start 复位 _stopRequested 就会让它"复活"并与新线程抢同一套 D3D 资源。
+    // 每次 Start/Stop 递增；线程只在代际未变时碰共享资源与出帧。
+    private int _sessionGen;
 
     public event EventHandler? FrameUpdated;
 
@@ -52,19 +56,28 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
 
     public void Start(nint hwnd, int clientW, int clientH)
     {
-        Thread? oldThread = null;
+        Thread? oldThread;
+        int gen;
         lock (_gate)
         {
             if (_running) return;
+            // 先立新代际再停旧线程：旧线程即使在 Join 之后才恢复，也认得出自己已过期
+            gen = ++_sessionGen;
+            _stopRequested = true;
             oldThread = _captureThread;
-            if (oldThread is { IsAlive: true })
-                _stopRequested = true;
         }
-        if (oldThread is { IsAlive: true })
-            try { oldThread.Join(1000); } catch { }
+        // 旧线程必须真正退出才能释放/重建共享 D3D 资源。Join 失败时宁可本次不启动，
+        // 也不能一边让它继续跑、一边把 _duplication/_context 换掉（use-after-free）。
+        bool joined = oldThread is null || !oldThread.IsAlive || SafeJoin(oldThread, 3000);
+        if (!joined)
+        {
+            Step("上一捕获线程 3 秒内未退出，本次暂不重启采集（避免与旧线程共用 D3D 资源）；下次探测会重试");
+            return;
+        }
         lock (_gate)
         {
             if (_running) return;
+            if (Volatile.Read(ref _sessionGen) != gen) return; // 期间被 Stop/再次 Start 抢先
             ReleaseResources();
             _hwnd = hwnd;
             _clientW = Math.Max(2, clientW);
@@ -75,7 +88,7 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
             {
                 InitializeD3D();
                 _running = true;
-                _captureThread = new Thread(CaptureLoop)
+                _captureThread = new Thread(() => CaptureLoop(gen))
                 {
                     IsBackground = true,
                     Name = "DxgiDesktopCaptureVortice",
@@ -90,6 +103,11 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
                 throw;
             }
         }
+    }
+
+    private static bool SafeJoin(Thread t, int timeoutMs)
+    {
+        try { return t.Join(timeoutMs); } catch { return !t.IsAlive; }
     }
 
     private void InitializeD3D()
@@ -241,42 +259,59 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
         return total > 0 && dark * 100 / total >= 99;
     }
 
-    private void CaptureLoop()
+    private void CaptureLoop(int myGen)
     {
-        while (!_stopRequested)
+        try
         {
-            try
+            while (!_stopRequested && Volatile.Read(ref _sessionGen) == myGen)
             {
-                if (!TryAcquireAndProcessFrame())
+                try
                 {
-                    // 无新帧（超时），短暂休眠后重试
-                    Thread.Sleep(10);
-                    continue;
-                }
+                    if (!TryAcquireAndProcessFrame(myGen))
+                    {
+                        // 无新帧（超时），短暂休眠后重试
+                        Thread.Sleep(10);
+                        continue;
+                    }
 
-                // 节流：按最小帧间隔休眠
-                int interval = Math.Max(33, _minFrameIntervalMs);
-                long elapsed = Environment.TickCount64 - _lastProduceTick;
-                if (elapsed < interval)
-                    Thread.Sleep((int)(interval - elapsed));
+                    // 节流：按最小帧间隔休眠
+                    int interval = Math.Max(33, _minFrameIntervalMs);
+                    long elapsed = Environment.TickCount64 - _lastProduceTick;
+                    if (elapsed < interval)
+                        Thread.Sleep((int)(interval - elapsed));
+                }
+                catch (SharpGenException ex) when (ex.ResultCode.Code == Vortice.DXGI.ResultCode.AccessLost.Code)
+                {
+                    // 设备丢失（显示器切换 / 独占全屏切换），标记需要重建
+                    if (Volatile.Read(ref _sessionGen) == myGen) _running = false;
+                    break;
+                }
+                catch (Exception)
+                {
+                    // 其他瞬时错误，继续循环
+                    Thread.Sleep(50);
+                }
             }
-            catch (SharpGenException ex) when (ex.ResultCode.Code == Vortice.DXGI.ResultCode.AccessLost.Code)
+        }
+        finally
+        {
+            // 兜底释放（审查修复）：Join 超时的旧线程最终退出时，若没有新会话接手，
+            // 这里把没人再用的 D3D 资源收掉，避免"重启失败 → 资源永久泄漏"。
+            lock (_gate)
             {
-                // 设备丢失（显示器切换 / 独占全屏切换），标记需要重建
-                _running = false;
-                break;
-            }
-            catch (Exception)
-            {
-                // 其他瞬时错误，继续循环
-                Thread.Sleep(50);
+                if (ReferenceEquals(_captureThread, Thread.CurrentThread) && !_running)
+                {
+                    _captureThread = null;
+                    ReleaseResources();
+                }
             }
         }
     }
 
     /// <summary>获取一帧桌面、裁剪窗口区域、降采样、产出 FrameData。返回 false 表示无新帧。</summary>
-    private bool TryAcquireAndProcessFrame()
+    private bool TryAcquireAndProcessFrame(int myGen)
     {
+        if (Volatile.Read(ref _sessionGen) != myGen) return false;
         if (_duplication is null || _stagingTexture is null || _context is null)
             return false;
 
@@ -292,6 +327,8 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
         {
             using (desktopResource)
             {
+                // Acquire 期间可能已被 Stop/Start 换代：此刻共享资源随时会被释放，立即收手
+                if (Volatile.Read(ref _sessionGen) != myGen) return false;
                 // DXGI 资源 → D3D11 纹理（桌面帧底层是 D3D11 纹理）
                 using var desktop = desktopResource.QueryInterface<ID3D11Texture2D>();
                 // 每帧更新窗口 rect（窗口可能被移动 / 调整大小）
@@ -306,6 +343,8 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
                 var raw = CopyWindowBgra(desktop);
                 var data = WindowCapture.DownscaleIfNeeded(raw, winW, winH, out int ow, out int oh);
 
+                // 出帧前最后一次校验：过期线程绝不写 _latest（否则会覆盖新会话的首帧）
+                if (Volatile.Read(ref _sessionGen) != myGen) return false;
                 long tick = Environment.TickCount64;
                 _lastProduceTick = tick;
                 _latest = new FrameData(data, ow, oh, tick);
@@ -315,7 +354,7 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
         }
         finally
         {
-            try { _duplication.ReleaseFrame(); } catch { }
+            try { _duplication?.ReleaseFrame(); } catch { }
         }
         return true;
     }
@@ -417,10 +456,11 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
         {
             if (!_running && _captureThread is null && _device is null) return;
             _stopRequested = true;
+            Interlocked.Increment(ref _sessionGen); // 旧线程立刻过期，即使 Join 失败也不再碰资源
             _running = false;
             t = _captureThread;
         }
-        bool joined = t is null || !t.IsAlive || t.Join(1000);
+        bool joined = t is null || !t.IsAlive || SafeJoin(t, 3000);
         lock (_gate)
         {
             if (joined)
@@ -429,6 +469,8 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
                     _captureThread = null;
                 ReleaseResources();
             }
+            // 未 join 成功时保留资源：旧线程可能正用着，等它自己退出时由 CaptureLoop 兜底释放。
+            // 但因为代际已失效，它不会再产出任何帧，_latest 清空是安全的。
             _latest = null;
         }
     }

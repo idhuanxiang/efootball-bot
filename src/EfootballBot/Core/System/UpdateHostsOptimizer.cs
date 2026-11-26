@@ -190,7 +190,6 @@ public static class UpdateHostsOptimizer
     private static bool RemoveBlock(List<string> lines)
     {
         int start = lines.FindIndex(l => l.Trim() == BeginMark);
-        int end = lines.FindIndex(l => l.Trim() == EndMark);
         if (start < 0)
         {
             // 兼容：块被手工改过时按域名删多余行
@@ -203,7 +202,23 @@ public static class UpdateHostsOptimizer
             });
             return removed > 0;
         }
-        if (end < start) end = start;
+        // 结束标记只从起始标记之后找（前面可能有历史遗留的同名标记）
+        int end = lines.FindIndex(start + 1, l => l.Trim() == EndMark);
+        if (end < 0)
+        {
+            // 结束标记缺失（文件被手工改坏/写入中断）：只删起始标记会留下映射行继续钉住 DNS，
+            // 下次 Apply 再写一块 → 块越堆越多（审查修复）。这里连同紧随的映射行一起删。
+            lines.RemoveAt(start);
+            if (start < lines.Count)
+            {
+                var t = lines[start].Trim();
+                if (t.Length > 0 && !t.StartsWith("#")
+                    && t.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Skip(1).Contains(UpdateHost))
+                    lines.RemoveAt(start);
+            }
+            return true;
+        }
         lines.RemoveRange(start, Math.Min(end - start + 1, lines.Count - start));
         return true;
     }

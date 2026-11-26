@@ -14,6 +14,7 @@ public sealed class ForegroundMouse
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr hWnd, int cmd);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hWnd, ref POINT p);
+    [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hWnd);
 
@@ -46,7 +47,11 @@ public sealed class ForegroundMouse
         if (hWnd == old) return old;
         ShowWindow(hWnd, SW_RESTORE);
         BringWindowToTop(hWnd);
+        // 置前可能被系统拒绝（前台锁超时/目标进程提权）：调用方随后会用 SendInput 点真实光标，
+        // 落点归属由"当前前台窗口"决定，置前失败必须让调用方知道（审查修复）。
         SetForegroundWindow(hWnd);
+        if (GetForegroundWindow() != hWnd)
+            global::System.Diagnostics.Debug.WriteLine($"[input] SetForegroundWindow 未生效（目标 0x{hWnd:X}），后续真实点击可能落在其他窗口");
         return old;
     }
 
@@ -103,8 +108,16 @@ public sealed class ForegroundMouse
     /// <summary>把客户区坐标换算为屏幕坐标并点击（需窗口已在前台）。</summary>
     public Task ClickClientAsync(IntPtr hWnd, int clientX, int clientY, int downHoldMs = 60, CancellationToken ct = default)
     {
+        // 真实光标点击落到"当前前台窗口"。句柄失效时 ClientToScreen 返回 FALSE、p 仍是客户区坐标，
+        // 直接 SendInput 就会点中屏幕左上角那块区域里碰巧存在的其他窗口（可能是别的程序的关闭按钮）。
+        // 所以两道校验都失败即拒绝点击并抛错（审查修复）。
+        if (hWnd == IntPtr.Zero || !IsWindow(hWnd))
+            throw new InvalidOperationException($"目标窗口句柄已失效（0x{hWnd:X}），已跳过真实鼠标点击");
         var p = new POINT { X = clientX, Y = clientY };
-        ClientToScreen(hWnd, ref p);
+        if (!ClientToScreen(hWnd, ref p))
+            throw new InvalidOperationException($"客户区坐标转换屏幕坐标失败（句柄 0x{hWnd:X}），已跳过真实鼠标点击");
+        if (GetForegroundWindow() != hWnd)
+            throw new InvalidOperationException("目标窗口不在前台，已跳过真实鼠标点击（避免误点其他窗口）");
         return ClickScreenAsync(p.X, p.Y, downHoldMs, ct);
     }
 }

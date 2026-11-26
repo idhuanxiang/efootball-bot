@@ -176,6 +176,7 @@ internal sealed class MatchSessionTracker
             _needMenuSince = now;
             WasKeyMatch = _sawKeyMatch;
             LastEndReason = matchOver ? MatchEndReason.FullTime
+                : timedOut ? MatchEndReason.Timeout
                 : backToMenus ? MatchEndReason.Menu
                 : MatchEndReason.Timeout;
             _lastEndAt = now;

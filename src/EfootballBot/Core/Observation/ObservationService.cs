@@ -14,7 +14,9 @@ namespace EfootballBot.Core.Observation;
 public sealed class ObservationService : IDisposable
 {
     private readonly object _gate = new();
-    private ICaptureProvider _provider;
+    // volatile：OnFrame 在捕获线程回调里读它，AttachProvider/SwitchCapture 在引擎线程换它。
+    // 不加的话，换后端的短暂窗口里旧提供者的在途回调可能把旧帧写进 _frame（审查修复）。
+    private volatile ICaptureProvider _provider;
     private readonly OcrRecognizer _ocr;
     private readonly AppConfig _cfg;
 
@@ -58,12 +60,14 @@ public sealed class ObservationService : IDisposable
 
     private void OnFrame(object? sender, EventArgs e)
     {
-        var f = _provider.TryGetLatest();
-        if (f is not null)
-        {
-            _frame = f;
-            FrameUpdated?.Invoke(this, EventArgs.Empty);
-        }
+        var p = _provider;
+        var f = p.TryGetLatest();
+        if (f is null) return;
+        // 取到帧的瞬间后端已被换掉（DXGI 切 WGC 等）：这是旧后端的在途回调，丢弃即可，
+        // 否则新后端刚启动就会拿到一张过期画面。
+        if (!ReferenceEquals(p, _provider)) return;
+        _frame = f;
+        FrameUpdated?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>切换捕获提供者（DXGI / WGC）。会停止旧提供者并开始新提供者。</summary>

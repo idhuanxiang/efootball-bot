@@ -69,6 +69,12 @@ public static class UpdateApplier
             Log($"=== 更新开始：v{info.Version}，{(info.SingleExecutable ? "裸 exe" : "zip")}，" +
                 $"来源 {HostOf(info.DownloadUrls.FirstOrDefault())}，约 {info.TotalBytes / 1024 / 1024} MB ===");
 
+            // 完整性校验前置（审查修复）：清单缺 SHA256 时旧实现 hasher=null、只校验长度，
+            // 镜像/自定义主源被劫持即可投递任意 exe（供应链 RCE）。宁可拒绝更新，不可装来源不明的包。
+            if (string.IsNullOrWhiteSpace(info.ExpectedSha256))
+                throw new InvalidOperationException(
+                    "更新清单缺少 SHA256 校验值，已拒绝安装。请稍后重试或到发布页手动下载。");
+
             // ① 下载到 exe 旁 data\tmp\update\<guid>\（所有操作收在程序目录内）
             string tempDir = Path.Combine(AppPaths.TempDir, "update", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempDir);

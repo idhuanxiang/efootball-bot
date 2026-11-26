@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Text;
 
 namespace EfootballBot.Core.System;
@@ -38,13 +39,13 @@ public static class MatchLog
               .Append(minMs < 0 ? "" : minMs.ToString()).Append(',')
               .Append(avgMs < 0 ? "" : avgMs.ToString()).Append(',')
               .Append(maxMs).Append(',')
-              .Append(lossPct.ToString("0.#")).Append(',')
+              .Append(lossPct.ToString("0.#", CultureInfo.InvariantCulture)).Append(',')
               .Append(durationSec).Append(',')
               .Append(p95Ms <= 0 ? "" : p95Ms.ToString()).Append(',')
               .Append(jitterMs < 0 ? "" : jitterMs.ToString()).Append(',')
               .Append(samples < 0 ? "" : samples.ToString()).Append(',')
               .Append(Csv(grade)).Append(',')
-              .Append(bars > 0 ? bars.ToString("0.0") : "").Append(',')
+              .Append(bars > 0 ? bars.ToString("0.0", CultureInfo.InvariantCulture) : "").Append(',')
               .Append(tcpingMs >= 0 ? tcpingMs.ToString() : "").AppendLine();
             File.AppendAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
         }

@@ -720,12 +720,15 @@ public partial class MainWindow
     private InGameConnectionMonitor? _inGame;
     private ConnectionOverlay? _overlay;
 
-    private void BtnInGameMonitor_Click(object sender, RoutedEventArgs e)
+    private async void BtnInGameMonitor_Click(object sender, RoutedEventArgs e)
     {
         if (_inGame is { Running: true })
         {
             _inGame.Updated -= OnInGameUpdated;
-            _inGame.Stop();
+            // 异步停：采样循环等待 + 关 pcap 设备不再占用 UI 线程（旧实现点停止会冻结 2-3 秒）
+            BtnInGameMonitor.IsEnabled = false;
+            try { await _inGame.StopAsync(); }
+            finally { BtnInGameMonitor.IsEnabled = true; }
             DotInGame.Fill = BrushIdle;
             TxtInGameState.Text = "未启动";
             BtnInGameMonitor.Content = "启动监控";

@@ -377,9 +377,15 @@ public static partial class MatchBrain
                     screenStreak < escapeAt && ocr.Words.Count > 0)
                     return new MatchAction(MatchActionKind.PadConfirm, 2000, "认不出的界面：按 A 试探");
                 if (screenStreak >= escapeAt && ocr.Words.Count > 0)
+                {
+                    // 与其它逃生点一致：每 5 轮才真正按一次 B（审查修复）。旧的裸调用会让
+                    // PeriodicBackAction 每轮都返回 GamepadBack，等于每秒盲按 B，把返回键压成连发。
+                    if ((screenStreak - escapeAt) % 5 != 0)
+                        return MatchAction.Wait(1200);
                     // 用周期换招替代裸 B：非比赛 6 轮起、比赛上下文 30 轮起，每 2 轮计数一次，
                     // 第 3 次（非比赛约 10 轮）升级为「上→A→B」。水印/加载页已在前面 return，不会误触发。
                     return PeriodicBackAction(screenStreak, escapeAt, "B 键逃生", period: 2);
+                }
                 // 0 词界面一律 Wait（不盲按 B）：黑屏/捕获退化时按键只会雪上加霜，
                 // 这是有意设计（见测试「完全无感知时绝不盲按B」与 2026-10-10 实机事故），
                 // 真硬件故障由输入自检兜底停机，不需要在这里加超时逃生。

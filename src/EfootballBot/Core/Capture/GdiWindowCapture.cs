@@ -131,7 +131,7 @@ public sealed class GdiWindowCapture : ICaptureProvider
                 bool ok;
                 try
                 {
-                    ok = CaptureOne(hdcMem, ref hBmp, ref hBmpOld, ref bits, ref bmpW, ref bmpH);
+                    ok = CaptureOne(hdcMem, ref hBmp, ref hBmpOld, ref bits, ref bmpW, ref bmpH, myGen);
                 }
                 catch (Exception ex)
                 {
@@ -165,7 +165,7 @@ public sealed class GdiWindowCapture : ICaptureProvider
     /// <summary>抓一帧：按窗口 rect 尺寸准备 DIB → PrintWindow → 拷出 BGRA → 降采样 ≤720。
     /// 每个失败分支都写 LastError——这条链路静默失败过一次（2026-10-29 实机：三层兜底全无帧
     /// 但日志空白），归因信息比"失败"本身更重要。</summary>
-    private bool CaptureOne(nint hdcMem, ref nint hBmp, ref nint hBmpOld, ref nint bits, ref int bmpW, ref int bmpH)
+    private bool CaptureOne(nint hdcMem, ref nint hBmp, ref nint hBmpOld, ref nint bits, ref int bmpW, ref int bmpH, int myGen)
     {
         if (!GetWindowRect(_hwnd, out var rc))
         {
@@ -241,6 +241,10 @@ public sealed class GdiWindowCapture : ICaptureProvider
             }
             finally { ReleaseDC(nint.Zero, sdc); }
         }
+
+        // 出帧前校验代际（审查修复）：Join 超时后旧线程从 PrintWindow 返回，
+        // 下面若照样写 _latest/指纹，会把过期画面盖到新会话的首帧上。
+        if (Volatile.Read(ref _sessionGen) != myGen) return false;
 
         UpdateFrameSignature(full);
 

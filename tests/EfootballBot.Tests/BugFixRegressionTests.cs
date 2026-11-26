@@ -65,7 +65,9 @@ public class BugFixRegressionTests
             Assert.Equal(40, ForegroundMouse.InputStructSize);
             Assert.Equal(16, CrashReporter.MinidumpExceptionInfoSize);
         }
-        Assert.Equal(45, Marshal.SizeOf<DwmNative.DwmThumbnailProperties>());
+        // 48 = 4(Flags)+16(Destination)+16(Source)+1(Opacity)+3(自然对齐填充)+4(Visible)+4(SourceClientAreaOnly)。
+        // 之前断言 45 实际是在固化 Pack=1 的错位结构（原生按 48 读，Visible 偏移会错）。
+        Assert.Equal(48, Marshal.SizeOf<DwmNative.DwmThumbnailProperties>());
     }
 
     [Fact]

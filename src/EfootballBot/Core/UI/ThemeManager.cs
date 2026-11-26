@@ -79,7 +79,9 @@ public static class ThemeManager
         var app = Application.Current.Resources;
         foreach (var (key, hex) in colors)
         {
-            var color = (Color)ColorConverter.ConvertFromString(hex);
+            // 调色板里一个非法 hex 会让 ConvertFromString 抛 FormatException：
+            // 启动即崩、或半套主题"花屏"（Validate 只查 key 齐不齐，不查值）。这里降级为透明并留痕。
+            var color = ParseColor(hex, key);
             app[key] = new SolidColorBrush(color);
             // 同一份颜色再以 Color 形式发布一份：渐变停点（GradientStop.Color）只能用 Color，
             // 否则页面里的渐变只能写死十六进制 —— 那正是「换个主题就有一块不跟」的老问题。
@@ -105,13 +107,28 @@ public static class ThemeManager
         }
     }
 
+    /// <summary>解析 #RRGGBB / #AARRGGBB；非法值返回透明并写调试输出，绝不让主题切换抛异常。</summary>
+    private static Color ParseColor(string? hex, string key)
+    {
+        if (!string.IsNullOrWhiteSpace(hex))
+        {
+            try
+            {
+                if (ColorConverter.ConvertFromString(hex) is Color c) return c;
+            }
+            catch { /* 非法颜色串：走下面的降级 */ }
+        }
+        global::System.Diagnostics.Debug.WriteLine($"[theme] 颜色 Token 非法：{key}={hex}");
+        return Colors.Transparent;
+    }
+
     /// <summary>用三个 Token 颜色搭一条竖向渐变（同一颜色三停 = 平铺，用于 Fluent 世界）。</summary>
     private static LinearGradientBrush BuildGradient(
         IReadOnlyDictionary<string, string> colors, string from, string mid, string to,
         double at0, double at1, double at2)
     {
         Color Pick(string key) => colors.TryGetValue(key, out var hex)
-            ? (Color)ColorConverter.ConvertFromString(hex)
+            ? ParseColor(hex, key)
             : Colors.Transparent;
 
         var brush = new LinearGradientBrush

@@ -20,6 +20,10 @@ public sealed class SmartHotkey : IDisposable
     private const int WM_RBUTTONDOWN = 0x0204;
     private const int WM_MBUTTONDOWN = 0x0207;
     private const int WM_XBUTTONDOWN = 0x020B;
+    private const int WM_LBUTTONUP = 0x0202;
+    private const int WM_RBUTTONUP = 0x0205;
+    private const int WM_MBUTTONUP = 0x0208;
+    private const int WM_XBUTTONUP = 0x020C;
 
     private const int VK_CONTROL = 0x11, VK_SHIFT = 0x10, VK_MENU = 0x12, VK_LWIN = 0x5B, VK_RWIN = 0x5C;
 
@@ -51,6 +55,9 @@ public sealed class SmartHotkey : IDisposable
     private volatile Config.HotkeyConfig? _cfg;
     // 防按住不放时的键盘自动连发：同一主键未松开前不重复触发，避免"按一次暂停变暂停+停止"
     private int _heldMainVk;
+    // 鼠标键同样要去抖（审查修复）：旧实现每个 WM_*BUTTONDOWN 都 Fire，
+    // 按住鼠标侧键会连发，双击则"暂停→立即停止"。按下记键、抬起清零。
+    private int _heldMouseBtn;
 
     /// <summary>主热键触发（暂停/停止语义由调用方实现）。钩子线程回调，UI 操作需封送。</summary>
     public event Action? PauseStopTriggered;
@@ -149,6 +156,14 @@ public sealed class SmartHotkey : IDisposable
         return true;
     }
 
+    /// <summary>鼠标按下是否应触发：同一键未抬起前不重复触发（纯函数便于单测）。</summary>
+    internal static bool ShouldAcceptMouseDown(int button, ref int heldButton)
+    {
+        if (button == 0 || button == heldButton) return false;
+        heldButton = button;
+        return true;
+    }
+
     private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
@@ -181,7 +196,14 @@ public sealed class SmartHotkey : IDisposable
                 _ => 0,
             };
             if (btn != 0)
-                Fire(btn, CurrentMods(), isMouse: true);
+            {
+                if (ShouldAcceptMouseDown(btn, ref _heldMouseBtn))
+                    Fire(btn, CurrentMods(), isMouse: true);
+            }
+            else if (wParam.ToInt64() is WM_LBUTTONUP or WM_RBUTTONUP or WM_MBUTTONUP or WM_XBUTTONUP)
+            {
+                _heldMouseBtn = 0;
+            }
         }
         return CallNextHookEx(_msHook, nCode, wParam, lParam);
     }

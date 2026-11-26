@@ -66,7 +66,8 @@ public class GoalCutsceneFalseEndTests
     {
         var t = new MatchSessionTracker();
         t.Observe(MatchScreen.InMatch, T0);
-        Assert.True(t.Observe(MatchScreen.MatchHub, T0.AddMinutes(8)));
+        // 2 分钟：越过 60 秒误判门，但离 5 分钟超时线还很远 → 菜单是可信关场证据
+        Assert.True(t.Observe(MatchScreen.MatchHub, T0.AddMinutes(2)));
         Assert.False(t.Active);
         Assert.False(t.MenuCloseSuppressed);
         Assert.Equal(MatchEndReason.Menu, t.LastEndReason);

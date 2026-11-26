@@ -62,7 +62,20 @@ public static class ToolPaths
         {
             if (region == ServerRegion.Cn) cfg.GamePaths.CnSettingsTool = path;
             else cfg.GamePaths.IntlSettingsTool = path;
-            try { cfg.Save(); } catch (Exception ex) { log?.Invoke($"路径记忆保存失败（不影响使用）：{ex.Message}", LogLevel.Debug); }
+            try
+            {
+                // 只把「路径记忆」这一个字段合并进磁盘配置（审查修复）：
+                // 直接 cfg.Save() 是整份快照落盘，会把 GUI/Worker 另一侧刚写入的
+                // 其他设置（手柄恢复清单、挂机参数）静默覆盖。
+                bool cn = region == ServerRegion.Cn;
+                string located = path;
+                AppConfig.UpdateOnDisk(fresh =>
+                {
+                    if (cn) fresh.GamePaths.CnSettingsTool = located;
+                    else fresh.GamePaths.IntlSettingsTool = located;
+                });
+            }
+            catch (Exception ex) { log?.Invoke($"路径记忆保存失败（不影响使用）：{ex.Message}", LogLevel.Debug); }
         }
         return path;
     }

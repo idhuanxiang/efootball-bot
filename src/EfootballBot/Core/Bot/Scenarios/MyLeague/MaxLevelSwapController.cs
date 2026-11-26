@@ -754,9 +754,11 @@ public sealed class MaxLevelSwapController
                         log($"[我的联赛] 前 {darkSkip} 张后备卡头像压暗（同名卡在名单内）：→×{darkSkip} 跳到第 {darkSkip + 1} 张", LogLevel.Info);
                         await pad.DpadRepeat(PadDir.Right, darkSkip);
                     }
-                    _swapped++;
                     log($"[我的联赛] 换人：后备列表第 {darkSkip + 1} 张亮卡换入第 {_swapPos + 1} 位，B 完成退出", LogLevel.Success);
                     await pad.Confirm(); // A 交换
+                    // 计数放在确认之后（审查修复）：Confirm 抛异常（手柄失效/暂停取消）说明换人
+                    // 根本没提交，旧实现先 ++ 再确认，会把失败的一次算成"已换人"。
+                    _swapped++;
                     _phase = Phase.SwapExit;
                     _verifyRounds = 0;
                     _exitUsedA = false;
@@ -794,11 +796,17 @@ public sealed class MaxLevelSwapController
                     // 后备名单）：不退出比赛计划，→ 进阵（光标固定在**第 3 位**，用户
                     // 2026-10-25 实机）→ Rewind 按阵型步走到 换人位+1 继续巡检
                     if (_verifyRounds < 2) return 1100; // 换人动画收尾
-                    // 末位（第 11 位）换人后没有下一位：不进阵走位，Rewind 直接收尾
+                    // 末位（第 11 位）换人后没有下一位：不进阵走位，直接收尾
+                    // （审查修复：旧实现照样按 → 再进 Rewind，与日志"结束巡检"矛盾，
+                    //  还让光标从第 3 位一路盲走到阵型末尾）
                     if (_swapPos + 2 > 11)
+                    {
                         log("[我的联赛] 已返回站位页：末位换人完成，结束巡检", LogLevel.Info);
-                    else
-                        log($"[我的联赛] 已返回站位页：→ 进阵（第 3 位）→ 走到第 {_swapPos + 2}/11 位继续巡检", LogLevel.Info);
+                        _phase = Phase.Done;
+                        _verifyRounds = 0;
+                        return 1000;
+                    }
+                    log($"[我的联赛] 已返回站位页：→ 进阵（第 3 位）→ 走到第 {_swapPos + 2}/11 位继续巡检", LogLevel.Info);
                     await pad.Dpad(PadDir.Right);
                     _rewindWalk = false;
                     _phase = Phase.Rewind;

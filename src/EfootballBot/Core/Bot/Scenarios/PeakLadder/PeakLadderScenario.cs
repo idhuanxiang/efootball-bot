@@ -50,7 +50,7 @@ public sealed class PeakLadderScenario : IScenario
 
     private readonly BackgroundMouse _mouse;
 
-    private readonly BackgroundKeyboard _keyboard = new();
+    private readonly BackgroundKeyboard _keyboard;
 
     private readonly MatchFlowMemory _memory = new();
     /// <summary>赛中匹配（共享层）：开赛/终场判定 + 场内挂机节奏 + 场次记账，五个模块同一份实现。</summary>
@@ -90,6 +90,8 @@ public sealed class PeakLadderScenario : IScenario
         _log = log;
         _matchPlay = new MatchPlay(engine, "天梯巅峰赛", log);
         _mouse = new BackgroundMouse();
+        // 投递失败（窗口已关闭 / KEYUP 重试耗尽）要能进日志，否则"按键没反应"无从查起
+        _keyboard = new BackgroundKeyboard(msg => log(msg, LogLevel.Warn));
         _homeGuide = new ReturnToHomeGuide("天梯巅峰赛", log, engine.DumpSuspiciousFrame);
     }
 

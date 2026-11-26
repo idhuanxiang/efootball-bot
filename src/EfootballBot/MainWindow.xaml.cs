@@ -171,22 +171,27 @@ public partial class MainWindow
     private WorkerHost GetOrCreateWorkerHost()
     {
         if (_workerHost is not null) return _workerHost;
-        _workerHost = new WorkerHost();
-        _workerHost.Log += (lv, msg) =>
+        // 事件处理器一律用局部 host 引用（审查修复）：守卫若读 _workerHost 字段，
+        // 判断的是"当前"宿主而不是"触发事件"的那个宿主。启动超时弃用旧实例后
+        // （_workerHost=null → 3 秒后 Dispose），旧 Worker 的迟到回调会绕过全部守卫，
+        // 误 ResetButtons/解热键，甚至按旧退出原因触发自动关窗。
+        var host = new WorkerHost();
+        _workerHost = host;
+        host.Log += (lv, msg) =>
         {
             // 落盘统一走 AppendLog（v1.1.19：GUI 侧日志全部进文件），此处只进 UI
             Dispatcher.BeginInvoke(() =>
                 AppendLog(msg, Enum.TryParse<LogLevel>(lv, out var l) ? l : LogLevel.Info));
         };
-        _workerHost.StatsChanged += s => Dispatcher.BeginInvoke(UpdateStats);
+        host.StatsChanged += s => Dispatcher.BeginInvoke(UpdateStats);
         // Worker 发感知摘要文本（"OCR N 词 / 检测 N 框"）+ 证据列表
-        _workerHost.ScreenObserved += (screen, score, evidence) => Dispatcher.BeginInvoke(() =>
+        host.ScreenObserved += (screen, score, evidence) => Dispatcher.BeginInvoke(() =>
         {
             TxtScreen.Text = $"感知：{screen}（{score:F0}）";
             if (!string.IsNullOrEmpty(evidence))
                 TxtScreen.Text += $"  {evidence}";
         });
-        _workerHost.PreviewReceived += pngB64 =>
+        host.PreviewReceived += pngB64 =>
         {
             // 只保留最新帧（审查修复）：UI 繁忙时不堆积几十帧 base64，恢复后直接显示最新一帧
             global::System.Threading.Interlocked.Exchange(ref _pendingPreviewFrame, pngB64);
@@ -198,10 +203,11 @@ public partial class MainWindow
                 if (latest is not null) ShowPreviewPng(latest);
             });
         };
-        _workerHost.Exited += reason => Dispatcher.BeginInvoke(() =>
+        host.Exited += reason => Dispatcher.BeginInvoke(() =>
         {
-            // 若正在启动/切换/手动停止或新会话已在运行，忽略上一代迟到的退出回调
-            if (_starting || _stopping || _workerHost is { ScenarioRunning: true }) return;
+            // 正在启动/切换/手动停止、宿主已被替换/弃用、或新会话已在运行 → 忽略迟到回调
+            if (!ReferenceEquals(host, _workerHost)
+                || _starting || _stopping || host.ScenarioRunning) return;
             bool isError = reason.StartsWith("启动失败", StringComparison.Ordinal)
                         || reason.StartsWith("异常停止", StringComparison.Ordinal);
             AppendLog($"[结束] 场景已结束：{reason}", isError ? LogLevel.Error : LogLevel.Success);
@@ -212,10 +218,11 @@ public partial class MainWindow
             if (!isError && _cfg.AutoCloseWhenDone)
                 ScheduleAutoClose();
         });
-        _workerHost.Disconnected += () => Dispatcher.BeginInvoke(() =>
+        host.Disconnected += () => Dispatcher.BeginInvoke(() =>
         {
-            // 若正在启动/切换/手动停止或新会话已运行，忽略旧 Worker 的迟到断开回调
-            if (_starting || _stopping || _workerHost is { ScenarioRunning: true }) return;
+            // 同上：只处理"当前宿主"的断开，旧实例的迟到回调一律忽略
+            if (!ReferenceEquals(host, _workerHost)
+                || _starting || _stopping || host.ScenarioRunning) return;
             AppendLog("[断开] Worker 进程已断开，场景已停止。", LogLevel.Warn);
             ResetButtons();
             _statsTimer.Stop();
@@ -228,8 +235,9 @@ public partial class MainWindow
         });
         // 需要用户动手的阻断（真实手柄占着玩家 1）：日志之外必须弹窗，
         // 否则用户只会看到"点开始就停"，根本不知道要去关手柄
-        _workerHost.ActionRequired += reason => Dispatcher.BeginInvoke(() =>
+        host.ActionRequired += reason => Dispatcher.BeginInvoke(() =>
         {
+            if (!ReferenceEquals(host, _workerHost)) return;
             AppendLog($"需要处理：{reason.Replace("\n", " ")}", LogLevel.Error);
             System.Windows.MessageBox.Show(this,
                 reason + "\n\n处理后点击「开始挂机」重试。",
@@ -237,7 +245,7 @@ public partial class MainWindow
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
         });
-        return _workerHost;
+        return host;
     }
 
     // ---------------- 开始 / 停止 ----------------

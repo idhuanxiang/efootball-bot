@@ -1055,11 +1055,9 @@ public class MaxLevelSwapTests
         exp.AddRange(new[] { "Upx9", "Downx9", "A" });           // 应用筛选
         exp.Add("A");                                            // 换入
         exp.Add("B");                                            // 返回站位页
-        exp.Add("Right");                                        // → 进阵（第 3 位）
-        // Rewind 从第 3 位（索引 2）走到末位（索引 10）：CursorMoves[2..9]，不越界
-        for (int d = 2; d < moves.Length; d++) exp.Add(moves[d].ToString());
-        exp.Add("B");                                            // Rewind 完成 → 站位页返回
-        exp.Add("B");                                            // Done 收尾
+        // 末位换人没有下一位：不再 → 进阵/走位（旧行为与日志"结束巡检"矛盾），直接 Done 收尾
+        exp.Add("B");                                            // Done：逐级 B 退出
+        exp.Add("B");                                            // Done：继续退到主页
         Assert.Equal(exp, pad.Log);
     }
 

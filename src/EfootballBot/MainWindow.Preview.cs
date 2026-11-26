@@ -58,18 +58,21 @@ public partial class MainWindow
         }
         else
         {
+            // 先落 UI 状态再发 OFF（审查修复）：Worker 忙时 SendPreviewAsync 要等十几秒，
+            // 这段 await 期间 _previewOn 仍为 true、计时器仍在跑，帧看门狗会判定"4 秒没帧"
+            // 并重发 ON，把排在后面的 OFF 撤销 → 预览关不掉、按钮与 Worker 状态脱节。
             StopDwmPreview();
+            _previewTimer.Stop();
+            _previewOn = false;
+            // 清空画面，否则最后一帧会一直留在控件里，看起来像"关不掉"
+            Preview.Source = null;
+            BtnPreview.Content = "开启预览";
             try
             {
                 if (_workerHost is { ScenarioRunning: true })
                     await _workerHost.SendPreviewAsync(false);
             }
             catch { }
-            _previewTimer.Stop();
-            _previewOn = false;
-            // 清空画面，否则最后一帧会一直留在控件里，看起来像"关不掉"
-            Preview.Source = null;
-            BtnPreview.Content = "开启预览";
         }
     }
 

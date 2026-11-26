@@ -141,8 +141,13 @@ public static class WorkerProgram
                 catch { /* 父进程早已不在：直接收尾 */ }
                 try { FileLogger.Instance.Write("GUI 进程已退出：Worker 自主收尾（停引擎 / 恢复真实手柄 / 还原停靠窗口）", LogLevel.Warn); } catch { }
                 StopPreviewLoop();
-                try { engine?.Stop(); } catch { }
-                try { engine?.Dispose(); } catch { }
+                var dying = Interlocked.Exchange(ref engine, null);
+                if (dying is not null)
+                {
+                    // 先等主循环退出再释放：GUI 没了更要保证手柄/捕获干净收尾
+                    try { await dying.StopAsync(1500); } catch { }
+                    try { dying.Dispose(); } catch { }
+                }
                 try { EfootballBot.Core.Input.PhysicalPadControl.RestoreAll(); } catch { }
                 try { EfootballBot.Core.System.BackgroundParker.TryRestoreFromRecord(); } catch { }
                 DeleteSessionMarker();
@@ -165,7 +170,16 @@ public static class WorkerProgram
             // ★写入本身不能带取消令牌（复查修复）：PipeStream.WriteAsync 非原子，
             // 超时取消可能只写了半条 JSON 且没有换行，后续所有消息都会解析错位、整条丢弃，
             // 连 EvStopped 都收不到——比原问题更严重。只对"等锁"限时，写入要么完整成功、要么管道断开。
-            if (!await writeLock.WaitAsync(timeoutMs)) return;
+            // 预览帧丢了无所谓；控制消息（尤其 EvStopped）不能静默丢——旧实现等锁超时直接 return，
+            // GUI 等不到停止确认只能 Kill 进程，打断手柄恢复。这里再等一轮，仍拿不到锁说明
+            // 写入线程已被不读管道的 GUI 永久卡死：主动断管，让 GUI 读循环立刻感知并走断开回收。
+            bool acquired = await writeLock.WaitAsync(timeoutMs);
+            if (!acquired && !isPreview) acquired = await writeLock.WaitAsync(timeoutMs);
+            if (!acquired)
+            {
+                if (!isPreview) { try { p.Dispose(); } catch { } }
+                return;
+            }
             try
             {
                 if (p.IsConnected)
@@ -180,8 +194,12 @@ public static class WorkerProgram
 
         void BridgeEvents(BotEngine e)
         {
+            // 代际守卫（审查修复）：旧引擎被替换/释放后，它的迟到事件（Log/Stats/Screen/捕获步骤）
+            // 不能串进新会话的界面——否则会看到上一局的分数/画面摘要，甚至覆盖新会话状态。
+            bool stale() => !ReferenceEquals(Volatile.Read(ref engine), e);
             e.Log += (msg, lv) =>
             {
+                if (stale()) return;
                 // 不落盘：同一批消息由 GUI 的 AppendLog 统一写日志文件（Worker 只拥有
                 // 自己的生命周期行）。此前两边各写一份逐字相同的文件，反馈包里同一次
                 // 会话有两份副本，磁盘与打包体积白白翻倍。
@@ -189,14 +207,21 @@ public static class WorkerProgram
                 _ = SendAsync(PipeProtocol.EvLog(lv.ToString(), msg));
             };
             e.StatsChanged += s =>
+            {
+                if (stale()) return;
                 _ = SendAsync(PipeProtocol.EvStats(s.MatchesDone, s.KeyMatches, s.PlayersMaxed, s.StartedAt, s.LastError,
                     s.SkippedMatches, s.PerfNote, s.AiLadderRating, s.AiLadderDivision));
+            };
             // 感知摘要事件（Screen 已是摘要文本："OCR N 词 / 检测 N 框"）
             e.ScreenChanged += s =>
+            {
+                if (stale()) return;
                 _ = SendAsync(PipeProtocol.EvScreen(s.Screen, s.Score,
                     string.Join(",", s.Evidence)));
+            };
             e.Capture.StepLog += s =>
             {
+                if (stale()) return;
                 if (console) Console.WriteLine($"[cap] {s}");
                 _ = SendAsync(PipeProtocol.EvLog("Info", $"[捕获] {s}"));
             };
@@ -374,7 +399,7 @@ public static class WorkerProgram
                         try
                         {
                             if (finishingEngine.IsRunning)
-                                finishingEngine.Stop();
+                                await finishingEngine.StopAsync(1500);
                             finishingEngine.Dispose();
                         }
                         catch (Exception ex)
@@ -448,7 +473,7 @@ public static class WorkerProgram
             var toDispose = Interlocked.Exchange(ref engine, null);
             if (toDispose is not null)
             {
-                try { toDispose.Stop(); } catch { }
+                try { await toDispose.StopAsync(1500); } catch { }
                 try { toDispose.Dispose(); } catch { }
                 if (console) Console.WriteLine("[Worker] 因 GUI 断开而停止并释放引擎");
             }

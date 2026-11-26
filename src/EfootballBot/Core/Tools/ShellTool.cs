@@ -52,8 +52,24 @@ public sealed class ShellTool : ITool
                 using var _ = Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
                 return ToolResult.Success(path, path);
             }
-            // 目录不存在时先建出来（日志/存帧/诊断目录首次打开的场景）
-            if (!File.Exists(path)) Directory.CreateDirectory(path);
+            // 目录不存在时先建出来（日志/存帧/诊断目录首次打开的场景）；
+            // 带扩展名的路径按"文件"处理——对文件路径 CreateDirectory 会建出同名空目录（审查修复）
+            if (!File.Exists(path))
+            {
+                if (Directory.Exists(path))
+                {
+                    // 已存在：直接打开
+                }
+                else if (Path.HasExtension(path))
+                {
+                    ctx.Log($"打开路径失败（{path}）：文件不存在", LogLevel.Warn);
+                    return ToolResult.Fail("文件不存在，无法打开", path);
+                }
+                else
+                {
+                    Directory.CreateDirectory(path);
+                }
+            }
             using var __ = Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
             return ToolResult.Success(path, path);
         }

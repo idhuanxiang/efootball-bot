@@ -29,14 +29,35 @@ public sealed class DriverInstaller
     {
         // 安装包释放/日志放 exe 旁 data\tmp\（2026-10-11 用户要求：所有操作收在程序目录内）
         string dir = AppPaths.TempDir;
-        Directory.CreateDirectory(dir);
         string exe = Path.Combine(dir, SetupExeName);
         string logPath = Path.Combine(dir, SetupLogName);
 
         _log("正在释放内置驱动安装包…");
-        await DriverPayload.ReleaseToAsync(exe, ct);
+        try
+        {
+            Directory.CreateDirectory(dir);
+            await DriverPayload.ReleaseToAsync(exe, ct);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            // 本方法的契约是"一律返回结果、不抛异常"：释放/建目录的 IO 失败（磁盘满、杀软拦截、
+            // 无写权限）以前会直接抛穿，一键修复只能看到裸异常（审查修复）。
+            _log($"释放驱动安装包失败：{ex.Message}");
+            return new DriverSetupResult(
+                DriverSetupResultKind.Failed,
+                $"释放内置驱动安装包失败：{ex.Message}。可手动下载官方安装器：{FallbackUrl}",
+                false);
+        }
 
-        string hash = DriverPayload.ComputeSha256(exe);
+        string hash;
+        try { hash = DriverPayload.ComputeSha256(exe); }
+        catch (Exception ex)
+        {
+            _log($"校验驱动安装包失败：{ex.Message}");
+            return new DriverSetupResult(DriverSetupResultKind.Failed,
+                $"读取安装包失败：{ex.Message}。可手动下载官方安装器：{FallbackUrl}", false);
+        }
         if (!hash.Equals(DriverPayload.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
         {
             return new DriverSetupResult(

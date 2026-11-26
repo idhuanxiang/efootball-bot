@@ -218,14 +218,32 @@ public static class PadSelfCheck
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi);
             if (p is null) return (false, "无法启动 sc.exe");
-            string stdout = p.StandardOutput.ReadToEnd();
-            string stderr = p.StandardError.ReadToEnd();
-            p.WaitForExit(8000);
+            // 并行异步读双管道 + 限时等待（审查修复）：顺序 ReadToEnd 既没有超时
+            // （sc.exe 挂死 = 自检线程永久卡住），stderr 超过管道缓冲时还会经典死锁。
+            var outTask = p.StandardOutput.ReadToEndAsync();
+            var errTask = p.StandardError.ReadToEndAsync();
+            bool exited = p.WaitForExit(8000);
+            if (!exited)
+            {
+                try { p.Kill(entireProcessTree: true); } catch { }
+                try { p.WaitForExit(2000); } catch { }
+            }
+            string stdout = ReadSafely(outTask), stderr = ReadSafely(errTask);
+            if (!exited)
+                return (false, "sc.exe 超过 8 秒无响应，已强制结束。"
+                    + (string.IsNullOrWhiteSpace(stdout) ? "" : "\n" + stdout));
             return (p.ExitCode == 0, stdout + (string.IsNullOrWhiteSpace(stderr) ? "" : "\n" + stderr));
         }
         catch (Exception ex)
         {
             return (false, $"sc.exe 执行异常：{ex.Message}");
+        }
+
+        static string ReadSafely(Task<string> task)
+        {
+            // 进程被强杀后管道可能迟迟不收尾：最多再等 2 秒，拿不到就放弃（输出只是诊断信息）
+            try { return task.Wait(2000) ? task.Result : ""; }
+            catch { return ""; }
         }
     }
 }

@@ -20,6 +20,8 @@ public sealed class VigemPad : IVirtualPad
     private ViGEmClient? _client;
     private IXbox360Controller? _pad;
     private volatile bool _connected;
+    /// <summary>已释放：Dispose 后禁止再次 Connect（否则会新建 client 并与已释放状态并存）。</summary>
+    private bool _disposed;
 
     /// <summary>提交串行锁：Submit 与 Disconnect 互斥（3.2.0 输入加固：停止路径 Dispose
     /// 控制器与观察循环的并发提交相撞会炸出对象已释放异常）。</summary>
@@ -83,6 +85,7 @@ public sealed class VigemPad : IVirtualPad
     /// </summary>
     public void Connect(bool allowSlot0Occupied)
     {
+        if (_disposed) throw new ObjectDisposedException(nameof(VigemPad), "虚拟手柄已释放，不能再次连接。");
         if (_connected) return;
         if (!IsDriverInstalled())
             throw new InvalidOperationException("未检测到 ViGEmBus 驱动，开始挂机会自动安装（需管理员授权，首次约 10-30 秒）。");
@@ -116,6 +119,8 @@ public sealed class VigemPad : IVirtualPad
         {
             lock (_ioLock)
             {
+                // 等 slot0 宽限期间可能已被 Dispose：这里再查一次，避免在已释放对象上新建 client
+                ObjectDisposedException.ThrowIf(_disposed, this);
                 gen = ++_connectGen;
                 _client ??= new ViGEmClient();
                 pad = _client.CreateXbox360Controller();
@@ -292,9 +297,15 @@ public sealed class VigemPad : IVirtualPad
 
     public void Dispose()
     {
-        Disconnect();
-        try { _client?.Dispose(); } catch { }
-        _client = null;
+        // 释放 client 必须与 Connect/Submit 同一把锁（审查修复）：旧实现在锁外 Dispose，
+        // 并发的 Connect 正在用 _client 时会撞上已释放的 COM 对象。
+        lock (_ioLock)
+        {
+            _disposed = true;
+            Disconnect();
+            try { _client?.Dispose(); } catch { }
+            _client = null;
+        }
         GC.SuppressFinalize(this);
     }
 }

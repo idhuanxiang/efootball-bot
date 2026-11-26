@@ -36,6 +36,10 @@ internal sealed class SidecarDetector : IDetector
     private VisionSidecarClient? _client;
     private bool _owned;
     private bool _disposed;
+    // 与 OCR 侧对称的熔断（审查修复）：检测器断连即重启，视觉服务反复崩溃时
+    // 会陷入"每帧拉起一个进程"的风暴，且永远不会回退进程内 YOLO。
+    private int _rebuildFailStreak;
+    private const int MaxRebuildFailures = 3;
 
     public SidecarDetector(VisionSidecarConfig cfg)
     {
@@ -59,16 +63,32 @@ internal sealed class SidecarDetector : IDetector
 
         if (_client is { IsDisconnected: true })
         {
+            _rebuildFailStreak++;
+            if (_rebuildFailStreak >= MaxRebuildFailures)
+                throw new InvalidOperationException(
+                    $"vision-svc 检测连续 {_rebuildFailStreak} 次断连重建，停止重试；请检查模型/D3D 环境");
             if (_owned) { try { await _client.DisposeAsync().ConfigureAwait(false); } catch { } }
             _client = null;
             _owned = false;
         }
         if (_client is null)
         {
-            _client = await VisionSidecarClient
-                .StartAsync(_cfg, hwnd: 0, width: 1920, height: 1080, ct)
-                .ConfigureAwait(false);
-            _owned = true;
+            try
+            {
+                _client = await VisionSidecarClient
+                    .StartAsync(_cfg, hwnd: 0, width: 1920, height: 1080, ct)
+                    .ConfigureAwait(false);
+                _owned = true;
+                // 启动成功不等于健康：计数只在一次成功 Detect 后清零（见 DetectAsync）
+            }
+            catch
+            {
+                _rebuildFailStreak++;
+                if (_rebuildFailStreak >= MaxRebuildFailures)
+                    throw new InvalidOperationException(
+                        $"vision-svc 检测连续 {_rebuildFailStreak} 次启动失败，停止重建以避免死循环；请检查模型/D3D 环境");
+                throw;
+            }
         }
         return _client;
     }
@@ -83,6 +103,7 @@ internal sealed class SidecarDetector : IDetector
             var fromCapture = ReferenceEquals(client, VisionSidecarRuntime.SharedClient)
                               && VisionSidecarRuntime.MatchesCapturedFrame(frame);
             var raw = await client.DetectAsync(frame, fromCapture, ct).ConfigureAwait(false);
+            _rebuildFailStreak = 0; // 真正跑通一次检测才清零（与 OCR 侧同一规则）
             return raw
                 .Select(b => new YoloDetection(NameOf(b.C), b.C, b.S, b.X, b.Y, b.W, b.H))
                 .ToList();

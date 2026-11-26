@@ -32,6 +32,10 @@ public static class DeltaPatch
     private const int MinChunk = 2 * 1024;
     private const int MaxChunk = 64 * 1024;
     private const int MaxInsertOpBytes = 8 * 1024 * 1024;
+    // 头部上限（审查修复）：newLength/opCount 只有非负校验时，损坏/恶意补丁可以在最终
+    // SHA 校验之前声明一个天文数字，让应用端持续写盘直到磁盘满。正常安装包 < 200MB。
+    private const long MaxNewFileBytes = 1024L * 1024 * 1024;
+    private const int MaxOpCount = 2_000_000;
     private const ulong Mask = (1UL << 13) - 1; // 平均块 ≈ 8KB
 
     private const byte OpCopy = 1;
@@ -140,8 +144,14 @@ public static class DeltaPatch
 
         long newLength = patch.ReadInt64();
         int opCount = patch.ReadInt32();
-        if (newLength < 0 || opCount < 0)
-            throw new InvalidDataException("补丁头部长度或操作数异常");
+        if (newLength < 0 || newLength > MaxNewFileBytes)
+            throw new InvalidDataException("补丁声明的输出长度异常（超出允许上限）");
+        if (opCount < 0 || opCount > MaxOpCount)
+            throw new InvalidDataException("补丁操作数异常（超出允许上限）");
+        // 每个操作至少 5 字节（类型 1 + 长度 4）；操作数比补丁文件还多必是伪造/损坏头部，
+        // 提前拒绝，避免在最终 SHA 校验前按声明值疯狂写盘（审查修复）。
+        if (opCount > patch.BaseStream.Length / 5)
+            throw new InvalidDataException("补丁操作数与文件大小不符（头部疑似被篡改）");
 
         using var oldFs = File.OpenRead(oldFile);
         using var outFs = File.Create(outFile);

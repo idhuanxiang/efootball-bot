@@ -215,7 +215,10 @@ internal static class DwmNative
         public int cx, cy;
     }
 
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    // 必须用 Windows 头文件的自然对齐（默认 Pack=8）：结构体里 1 字节 Opacity 后面
+    // 紧跟两个 BOOL，Pack=1 会把 Visible/SourceClientAreaOnly 的偏移整体前移，
+    // 原生 DwmUpdateThumbnailProperties 读到的就是错位字段（预览可见性失效）。
+    [StructLayout(LayoutKind.Sequential)]
     public struct DwmThumbnailProperties
     {
         public int Flags;

@@ -1,3 +1,4 @@
+using EfootballBot.Core.Input;
 using EfootballBot.Core.System;
 
 // ===========================================================================
@@ -33,6 +34,17 @@ public sealed class WindowRescueTool : ITool
     public Task<ToolResult> ExecuteAsync(ToolAction action, ToolContext ctx, CancellationToken ct = default)
     {
         if (action != ToolAction.RescueWindow) return Task.FromResult(ToolResult.Fail($"窗口防卡死不支持动作 {action}"));
+        // 挂机会话进行中禁止拉回（审查修复）：挂机停靠会把游戏窗口移到屏幕外，
+        // Worker 的停靠看门狗每 2.5 秒校正一次位置——GUI 这边拉回、那边再移出，
+        // 两边互相拖拽，日志刷满"窗口被挪回屏幕，已重新停靠"。这正是"窗口不见了"最常见的场景，
+        // 所以这里直接拦下并说明，而不是让两个进程抢同一个窗口。
+        if (PhysicalPadControl.IsBotSessionActive())
+        {
+            const string blocked = "挂机会话进行中：游戏窗口被移到屏幕外是后台停靠的正常行为，挂机结束会自动还原。" +
+                                   "此时拉回会被停靠看门狗再次移出（两边反复拖拽）。如确需立刻看到画面，请先停止挂机再点本按钮。";
+            ctx.Log($"[窗口防卡死] {blocked}", LogLevel.Warn);
+            return Task.FromResult(ToolResult.Fail(blocked));
+        }
         try
         {
             BackgroundParker.RescueGameWindow(ctx.Log);

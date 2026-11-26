@@ -232,6 +232,8 @@ public sealed class BotEngine : IDisposable
     private CancellationTokenSource? _cts;
 
     private Task? _loop;
+    /// <summary>主循环所在线程（停止/释放时判断"不能自己等自己"）。</summary>
+    private int _loopThreadId;
 
     private Observation? _lastObs;
 
@@ -450,6 +452,7 @@ public sealed class BotEngine : IDisposable
         Stats.PerfNote = Perf.Describe();
         _loop = Task.Run(async () =>
         {
+            Volatile.Write(ref _loopThreadId, Environment.CurrentManagedThreadId);
             // 每轮把分段耗时记进 PerfTrace；每 60s 打一条「[性能]」并同步侧栏。
             // 只记"观察 + 决策"这一段，场景返回后引擎自己的 Task.Delay 是刻意等待，不计入。
             void RecordPerf(long roundStartTick, long actionStartMs)
@@ -1642,6 +1645,23 @@ public sealed class BotEngine : IDisposable
 
     public void Stop() => StopInternal("正常停止", isError: false);
 
+    /// <summary>
+    /// 停止并等待主循环真正退出（审查修复）：StopInternal 只 Cancel，主循环可能仍在
+    /// ObserveAsync/Pad 里；调用方紧接着 Dispose 会释放主循环正在用的 Observation/Pad360/_cts，
+    /// 触发 ObjectDisposedException，甚至漏发 Stopped。停止路径应先 await 本方法再释放。
+    /// 超时只记警告不抛出：宁可残留一次竞态，也不让"停止"卡死界面。
+    /// </summary>
+    public async Task StopAsync(int timeoutMs = 3000)
+    {
+        Stop();
+        var loop = _loop;
+        if (loop is null || loop.IsCompleted) return;
+        if (Volatile.Read(ref _loopThreadId) == Environment.CurrentManagedThreadId)
+            return; // 场景在引擎线程里调停止：不能自己等自己
+        if (await Task.WhenAny(loop, Task.Delay(timeoutMs)) != loop)
+            LogInternal($"[停止] 主循环 {timeoutMs}ms 内未退出，继续回收（可能有一次资源竞态）", LogLevel.Warn);
+    }
+
     private void StopInternal(string summaryReason, bool isError)
     {
         Interlocked.CompareExchange(ref _stopReason, summaryReason, null);
@@ -2226,6 +2246,19 @@ public sealed class BotEngine : IDisposable
     public void Dispose()
     {
         Stop();
+        // 主循环还没退出就释放它正在使用的资源 = 必然的 ObjectDisposedException。
+        // Dispose 是同步入口，这里等一段（远大于一轮观察耗时），场景线程内调用则跳过自等。
+        var loop = _loop;
+        if (loop is { IsCompleted: false }
+            && Volatile.Read(ref _loopThreadId) != Environment.CurrentManagedThreadId)
+        {
+            try
+            {
+                if (!loop.Wait(3000))
+                    LogInternal("[停止] 主循环 3 秒内未退出，Dispose 仍继续回收资源", LogLevel.Warn);
+            }
+            catch { /* 循环内部异常由循环自己记录，这里只关心是否退出 */ }
+        }
         Pad.SetSessionToken(CancellationToken.None);
         // 推理资源（OCR/YOLO/ONNX）由 EngineServices 进程级持有，这里只回收引擎自己的
         // 捕获/观察资源；下次开始挂机直接复用，不要再 Dispose（否则模型又得重载一遍）

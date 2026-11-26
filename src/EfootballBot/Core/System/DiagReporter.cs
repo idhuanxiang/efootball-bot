@@ -485,7 +485,8 @@ if ($steam) {
         catch { return null; }
     }
 
-    /// <summary>轮询等待 dxdiag 输出文件（最长 90 秒），找到后再等 3 秒让它写完（与 bat 一致）。</summary>
+    /// <summary>轮询等待 dxdiag 输出文件（最长 90 秒），出现后再等文件尺寸稳定（审查修复：
+    /// 旧实现固定再等 3 秒就 Kill，慢机/大显卡信息还没写完就被截断——反馈包里最关键的一段反而缺失）。</summary>
     private static async Task<string> WaitDxdiagAsync(Process? dx, string dxPath, CancellationToken ct)
     {
         try
@@ -494,7 +495,20 @@ if ($steam) {
                 await Task.Delay(2000, ct);
             if (!File.Exists(dxPath))
                 return "dxdiag.txt: TIMEOUT after ~90 seconds (skipped). System policy may block dxdiag.";
-            await Task.Delay(3000, ct);
+
+            // 尺寸连续 3 次采样不变（≈3 秒无新增）才算写完；最多再等 30 秒，避免异常情况下无限拖
+            long lastLen = -1;
+            int stable = 0;
+            for (int i = 0; i < 30; i++)
+            {
+                long len = 0;
+                try { len = new FileInfo(dxPath).Length; } catch { }
+                if (len > 0 && len == lastLen) stable++;
+                else stable = 0;
+                lastLen = len;
+                if (stable >= 3) break;
+                await Task.Delay(1000, ct);
+            }
             return $"dxdiag.txt present, size: {new FileInfo(dxPath).Length} bytes";
         }
         catch (OperationCanceledException) { throw; }

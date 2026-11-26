@@ -38,15 +38,15 @@ public sealed class PreMatchTool : ITool
     };
 
     public Task<ToolResult> ExecuteAsync(ToolAction action, ToolContext ctx, CancellationToken ct = default)
-        => Task.FromResult(action switch
+        => action switch
         {
-            ToolAction.LaunchGame => LaunchGame(ctx),
-            ToolAction.OpenSettingsTool => OpenSettingsTool(ctx),
-            ToolAction.OpenGameDirectory => OpenGameDirectory(ctx),
-            _ => ToolResult.Fail($"赛前快捷设置不支持动作 {action}"),
-        });
+            ToolAction.LaunchGame => LaunchGameAsync(ctx, ct),
+            ToolAction.OpenSettingsTool => Task.FromResult(OpenSettingsTool(ctx)),
+            ToolAction.OpenGameDirectory => Task.FromResult(OpenGameDirectory(ctx)),
+            _ => Task.FromResult(ToolResult.Fail($"赛前快捷设置不支持动作 {action}")),
+        };
 
-    private static ToolResult LaunchGame(ToolContext ctx)
+    private static async Task<ToolResult> LaunchGameAsync(ToolContext ctx, CancellationToken ct)
     {
         var profile = ToolPaths.Of(ctx.Server);
         string tag = $"[{ToolPaths.Of(ctx.Server).Label}]";
@@ -71,8 +71,17 @@ public sealed class PreMatchTool : ITool
                         FileName = $"steam://rungameid/{appId}",
                         UseShellExecute = true,
                     });
-                    ctx.Log($"[赛前快捷设置]{tag} 已通过 Steam 启动国际服游戏（eFootball）。", LogLevel.Success);
-                    return ToolResult.Success("已通过 Steam 启动国际服游戏（eFootball），窗口出现需等待片刻。");
+                    // steam:// 只代表"交给协议处理器"，Steam 未登录/被拦/游戏校验失败时同样会走到这里。
+                    // 先等进程真的出现再报"已启动"，否则用户对着黑屏干等、日志还留着一条假的 Success（审查修复）。
+                    if (await WaitForProcessAsync(profile.ProcessName, TimeSpan.FromSeconds(8), ct))
+                    {
+                        ctx.Log($"[赛前快捷设置]{tag} 已通过 Steam 启动国际服游戏（eFootball）。", LogLevel.Success);
+                        return ToolResult.Success("已通过 Steam 启动国际服游戏（eFootball），窗口出现需等待片刻。");
+                    }
+                    ctx.Log($"[赛前快捷设置]{tag} 已请求 Steam 启动，但 8 秒内未见游戏进程——" +
+                            "可能是 Steam 未登录/正在更新，或启动被安全软件拦截。请留意 Steam 窗口提示。", LogLevel.Warn);
+                    return ToolResult.Success("已请求 Steam 启动国际服游戏。若 1 分钟内未出现游戏窗口，" +
+                                             "请检查 Steam 是否已登录/正在更新（也可手动启动游戏后再点开始挂机）。");
                 }
                 catch
                 {
@@ -104,6 +113,25 @@ public sealed class PreMatchTool : ITool
             ctx.Log($"[赛前快捷设置]{tag} 启动游戏失败：{ex.Message}", LogLevel.Error);
             return ToolResult.Fail($"启动失败：{ex.Message}");
         }
+    }
+
+    /// <summary>轮询等待游戏进程出现（Steam 链路验证用）。取消/超时返回 false，不抛异常。</summary>
+    private static async Task<bool> WaitForProcessAsync(string processName, TimeSpan timeout, CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.Elapsed < timeout)
+        {
+            try
+            {
+                var found = Process.GetProcessesByName(processName);
+                foreach (var p in found) p.Dispose();
+                if (found.Length > 0) return true;
+            }
+            catch { /* 枚举失败按未出现处理，继续等 */ }
+            try { await Task.Delay(500, ct); }
+            catch (OperationCanceledException) { return false; }
+        }
+        return false;
     }
 
     private static ToolResult OpenSettingsTool(ToolContext ctx)

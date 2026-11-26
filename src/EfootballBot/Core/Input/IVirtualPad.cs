@@ -38,7 +38,7 @@ public interface IVirtualPad : IDisposable
     {
         SetButton(button, true);
         try { await Task.Delay(holdMs, ct); }
-        finally { SetButton(button, false); }
+        finally { PadRelease.Safe(() => SetButton(button, false), ResetAll); }
         await Task.Delay(postDelayMs, ct);
     }
 
@@ -51,7 +51,7 @@ public interface IVirtualPad : IDisposable
     {
         SetDpad(dir);
         try { await Task.Delay(holdMs, ct); }
-        finally { SetDpad(null); }
+        finally { PadRelease.Safe(() => SetDpad(null), ResetAll); }
         await Task.Delay(postDelayMs, ct);
     }
 
@@ -73,7 +73,7 @@ public interface IVirtualPad : IDisposable
         };
         SetLeftStick(x, y);
         try { await Task.Delay(holdMs, ct); }
-        finally { SetLeftStick(0, 0); }
+        finally { PadRelease.Safe(() => SetLeftStick(0, 0), ResetAll); }
         await Task.Delay(postDelayMs, ct);
     }
 
@@ -95,9 +95,28 @@ public interface IVirtualPad : IDisposable
         };
         SetRightStick(x, y);
         try { await Task.Delay(holdMs, ct); }
-        finally { SetRightStick(0, 0); }
+        finally { PadRelease.Safe(() => SetRightStick(0, 0), ResetAll); }
         await Task.Delay(postDelayMs, ct);
     }
 
     Task FlickRightStickAsync(PadDir dir) => FlickRightStickAsync(dir, 160, 200, CancellationToken.None);
+}
+
+/// <summary>
+/// 按键/摇杆"复位"的兜底封装（审查修复）：
+/// 原来 finally 里只调一次释放——释放抛异常时既会把键留在按下态，又会顶替掉原始异常
+/// （例如暂停/停止引发的 OperationCanceledException），让上层看不到真正的停止原因。
+/// 这里重试一次，仍失败就 ResetAll 全键复位，异常一律不外抛。
+/// </summary>
+internal static class PadRelease
+{
+    internal static void Safe(Action release, Action resetAll)
+    {
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try { release(); return; }
+            catch { /* 下一次重试 */ }
+        }
+        try { resetAll(); } catch { /* 手柄已断开：无从复位 */ }
+    }
 }

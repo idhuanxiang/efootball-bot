@@ -84,9 +84,17 @@ public class MlFlowMemoryTests
 
         var b = new MatchSessionTracker();
         b.Observe(MatchScreen.InMatch, T0);
-        b.Observe(MatchScreen.MatchHub, T0.AddMinutes(8));
+        // 4 分钟：超过「关场最小时长」但仍在 5 分钟超时线内 → 菜单关场可信
+        b.Observe(MatchScreen.MatchHub, T0.AddMinutes(4));
         Assert.True(b.LastEndTrusted);
         Assert.Equal(MatchEndReason.Menu, b.LastEndReason);
+
+        // 8 分钟没有比赛特征：走的是超时兜底，不能把「回到菜单」当可信证据计场次
+        var c = new MatchSessionTracker();
+        c.Observe(MatchScreen.InMatch, T0);
+        Assert.True(c.Observe(MatchScreen.MatchHub, T0.AddMinutes(8)));
+        Assert.Equal(MatchEndReason.Timeout, c.LastEndReason);
+        Assert.False(c.LastEndTrusted);
     }
 
     [Fact]

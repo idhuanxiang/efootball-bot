@@ -86,8 +86,12 @@ public sealed class MonitorServer : IDisposable
     {
         if (_listener is not null) return;
         int port = _cfg.Port is > 0 and < 65536 ? _cfg.Port : 18321;
-        // 先试全网卡（需要管理员/URL ACL），失败退回仅本机
-        string[] prefixes = { $"http://+:{port}/", $"http://localhost:{port}/" };
+        // 只有配置了 token 才允许监听全网卡（审查修复）：/api/status、/api/log、/api/events
+        // 是只读接口、不校验 token；无 token 时还绑 http://+ 等于把运行状态与日志暴露给同网段任何人。
+        bool hasToken = !string.IsNullOrWhiteSpace(_cfg.Token);
+        string[] prefixes = hasToken
+            ? new[] { $"http://+:{port}/", $"http://localhost:{port}/" }
+            : new[] { $"http://localhost:{port}/" };
         foreach (var prefix in prefixes)
         {
             var listener = new HttpListener();
@@ -103,7 +107,9 @@ public sealed class MonitorServer : IDisposable
                 _ = Task.Run(() => LoopAsync(_cts.Token));
                 string scope = _allInterfaces
                     ? "局域网同网段可访问；需配置 token 才能操作"
-                    : "仅本机可访问；需配置 token 才能操作";
+                    : hasToken
+                        ? "仅本机可访问（配置 token 后可改为局域网访问）"
+                        : "仅本机可访问（未配置 token，避免日志/状态暴露给同网段）";
                 _log?.Invoke($"监控页已启动：{Url}（{scope}）", LogLevel.Success);
                 return;
             }

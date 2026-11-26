@@ -57,7 +57,9 @@ internal sealed class SidecarOcrBackend : IOcrBackend
                     .StartAsync(_cfg, hwnd: 0, width: 1920, height: 1080, ct)
                     .ConfigureAwait(false);
                 _owned = true;
-                _rebuildFailStreak = 0; // 启动成功，清零失败计数
+                // 不在这里清零（审查修复）：启动成功 ≠ 恢复健康。
+                // 「崩溃→断连+1→重启成功→清零→下一帧再崩」会让计数永远到不了 3，
+                // 结果每帧拉起一个 vision-svc 进程。只有真正完成一次识别才证明链路可用。
             }
             catch
             {
@@ -80,7 +82,10 @@ internal sealed class SidecarOcrBackend : IOcrBackend
             var client = await EnsureClientAsync(ct).ConfigureAwait(false);
             var fromCapture = ReferenceEquals(client, VisionSidecarRuntime.SharedClient)
                               && VisionSidecarRuntime.MatchesCapturedFrame(frame);
-            return await client.RecognizeAsync(frame, fromCapture, ct).ConfigureAwait(false);
+            var result = await client.RecognizeAsync(frame, fromCapture, ct).ConfigureAwait(false);
+            // 真正跑通一次识别才清零熔断计数（崩溃循环无法靠"启动成功"洗白）
+            _rebuildFailStreak = 0;
+            return result;
         }
         finally
         {

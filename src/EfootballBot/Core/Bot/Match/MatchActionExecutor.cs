@@ -128,6 +128,9 @@ public static class MatchActionExecutor
             case MatchActionKind.GamepadBackAfterConfirm:
                 log($"[{module}] {action.Target}", LogLevel.Warn);
                 await engine.Pad.Dpad(PadDir.Up); // B 多次无效：先上移把焦点从「取消」移到确认键
+                // 上移后必须留时给游戏刷新焦点（与 PadUpConfirm 保持一致），
+                // 否则 A 仍落在旧的「取消」上，换招等于没换（审查修复）
+                await Task.Delay(250, ct);
                 await engine.Pad.Confirm(); // 再 A 确认（直接 A 可能落在取消键上继续死循环）
                 await engine.Pad.Back(); // 最后 B 返回
                 break;

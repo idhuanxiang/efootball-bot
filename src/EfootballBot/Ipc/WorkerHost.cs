@@ -212,7 +212,7 @@ public sealed class WorkerHost : IDisposable
         EmitLog("Info", $"[启动] 工作进程已就绪（耗时 {sw.ElapsedMilliseconds}ms），正在初始化挂机场景…");
 
         // 读循环：复用握手 reader 接收 Worker 事件。回调内任何异常吞掉，绝不让它冒到 StartAsync
-        _ = PipeProtocol.ReadLoopAsync(reader, msg =>
+        var readTask = PipeProtocol.ReadLoopAsync(reader, msg =>
         {
             if (Volatile.Read(ref _sessionId) != sessionId) return Task.CompletedTask;
             try
@@ -271,6 +271,26 @@ public sealed class WorkerHost : IDisposable
             catch { /* 事件回调异常不中断读循环，也不冒出调用方 */ }
             return Task.CompletedTask;
         }, readCts.Token);
+
+        // 读循环看门狗（审查修复）：旧实现把读任务丢弃了——管道 EOF/异常时它静默返回，
+        // 而 Worker 进程可能还活着，GUI 就会永久停在"运行中"、统计冻结、停止按钮也等不到确认。
+        // 这里在"进程仍在 + 仍期望运行"时按断开回收，交给 GUI 复位并允许重新开始。
+        _ = readTask.ContinueWith(finished =>
+        {
+            if (_disposed || Volatile.Read(ref _sessionId) != sessionId) return;
+            if (!_expectedRunning) return;          // 用户主动停止/回收中
+            bool exited;
+            try { exited = process.HasExited; } catch { exited = true; }
+            if (exited) return;                     // 进程退出由上面的看门狗按预算处理
+            EmitLog("Error", "[断开] 与 Worker 的通信管道已断开（进程仍在），场景无法继续；已停止本会话，请重新开始挂机。");
+            _expectedRunning = false;
+            _scenarioRunning = false;
+            _ = Task.Run(async () =>
+            {
+                try { await TeardownAsync(); } catch { }
+                FireDisconnected();
+            });
+        }, TaskScheduler.Default);
 
         // 看门狗：局部捕获 process，Stop/Cleanup 置空字段也不会 NRE。
         // 进程退出后交给 HandleProcessExitAsync：用户手动停止→原样断开；
@@ -436,7 +456,7 @@ public sealed class WorkerHost : IDisposable
         }
     }
 
-    /// <summary>回收当前会话：发 stop → 等 stopped 确认（≤2s）→ Kill 兜底 → 取消读循环 → 释放句柄。幂等。</summary>
+    /// <summary>回收当前会话：发 stop → 等 stopped 确认（≤5s，覆盖引擎等主循环 + 手柄恢复）→ Kill 兜底 → 取消读循环 → 释放句柄。幂等。</summary>
     private async Task TeardownAsync()
     {
         _scenarioRunning = false;
@@ -447,7 +467,7 @@ public sealed class WorkerHost : IDisposable
                 var ack = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 _stopAck = ack;
                 await SendAsync(PipeProtocol.CmdStop(), CommandWriteTimeout);
-                await ack.Task.WaitAsync(TimeSpan.FromSeconds(2));
+                await ack.Task.WaitAsync(TimeSpan.FromSeconds(5));
             }
             catch { }
         }

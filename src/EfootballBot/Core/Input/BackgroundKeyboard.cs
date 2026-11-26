@@ -21,19 +21,43 @@ public sealed class BackgroundKeyboard
     [DllImport("user32.dll")]
     private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
+    private readonly Action<string>? _log;
+
+    /// <summary>log：可选告警回调（投递失败/抬起重试失败时用；null = 静默）。</summary>
+    public BackgroundKeyboard(Action<string>? log = null) => _log = log;
+
+    private const int KeyUpAttempts = 3;
+
     /// <summary>向指定窗口投递一次按键（按下 → 保持 holdMs → 抬起）。</summary>
     public async Task TapAsync(IntPtr hWnd, int virtualKey, int holdMs = 60, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        PostMessage(hWnd, WM_KEYDOWN, (IntPtr)virtualKey, KeyLParam(virtualKey, up: false));
+        if (!PostMessage(hWnd, WM_KEYDOWN, (IntPtr)virtualKey, KeyLParam(virtualKey, up: false)))
+        {
+            // 按下没进队 = 键没被按住，无需释放；只是这次按键无效（审查修复：以前静默吞掉）
+            _log?.Invoke($"[后台键盘] WM_KEYDOWN 投递失败（VK=0x{virtualKey:X}，窗口可能已关闭），本次按键无效");
+            return;
+        }
         try
         {
             await Task.Delay(holdMs, ct);
         }
         finally
         {
-            PostMessage(hWnd, WM_KEYUP, (IntPtr)virtualKey, KeyLParam(virtualKey, up: true));
+            ReleaseKey(hWnd, virtualKey);
         }
+    }
+
+    /// <summary>抬起按键：失败重试，全失败才告警——WM_KEYUP 丢了会让这个键在游戏里永久保持按下。</summary>
+    private void ReleaseKey(IntPtr hWnd, int virtualKey)
+    {
+        for (int attempt = 1; attempt <= KeyUpAttempts; attempt++)
+        {
+            if (PostMessage(hWnd, WM_KEYUP, (IntPtr)virtualKey, KeyLParam(virtualKey, up: true))) return;
+            if (attempt < KeyUpAttempts) Thread.Sleep(20);
+        }
+        _log?.Invoke($"[后台键盘] WM_KEYUP 连续 {KeyUpAttempts} 次投递失败（VK=0x{virtualKey:X}），" +
+                     "该键可能停留在按下态，请检查游戏窗口是否仍在");
     }
 
     /// <summary>
@@ -45,7 +69,21 @@ public sealed class BackgroundKeyboard
     {
         uint scan = MapVirtualKey((uint)virtualKey, 0);
         int lp = 1 | ((int)scan << 16);
+        // 扩展键（方向键/Ins/Del/Home/End/PgUp/PgDn/右 Ctrl·Alt/NumLock 等）必须置 bit24(KF_EXTENDED)：
+        // 缺了它，按扫描码区分左右/主键区的引擎会把方向键当成小键盘键 → "发了键没反应"（审查修复）。
+        if (IsExtendedKey(virtualKey)) lp |= 1 << 24;
         if (up) lp |= (1 << 30) | (1 << 31);
         return (IntPtr)lp;
     }
+
+    /// <summary>该虚拟键是否属于扩展键（lParam bit24 = KF_EXTENDED）。纯函数便于单测。</summary>
+    internal static bool IsExtendedKey(int virtualKey) => virtualKey switch
+    {
+        0x21 or 0x22 or 0x23 or 0x24 or 0x25 or 0x26 or 0x27 or 0x28 => true, // PgUp PgDn End Home ← ↑ → ↓
+        0x2C or 0x2D or 0x2E => true,                                          // PrintScreen Insert Delete
+        0x5B or 0x5C or 0x5D => true,                                          // 左/右 Win、菜单键
+        0x6F or 0x90 => true,                                                  // 小键盘 /、NumLock
+        0xA3 or 0xA5 => true,                                                  // 右 Ctrl、右 Alt
+        _ => false,
+    };
 }

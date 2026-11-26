@@ -686,6 +686,13 @@ public sealed class AppConfig
     /// </summary>
     public const int CurrentSchemaVersion = 3;
 
+    /// <summary>
+    /// 本次实例是"加载失败后的默认配置"（文件被锁/读取异常，不是"文件不存在"）。
+    /// 这种实例禁止 Save：否则默认值会整份覆盖用户的真实配置（审查修复）。
+    /// </summary>
+    [JsonIgnore]
+    public bool LoadFailed { get; set; }
+
     [JsonPropertyName("SchemaVersion")]
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
@@ -812,7 +819,21 @@ public sealed class AppConfig
     internal static bool TryLoad(out AppConfig? cfg) => TryLoadFrom(ConfigPath, out cfg, saveOnUpgrade: false);
 
     internal static AppConfig LoadFrom(string path, bool saveOnUpgrade = false)
-        => TryLoadFrom(path, out var cfg, saveOnUpgrade) && cfg is not null ? cfg : new AppConfig();
+    {
+        if (TryLoadFrom(path, out var cfg, saveOnUpgrade) && cfg is not null) return cfg;
+        // 文件不存在（含「损坏文件已被改名 .bad 留档」）：这是干净重建，允许写新配置。
+        if (!File.Exists(path)) return new AppConfig();
+        // 文件还在但读不出来（被锁/无权限）：静默回默认 + 后续 Save 会清空用户设置，
+        // 因此进入只读降级，配置原文件保持不动。
+        try
+        {
+            global::EfootballBot.Core.Logging.FileLogger.Instance.Write(
+                $"配置读取失败（文件可能被占用/无权限）：{path}。本次以默认值运行，且不会写回配置，避免覆盖用户设置。",
+                LogLevel.Warn);
+        }
+        catch { }
+        return new AppConfig { LoadFailed = true };
+    }
 
     internal static bool TryLoadFrom(string path, out AppConfig? result, bool saveOnUpgrade = false)
     {
@@ -897,9 +918,52 @@ public sealed class AppConfig
         SchemaVersion = CurrentSchemaVersion;
     }
 
+    /// <summary>
+    /// 「只改一小块配置」的安全写法：跨进程加锁 → 重新读磁盘上的最新配置 → 改 → 写回。
+    ///
+    /// 为什么需要：GUI 与 Worker 各持一份完整 <see cref="AppConfig"/> 快照，任何一方
+    /// <see cref="Save"/> 都是整份序列化。若直接改自己内存里的旧快照再存，会把另一个进程
+    /// 刚写进去的字段静默覆盖（文件不会损坏，但设置丢失）。改单个字段时走这里。
+    /// </summary>
+    internal static void UpdateOnDisk(Action<AppConfig> mutate)
+    {
+        string mutexName = @"Local\EfootballBot-Config-Save"
+            + (AppPaths.Profile.Length == 0 ? "" : "-" + AppPaths.Profile);
+        using var mutex = new Mutex(false, mutexName);
+        bool owned = false;
+        try
+        {
+            try { owned = mutex.WaitOne(3000); }
+            catch (AbandonedMutexException) { owned = true; }   // 上个持有者崩溃：锁已归我们
+            var fresh = LoadFrom(ConfigPath);
+            mutate(fresh);
+            fresh.Save();
+        }
+        finally
+        {
+            if (owned)
+            {
+                try { mutex.ReleaseMutex(); } catch { /* 已释放/句柄失效 */ }
+            }
+        }
+    }
+
     /// <summary>保存配置；path 为空写默认 ConfigPath，否则写指定路径（审查修复③）。</summary>
     public void Save(string? path = null)
     {
+        if (LoadFailed)
+        {
+            // 只读降级：配置加载失败时内存里是默认值，写回等于清空用户设置。
+            // 保留原文件，让用户下次启动仍能加载到自己的配置。
+            try
+            {
+                global::EfootballBot.Core.Logging.FileLogger.Instance.Write(
+                    "配置处于只读降级（启动时读取失败），本次不写回 config.json。",
+                    LogLevel.Warn);
+            }
+            catch { }
+            return;
+        }
         string target = string.IsNullOrWhiteSpace(path) ? ConfigPath : path;
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         // 原子替换：进程+GUID 唯一临时文件，防止 GUI 与 Worker 并发 Save 时互踩同一 .tmp

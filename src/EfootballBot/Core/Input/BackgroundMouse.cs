@@ -28,8 +28,14 @@ public sealed class BackgroundMouse
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
+    // 同步发送必须带超时：目标窗口挂起（加载卡顿/模态等待）时无超时 SendMessage 会无限期阻塞，
+    // 若游戏线程同时在等本进程 → 经典双向死锁（审查修复）。SMTO_ABORTIFHUNG | SMTO_BLOCK。
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam,
+        uint flags, uint timeoutMs, out IntPtr result);
+
+    private const uint SMTO_BLOCK = 0x0001;
+    private const uint SMTO_ABORTIFHUNG = 0x0002;
 
     public BackgroundMouse(HumanPacer? pacer = null)
     {
@@ -85,14 +91,16 @@ public sealed class BackgroundMouse
         }
     }
 
-    /// <summary>同步 SendMessage 版本（等待窗口处理完返回），个别窗口更可靠。保持单步。</summary>
+    /// <summary>同步等待窗口处理的版本（个别窗口更可靠）。保持单步。
+    /// 超时 2 秒：目标窗口挂死时不再永久阻塞调用线程。</summary>
     public void ClickSend(IntPtr hWnd, int x, int y)
     {
         _lastX = x;
         _lastY = y;
-        SendMessage(hWnd, WM_MOUSEMOVE, IntPtr.Zero, LParam(x, y));
-        SendMessage(hWnd, WM_LBUTTONDOWN, (IntPtr)MK_LBUTTON, LParam(x, y));
-        SendMessage(hWnd, WM_LBUTTONUP, IntPtr.Zero, LParam(x, y));
+        const uint timeout = 2000;
+        SendMessageTimeout(hWnd, WM_MOUSEMOVE, IntPtr.Zero, LParam(x, y), SMTO_ABORTIFHUNG | SMTO_BLOCK, timeout, out _);
+        SendMessageTimeout(hWnd, WM_LBUTTONDOWN, (IntPtr)MK_LBUTTON, LParam(x, y), SMTO_ABORTIFHUNG | SMTO_BLOCK, timeout, out _);
+        SendMessageTimeout(hWnd, WM_LBUTTONUP, IntPtr.Zero, LParam(x, y), SMTO_ABORTIFHUNG | SMTO_BLOCK, timeout, out _);
     }
 
     /// <summary>拟人移动到目标后短暂停顿；首次点击（无上次落点）单步到位。</summary>

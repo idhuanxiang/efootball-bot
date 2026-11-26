@@ -114,7 +114,11 @@ public class InputLivenessWatermarkTests
         // 提醒：水印豁免只针对「什么都读不出来」的页面，真菜单页的 A 试探/B 逃生节奏不变
         var ocr = Ocr(("全新版本巡回赛", 0.1, 0.10), ("比赛历史", 0.3, 0.66));
         Assert.Equal(MatchActionKind.PadConfirm, MatchBrain.Decide(MatchScreen.Unknown, ocr, 3).Kind);
-        Assert.Equal(MatchActionKind.GamepadBack, MatchBrain.Decide(MatchScreen.Unknown, ocr, 7).Kind);
+        // B 逃生与其它逃生点统一为「每 5 轮一次」：第 7 轮只是等待，第 11 轮（6+5）才按 B。
+        // 旧断言要求第 7 轮就 GamepadBack，等于固化「每轮盲按 B」的连发问题。
+        Assert.Equal(MatchActionKind.Wait, MatchBrain.Decide(MatchScreen.Unknown, ocr, 7).Kind);
+        // 第 11 轮（6+5）恢复按键：此时已连续 B 无效，按换招规则升级为「上→A→B」
+        Assert.Equal(MatchActionKind.GamepadBackAfterConfirm, MatchBrain.Decide(MatchScreen.Unknown, ocr, 11).Kind);
     }
 
     [Fact]

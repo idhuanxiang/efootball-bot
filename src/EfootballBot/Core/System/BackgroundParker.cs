@@ -332,7 +332,12 @@ public sealed class BackgroundParker
                 original.Right - original.Left, original.Bottom - original.Top,
                 DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
             Directory.CreateDirectory(Path.GetDirectoryName(ParkRecordPath)!);
-            File.WriteAllText(ParkRecordPath, JsonSerializer.Serialize(rec, new JsonSerializerOptions { WriteIndented = true }));
+            // 原子写（审查修复）：GUI 进程可能正在读这份记录（还原/防卡死），
+            // 直接 WriteAllText 撞上半截文件会读失败 → 记录被当损坏删掉 → 崩溃恢复依据丢失。
+            string json = JsonSerializer.Serialize(rec, new JsonSerializerOptions { WriteIndented = true });
+            string tmp = ParkRecordPath + ".tmp";
+            File.WriteAllText(tmp, json);
+            File.Move(tmp, ParkRecordPath, overwrite: true);
         }
         catch { /* 落盘失败只影响异常退出的自动还原 */ }
     }
@@ -378,7 +383,10 @@ public sealed class BackgroundParker
             if (rec is null) { DeleteParkRecord(); message = "停靠记录损坏已清除"; return false; }
 
             nint hwnd = unchecked((nint)rec.Hwnd);
-            bool valid = hwnd != nint.Zero && IsWindow(hwnd);
+            // 只认"句柄仍有效 且 属主进程与记录一致"（审查修复）：
+            // 游戏退出后 Windows 会把同一个 HWND 值复用给别的进程窗口，只查 IsWindow
+            // 会把无关窗口挪到记录位置，还报告"已还原"。
+            bool valid = hwnd != nint.Zero && IsWindow(hwnd) && IsWindowOwnedBy(hwnd, rec.ProcessName);
             if (!valid)
             {
                 // 进程重启后 hwnd 失效：按进程名找主窗口
@@ -414,13 +422,33 @@ public sealed class BackgroundParker
             message = $"已按停靠记录把游戏窗口还原到原位置（{rec.Left},{rec.Top}）";
             return true;
         }
-        catch (Exception ex)
+        catch (JsonException)
         {
-            // 还原失败不抛出（各调用点均为兜底路径）
-            message = $"还原停靠记录失败：{ex.Message}";
+            // 只有"内容确实损坏"才删记录；IO 瞬时错误（GUI 读到半截、杀软占用）保留重试
             try { DeleteParkRecord(); } catch { }
+            message = "停靠记录损坏已清除";
             return false;
         }
+        catch (Exception ex)
+        {
+            // 还原失败不抛出（各调用点均为兜底路径）；记录保留，下次还能再试
+            message = $"还原停靠记录失败（已保留记录）：{ex.Message}";
+            return false;
+        }
+    }
+
+    /// <summary>hwnd 的属主进程名是否与停靠记录一致。记录时没取到进程名则退化为只按句柄判断。</summary>
+    private static bool IsWindowOwnedBy(nint hwnd, string processName)
+    {
+        if (string.IsNullOrEmpty(processName)) return true;
+        try
+        {
+            _ = GetWindowThreadProcessId(hwnd, out int pid);
+            if (pid == 0) return false;
+            using var p = global::System.Diagnostics.Process.GetProcessById(pid);
+            return string.Equals(p.ProcessName, processName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
     }
 
     // ---------------- 窗口防卡死（手动一键拉回） ----------------

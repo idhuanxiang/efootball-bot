@@ -202,6 +202,8 @@ public sealed class PostMatchActivityController
     private int _missing;
 
     private int _exitRetries;
+    /// <summary>退出无效已留档次数：IsMap 误判时避免每 7 轮刷一张截图（审查修复）。</summary>
+    private int _exitDumps;
     /// <summary>Y（回当前位置）只在首次进入时按一次，无论后续推进多少轮（用户 2026-10-22 修正）。</summary>
     private bool _yPressed;
     /// <summary>是否正在处理该界面（供调用方日志/统计用）。</summary>
@@ -316,10 +318,23 @@ public sealed class PostMatchActivityController
                 // 退出动作已发出：等待画面切走。长时间仍在地图（→/下一步 被吞）重试退出
                 if (++_exitRetries > 6)
                 {
-                    log($"[{module}] 赛后活动地图：退出动作未生效，重试（→ 下一步）", LogLevel.Warn);
-                    // 卡住实帧收集：退出无效通常意味着"这根本不是赛后活动图，IsMap 误判"，
-                    // 留下画面供人工核对判定词，不自动改规则。
-                    dump?.Invoke("exit_retry:退出动作6轮未生效，疑似活动图误判");
+                    _exitRetries = 0; // 进入下一轮重试周期（不再每轮触发）
+                    // 留档有上限：旧实现每次 ExitAsync 都把计数清 0，结果是「每 7 轮 dump 一张、
+                    // 永远循环」；截图刷满目录，用户也看不出这是同一个问题。
+                    if (_exitDumps < 2)
+                    {
+                        _exitDumps++;
+                        log($"[{module}] 赛后活动地图：退出动作未生效，重试（→ 下一步）", LogLevel.Warn);
+                        // 卡住实帧收集：退出无效通常意味着"这根本不是赛后活动图，IsMap 误判"，
+                        // 留下画面供人工核对判定词，不自动改规则。
+                        dump?.Invoke("exit_retry:退出动作6轮未生效，疑似活动图误判");
+                    }
+                    else if (_exitDumps == 2)
+                    {
+                        _exitDumps++;
+                        log($"[{module}] 赛后活动地图：退出长期无效（已留档 2 次），继续每 7 轮重试；" +
+                            "若一直卡住请带日志反馈（疑似 IsMap 误判）", LogLevel.Warn);
+                    }
                     return await ExitAsync(pad, log, module);
                 }
                 return 1500;
@@ -332,7 +347,8 @@ public sealed class PostMatchActivityController
         await pad.Dpad(PadDir.Right);
         await pad.Confirm();
         _phase = Phase.Done;
-        _exitRetries = 0;
+        // 注意：这里不再清零 _exitRetries（审查修复）。旧实现把它清 0，使 Phase.Done 里
+        // 「>6 轮」的门槛永远重新开始，叠加 dump 就是无限截图循环；周期重置改在 Done 分支里做。
         return 2200;
     }
 
@@ -345,6 +361,7 @@ public sealed class PostMatchActivityController
         _popupMiss = 0;
         _missing = 0;
         _exitRetries = 0;
+        _exitDumps = 0;
         _yPressed = false;
     }
 }

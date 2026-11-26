@@ -397,7 +397,10 @@ public static class PhysicalPadControl
         }
 
         int total = restored + swept;
-        return (true, total == 0
+        // 成功与否必须如实回传（审查修复）：旧实现恒返回 true，记录里全项恢复失败也报"成功"、
+        // pad-restore 退出码 0，上层（CLI/日志/一键修复）无从感知。失败项已保留待重试，故只看 failed。
+        bool success = failed.Count == 0;
+        return (success, total == 0
             ? (record.Count == 0 ? "无需恢复（无禁用记录）"
                : $"恢复失败：{failed.Count} 项禁用记录已保留，下次启动/插入时重试")
             : $"已恢复 {total} 个手柄节点（记录 {restored} + 扫描 {swept}）"

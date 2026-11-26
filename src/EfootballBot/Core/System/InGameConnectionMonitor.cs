@@ -307,6 +307,34 @@ public sealed class InGameConnectionMonitor : IDisposable
         Last = null;
     }
 
+    /// <summary>
+    /// 异步停止（UI 线程用）：与 <see cref="Stop"/> 等价，但等待采样循环只占用等待本身，
+    /// 不阻塞调用线程（审查修复：旧实现在 UI 线程 Wait(1500) + 关 4 个 pcap 设备，
+    /// 点「停止监控」/关窗会冻结 2-3 秒）。
+    /// </summary>
+    public async Task StopAsync()
+    {
+        if (!Running) return;
+        Running = false;
+        try { _cts?.Cancel(); } catch { }
+        var loop = _loop;
+        if (loop is not null)
+        {
+            try { await loop.WaitAsync(TimeSpan.FromSeconds(1.5)).ConfigureAwait(true); }
+            catch { /* 超时/取消/循环异常：都继续收尾 */ }
+        }
+        FinishSession();
+        CloseDevices();
+        _cts?.Dispose(); _cts = null; _loop = null;
+        _flows.Clear();
+        ResetRemote();
+        _curve.Clear();
+        _probeWindow.Clear();
+        _ok = fail = sum = max = 0; _min = -1;
+        _probeCount = 0; _peerRepliesIcmp = false;
+        Last = null;
+    }
+
     private void CloseDevices()
     {
         foreach (var d in _devices)
@@ -886,7 +914,7 @@ public sealed class InGameConnectionMonitor : IDisposable
                 if (alive && _primaryRole == FlowRole.Game && ServerPorts.Contains(_remotePort) && now % 2 == 0)
                 {
                     string ip = _remoteIp;
-                    ushort port = _remotePort == 5736 ? (ushort)5736 : (ushort)5736;
+                    ushort port = _remotePort == 5736 ? (ushort)5736 : (ushort)5735;
                     _tcpingMs = await Task.Run(() => NetworkProbe.TcpLatency(ip, port, 500), ct);
                     if (_tcpingMs < 0)
                         _tcpingMs = await Task.Run(() => NetworkProbe.TcpLatency(ip, 443, 500), ct);
