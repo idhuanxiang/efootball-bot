@@ -22,10 +22,16 @@ namespace EfootballBot;
 /// </summary>
 public partial class ConnectionOverlay : Window
 {
-    private static readonly Brush Ok = new SolidColorBrush(Color.FromRgb(0x3D, 0xDC, 0x84));
-    private static readonly Brush Warn = new SolidColorBrush(Color.FromRgb(0xF2, 0xB1, 0x3E));
-    private static readonly Brush Bad = new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D));
-    private static readonly Brush Idle = new SolidColorBrush(Color.FromRgb(0x7B, 0x86, 0x96));
+    private static readonly Brush OkFallback = new SolidColorBrush(Color.FromRgb(0x3D, 0xDC, 0x84));
+    private static readonly Brush WarnFallback = new SolidColorBrush(Color.FromRgb(0xF2, 0xB1, 0x3E));
+    private static readonly Brush BadFallback = new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D));
+    private static readonly Brush IdleFallback = new SolidColorBrush(Color.FromRgb(0x7B, 0x86, 0x96));
+
+    private Brush ThemeBrush(string key, Brush fallback) => TryFindResource(key) as Brush ?? fallback;
+    private Brush Ok => ThemeBrush("Success", OkFallback);
+    private Brush Warn => ThemeBrush("Warning", WarnFallback);
+    private Brush Bad => ThemeBrush("Danger", BadFallback);
+    private Brush Idle => ThemeBrush("EnvDotIdle", IdleFallback);
 
     // —— 跟随游戏窗口 ——
     private readonly DispatcherTimer _followTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
@@ -68,6 +74,7 @@ public partial class ConnectionOverlay : Window
             if (IsLoaded) _followTimer.Start();
             _userHidden = false;
             _clickThrough = false;
+            BadgeClickThrough.Visibility = Visibility.Collapsed;
             TxtHint.Text = "拖动移位 · 双击贴回 · 中键穿透 · 右键关闭";
             EnsureUsable();
             ClampToScreen();
@@ -273,6 +280,7 @@ public partial class ConnectionOverlay : Window
     {
         _clickThrough = !_clickThrough;
         ApplyClickThrough();
+        BadgeClickThrough.Visibility = _clickThrough ? Visibility.Visible : Visibility.Collapsed;
         TxtHint.Text = _clickThrough
             ? "已穿透（点击直达游戏） · 重新点「显示悬浮窗」恢复交互"
             : "拖动移位 · 双击贴回 · 中键穿透 · 右键关闭";
@@ -288,6 +296,7 @@ public partial class ConnectionOverlay : Window
             _clickThrough = false;
             ApplyClickThrough();
         }
+        BadgeClickThrough.Visibility = Visibility.Collapsed;
         TxtHint.Text = "拖动移位 · 双击贴回 · 中键穿透 · 右键关闭";
     }
 
@@ -351,22 +360,70 @@ public partial class ConnectionOverlay : Window
         double h = CvSpark.ActualHeight;
         if (w < 10 || h < 5) return;
         int peak = Math.Max(200, samples.Where(v => v > 0).DefaultIfEmpty(200).Max());
-        var geo = new StreamGeometry();
-        using (var ctx = geo.Open())
+
+        int lastValid = -1;
+        for (int i = samples.Count - 1; i >= 0; i--)
+        {
+            if (samples[i] >= 0) { lastValid = samples[i]; break; }
+        }
+        var lineBrush = lastValid < 0 ? Idle : lastValid < 60 ? Ok : lastValid < 110 ? Warn : Bad;
+        var strokeColor = lineBrush is SolidColorBrush sc ? sc.Color : Color.FromRgb(0x3D, 0xDC, 0x84);
+
+        var lineGeo = new StreamGeometry();
+        var fillGeo = new StreamGeometry();
+        using (var lctx = lineGeo.Open())
+        using (var fctx = fillGeo.Open())
         {
             bool started = false;
+            double segStartX = 0;
+            double lastX = 0;
             for (int i = 0; i < samples.Count; i++)
             {
                 int v = samples[i];
-                if (v < 0) { started = false; continue; }
+                if (v < 0)
+                {
+                    if (started)
+                    {
+                        fctx.LineTo(new Point(lastX, h), false, false);
+                        fctx.LineTo(new Point(segStartX, h), false, false);
+                        started = false;
+                    }
+                    continue;
+                }
                 double x = w * i / Math.Max(1, samples.Count - 1);
                 double y = h - 1 - (h - 4) * Math.Min(1.0, v / (double)peak);
-                if (!started) { ctx.BeginFigure(new Point(x, y), false, false); started = true; }
-                else ctx.LineTo(new Point(x, y), true, false);
+                if (!started)
+                {
+                    lctx.BeginFigure(new Point(x, y), false, false);
+                    fctx.BeginFigure(new Point(x, h), true, true);
+                    fctx.LineTo(new Point(x, y), false, false);
+                    segStartX = x;
+                    started = true;
+                }
+                else
+                {
+                    lctx.LineTo(new Point(x, y), true, false);
+                    fctx.LineTo(new Point(x, y), false, false);
+                }
+                lastX = x;
+            }
+            if (started)
+            {
+                fctx.LineTo(new Point(lastX, h), false, false);
+                fctx.LineTo(new Point(segStartX, h), false, false);
             }
         }
-        geo.Freeze();
-        CvSpark.Children.Add(new Path { Data = geo, Stroke = Ok, StrokeThickness = 1.4 });
+        lineGeo.Freeze();
+        fillGeo.Freeze();
+
+        var fillBrush = new LinearGradientBrush(
+            Color.FromArgb(0x48, strokeColor.R, strokeColor.G, strokeColor.B),
+            Color.FromArgb(0x04, strokeColor.R, strokeColor.G, strokeColor.B),
+            90);
+        fillBrush.Freeze();
+
+        CvSpark.Children.Add(new Path { Data = fillGeo, Fill = fillBrush });
+        CvSpark.Children.Add(new Path { Data = lineGeo, Stroke = lineBrush, StrokeThickness = 1.5 });
     }
 
     // ---------------- Win32 ----------------

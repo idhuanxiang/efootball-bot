@@ -353,15 +353,19 @@ public partial class MainWindow
             card.BorderBrush = (Brush)Application.Current.Resources["CardBorder"];
         }
 
-        Reset(CardDark);
-        Reset(CardLight);
-        Reset(CardDeepBlue);
+        Reset(CardObsidian);
+        Reset(CardSilver);
+        Reset(CardViolet);
+        Reset(CardEmerald);
+        Reset(CardCrimson);
 
-        var selected = theme switch
+        var selected = ThemeManager.NormalizeTheme(theme) switch
         {
-            ThemeManager.Light => CardLight,
-            ThemeManager.DeepBlue => CardDeepBlue,
-            _ => CardDark,
+            ThemeManager.Silver => CardSilver,
+            ThemeManager.Violet => CardViolet,
+            ThemeManager.Emerald => CardEmerald,
+            ThemeManager.Crimson => CardCrimson,
+            _ => CardObsidian,
         };
         selected.Background = (Brush)Application.Current.Resources["AccentLight"];
         selected.BorderBrush = (Brush)Application.Current.Resources["Accent"];
@@ -567,10 +571,30 @@ public partial class MainWindow
     private void SetRightPanelCollapsed(bool collapsed)
     {
         RightPanel.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+        RightSplitter.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
         RightRail.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
         RightCol.MinWidth = collapsed ? 0 : 320;
-        RightCol.MaxWidth = collapsed ? 0 : 400;
-        RightCol.Width = collapsed ? new GridLength(0) : new GridLength(0.55, GridUnitType.Star);
+        RightCol.MaxWidth = collapsed ? 0 : 540;
+        if (collapsed)
+        {
+            RightCol.Width = new GridLength(0);
+        }
+        else
+        {
+            double saved = _cfg?.Appearance.RightPanelWidth ?? 0;
+            RightCol.Width = saved is >= 320 and <= 540
+                ? new GridLength(saved, GridUnitType.Pixel)
+                : new GridLength(0.55, GridUnitType.Star);
+        }
+    }
+
+    private void RightSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        if (_cfg is null || RightPanel.Visibility != Visibility.Visible) return;
+        double w = Math.Clamp(RightCol.ActualWidth, 320, 540);
+        RightCol.Width = new GridLength(w, GridUnitType.Pixel);
+        _cfg.Appearance.RightPanelWidth = Math.Round(w);
+        PersistConfigSafe("保存右栏宽度");
     }
 
 

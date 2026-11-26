@@ -3,6 +3,25 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v9.2.0
+
+### 主题与外观体系
+- 重构 5 套暗黑毛玻璃主题并统一为四字命名：**黑曜极夜**（`Obsidian` · 默认纯黑毛玻璃 `#FF08080A`，无紫无蓝）、**霜银流光**（`Silver` · 冷调银灰毛玻璃）、**玄夜幻紫**（`Violet` · 幽邃暗紫毛玻璃与幻紫点缀）、**翡翠绿茵**（`Emerald` · 深翡翠绿茵毛玻璃）、**绯焰流火**（`Crimson` · 暗酒红绯焰毛玻璃），背景底色与侧栏均随主题色同步变化。
+- 将 **Apple Glass** 设为第一顺位与默认外观世界（`Acrylic` 毛玻璃 + 渐变质感卡片 + 抖色噪点），保留 **Windows 11（云母）** 可选；旧版配置（`Dark` / `Light` / `DeepBlue` / `Amber`）自动回落至 `Obsidian`，未知外观世界回落至 `Glass`。
+- 精简主题选择弹窗卡片排版：去除多余的“玻璃”“默认”后缀，主标题提升至 `13.5px`，下方仅保留英文主题名（`11px`）与即时预览提示。
+
+### 控件手感与弹窗统一
+- 重做 `PrimaryBtn` 主按钮为通透半透明玻璃渐变样式：移除底层重复叠色的阴影 `Border`，新增顶部 `1px` 玻璃高光细线与主题色高亮描边，全主题统一搭配纯白 `#FFFFFFFF` 文字，既融入毛玻璃底色又与 `GhostBtn` 形成清晰区分。
+- 新增无边框暗黑毛玻璃通用弹窗 `AppDialog`，并统一 `ConnectionOverlay`、`StartConfirmDialog`、`HotkeyRecordWindow`、`NotePromptWindow`、`SwapGuideWindow` 的边框、圆角、阴影与拖拽关闭体验。
+
+### 字体渲染与清晰度
+- 移除容器及文本父级上的 `DropShadowEffect` 与悬停 `ScaleTransform` 缩放，消除光标悬停或选中文本时因位图光栅化导致的发虚模糊。
+- 全应用主窗口与 6 个浮层/弹窗统一启用 `UseLayoutRounding="True"`、`TextFormattingMode="Ideal"` 与 `ClearType`，配合 `Segoe UI Variable + Microsoft YaHei UI` 字体栈，使中文排版更平滑清晰；同步统一「我的联赛」「种马培训」页面的字号阶梯。
+
+### 验证
+- `[arch-guard]` 架构锁 11 条规则（188 个源文件）通过，Release 编译 0 警告 0 错误。
+- Release 针对性回归测试（`Theme` / `Architecture` / `AppConfig` / `AuditFix` / `ModuleCatalog` / `ToolCatalog`）68 项全部通过（失败 0、跳过 0）。
+
 ## v9.1.0
 
 ### 核心引擎 / 输入 / 调度 / 更新

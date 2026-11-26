@@ -1,113 +1,237 @@
 namespace EfootballBot.Core.UI;
 
 /// <summary>
-/// 主题调色板数据（纯数据，不含任何 WPF 类型）。
-///
-/// 【两个轴】视觉世界(World) × 亮度(Theme)，共 6 张表：
-///  - 世界 Fluent（默认）：Windows 11 云母/亚克力 + 系统强调蓝 —— v7.3 起的原始观感；
-///  - 世界 Glass：Apple 黑玻璃（近纯黑毛玻璃 + 中性浅灰选中 + 玻璃渐变卡片 + 抖色噪点）。
-///  亮度 Dark / Light / DeepBlue 在两个世界各有一套。
-///
-/// 【唯一真相】同一世界内三张表必须给出完全相同的 Token 名；
-/// 只跟世界走的 Token（SelectFill / GlassFill* / PrimaryBtn* / TopBarBg …）由
-/// <see cref="ApplyWorldTokens"/> 一次派生，6 张表不必重复写。
-/// 新增 Token：先在 Themes/Tokens.xaml 加默认值，再在两个世界的三张表补齐；
-/// 漏加会被 <see cref="Validate"/> 在启动时点名（以前漏加就是「亮色主题下某块还是暗的」）。
+/// 5 套主题 × 2 种外观世界（Apple Glass 毛玻璃 / Windows 11 云母）调色板数据：
+/// 1. Obsidian（黑曜极夜 · 默认，纯黑毛玻璃，无紫无蓝）
+/// 2. Silver（霜银流光 · 冷调银灰毛玻璃，极简工业质感）
+/// 3. Violet（玄夜幻紫 · 幽邃暗紫毛玻璃，幻紫霓虹点缀）
+/// 4. Emerald（翡翠绿茵 · 深翡翠绿茵毛玻璃，战术仪表盘）
+/// 5. Crimson（绯焰流火 · 暗酒红绯焰毛玻璃，电竞锋芒）
 /// </summary>
 public static class ThemePalette
 {
-    /// <summary>按 (亮度主题, 视觉世界) 取调色板；未知值分别回落到暗色 / Fluent。</summary>
+    private static readonly Dictionary<string, string> ObsidianPalette = BuildDarkPalette(
+        windowBg: "#FF08080A",
+        contentBg: "#F208080A",
+        dialogBg: "#F5141418",
+        glassBg: "#D9101012",
+        comboPopupBg: "#F0151518",
+        chromeGlass: "#4D08080A",
+        accent: "#FFF2F2F7",
+        accentHover: "#FFFFFFFF",
+        accentGlow: "#FFD4D4DC",
+        accentLight: "#26FFFFFF",
+        accentBorder: "#4DFFFFFF",
+        accentSoft: "#1AFFFFFF",
+        accentBorderStrong: "#78FFFFFF",
+        textOnAccent: "#FF111113",
+        logTag: "#FFD4D4DC",
+        brandFrom: "#FF3A3A42",
+        brandTo: "#FF1C1C22",
+        bannerFrom: "#FF2C2C34",
+        bannerTo: "#FF18181E",
+        heroGlowFrom: "#16FFFFFF",
+        heroGlowFade: "#00FFFFFF",
+        heroTitleMid: "#FFE5E5EA",
+        heroTitleTo: "#FFA1A1AA",
+        toggleOn: "#FF30D158",
+        toggleThumbOn: "#FFFFFFFF",
+        primaryBtnFrom: "#4AFFFFFF",
+        primaryBtnMid: "#36FFFFFF",
+        primaryBtnTo: "#28FFFFFF",
+        primaryBtnStroke: "#7AFFFFFF",
+        sideLeftBg: "#59000000",
+        sideRightBg: "#42000000",
+        cardBg: "#12FFFFFF");
+
+    private static readonly Dictionary<string, string> SilverPalette = BuildDarkPalette(
+        windowBg: "#FF2A2C32",
+        contentBg: "#E82A2C32",
+        dialogBg: "#F22E3038",
+        glassBg: "#D926282E",
+        comboPopupBg: "#F02C2E36",
+        chromeGlass: "#6B343740",
+        accent: "#FFE4E4E7",
+        accentHover: "#FFFFFFFF",
+        accentGlow: "#FFF4F4F5",
+        accentLight: "#2EFFFFFF",
+        accentBorder: "#55FFFFFF",
+        accentSoft: "#1FFFFFFF",
+        accentBorderStrong: "#88FFFFFF",
+        textOnAccent: "#FF111113",
+        logTag: "#FFD4D4D8",
+        brandFrom: "#FFF4F4F5",
+        brandTo: "#FFA1A1AA",
+        bannerFrom: "#FF3F3F46",
+        bannerTo: "#FF27272A",
+        heroGlowFrom: "#1AFFFFFF",
+        heroGlowFade: "#00FFFFFF",
+        heroTitleMid: "#FFE4E4E7",
+        heroTitleTo: "#FFA1A1AA",
+        toggleOn: "#FFE4E4E7",
+        toggleThumbOn: "#FF111113",
+        primaryBtnFrom: "#52F4F4F8",
+        primaryBtnMid: "#3CE4E4EC",
+        primaryBtnTo: "#2CD4D4DC",
+        primaryBtnStroke: "#88FFFFFF",
+        cardBorder: "#2CFFFFFF",
+        glassFillTop: "#22FFFFFF",
+        glassFillMid: "#1AFFFFFF",
+        glassFillBottom: "#14FFFFFF",
+        sideLeftBg: "#663A3D46",
+        sideRightBg: "#5432353E",
+        cardBg: "#1FFFFFFF");
+
+    private static readonly Dictionary<string, string> VioletPalette = BuildDarkPalette(
+        windowBg: "#FF1D112C",
+        contentBg: "#EA1D112C",
+        dialogBg: "#F4221433",
+        glassBg: "#D9180E25",
+        comboPopupBg: "#F01E122E",
+        chromeGlass: "#6B27173B",
+        accent: "#FFA855F7",
+        accentHover: "#FFC084FC",
+        accentGlow: "#FFD8B4FE",
+        accentLight: "#33A855F7",
+        accentBorder: "#66C084FC",
+        accentSoft: "#24A855F7",
+        accentBorderStrong: "#99D8B4FE",
+        textOnAccent: "#FFFFFFFF",
+        logTag: "#FFD8B4FE",
+        brandFrom: "#FFC084FC",
+        brandTo: "#FF7E22CE",
+        bannerFrom: "#FF7E22CE",
+        bannerTo: "#FF581C87",
+        heroGlowFrom: "#1FA855F7",
+        heroGlowFade: "#00A855F7",
+        heroTitleMid: "#FFF3E8FF",
+        heroTitleTo: "#FFD8B4FE",
+        toggleOn: "#FFA855F7",
+        toggleThumbOn: "#FFFFFFFF",
+        primaryBtnFrom: "#6BC084FC",
+        primaryBtnMid: "#52A855F7",
+        primaryBtnTo: "#3E9333EA",
+        primaryBtnStroke: "#99D8B4FE",
+        cardBorder: "#3EC084FC",
+        glassFillTop: "#28C084FC",
+        glassFillMid: "#16A855F7",
+        glassFillBottom: "#0E1D112C",
+        sideLeftBg: "#662A1840",
+        sideRightBg: "#54221334",
+        cardBg: "#1CA855F7");
+
+    private static readonly Dictionary<string, string> EmeraldPalette = BuildDarkPalette(
+        windowBg: "#FF0D261D",
+        contentBg: "#EA0D261D",
+        dialogBg: "#F4112E23",
+        glassBg: "#D90B2018",
+        comboPopupBg: "#F00F291F",
+        chromeGlass: "#6B103225",
+        accent: "#FF10B981",
+        accentHover: "#FF34D399",
+        accentGlow: "#FF6EE7B7",
+        accentLight: "#3310B981",
+        accentBorder: "#6634D399",
+        accentSoft: "#2410B981",
+        accentBorderStrong: "#996EE7B7",
+        textOnAccent: "#FFFFFFFF",
+        logTag: "#FF6EE7B7",
+        brandFrom: "#FF34D399",
+        brandTo: "#FF059669",
+        bannerFrom: "#FF059669",
+        bannerTo: "#FF047857",
+        heroGlowFrom: "#1F10B981",
+        heroGlowFade: "#0010B981",
+        heroTitleMid: "#FFD1FAE5",
+        heroTitleTo: "#FF6EE7B7",
+        toggleOn: "#FF10B981",
+        toggleThumbOn: "#FFFFFFFF",
+        primaryBtnFrom: "#6634D399",
+        primaryBtnMid: "#4D10B981",
+        primaryBtnTo: "#3A059669",
+        primaryBtnStroke: "#946EE7B7",
+        cardBorder: "#3B34D399",
+        glassFillTop: "#2834D399",
+        glassFillMid: "#1610B981",
+        glassFillBottom: "#0E0D261D",
+        sideLeftBg: "#66103628",
+        sideRightBg: "#540D2C21",
+        cardBg: "#1C10B981");
+
+    private static readonly Dictionary<string, string> CrimsonPalette = BuildDarkPalette(
+        windowBg: "#FF2B0F18",
+        contentBg: "#EA2B0F18",
+        dialogBg: "#F430111B",
+        glassBg: "#D9220B12",
+        comboPopupBg: "#F02B0F18",
+        chromeGlass: "#6B38121F",
+        accent: "#FFE11D48",
+        accentHover: "#FFF43F5E",
+        accentGlow: "#FFFB7185",
+        accentLight: "#33E11D48",
+        accentBorder: "#66F43F5E",
+        accentSoft: "#24E11D48",
+        accentBorderStrong: "#99FB7185",
+        textOnAccent: "#FFFFFFFF",
+        logTag: "#FFFDA4AF",
+        brandFrom: "#FFF43F5E",
+        brandTo: "#FFBE123C",
+        bannerFrom: "#FFBE123C",
+        bannerTo: "#FF881337",
+        heroGlowFrom: "#1FE11D48",
+        heroGlowFade: "#00E11D48",
+        heroTitleMid: "#FFFFE4E6",
+        heroTitleTo: "#FFFB7185",
+        toggleOn: "#FFE11D48",
+        toggleThumbOn: "#FFFFFFFF",
+        primaryBtnFrom: "#6BF43F5E",
+        primaryBtnMid: "#52E11D48",
+        primaryBtnTo: "#3EBE123C",
+        primaryBtnStroke: "#99FB7185",
+        danger: "#FFFF5C3A",
+        dangerHover: "#FFFF7A5C",
+        dangerText: "#FFFF8A70",
+        dangerBorder: "#66FF5C3A",
+        dangerSoft: "#26FF5C3A",
+        cardBorder: "#48F43F5E",
+        glassFillTop: "#28FB7185",
+        glassFillMid: "#16E11D48",
+        glassFillBottom: "#0E2B0F18",
+        sideLeftBg: "#663D1422",
+        sideRightBg: "#5431101B",
+        cardBg: "#1CE11D48");
+
+    /// <summary>按 (主题名, 外观世界) 取调色板；默认回落到黑曜极夜 / Apple Glass。</summary>
     public static IReadOnlyDictionary<string, string> For(string? themeName, string? world = null)
     {
-        bool glass = ThemeManager.IsGlassWorld(world);
-        bool isLight = themeName == ThemeManager.Light;
-        var colors = new Dictionary<string, string>(
-            glass ? GlassDict(themeName) : FluentDict(themeName), StringComparer.Ordinal);
-        ApplyWorldTokens(colors, glass, isLight);
+        var baseDict = ThemeManager.NormalizeTheme(themeName) switch
+        {
+            ThemeManager.Silver => SilverPalette,
+            ThemeManager.Violet => VioletPalette,
+            ThemeManager.Emerald => EmeraldPalette,
+            ThemeManager.Crimson => CrimsonPalette,
+            _ => ObsidianPalette,
+        };
+        var colors = new Dictionary<string, string>(baseDict, StringComparer.Ordinal);
+        if (!ThemeManager.IsGlassWorld(world))
+        {
+            // Fluent（Win11 云母）外观世界：扁平卡片、透明顶栏、主题色分类边框（主按钮保持通透玻璃渐变与高亮描边）
+            colors["SelectBorder"] = "#00000000";
+            colors["SubTabSelFill"] = colors["Surface2"];
+            colors["SubTabSelStroke"] = colors["AccentBorder"];
+            colors["GlassFillTop"] = colors["CardBg"];
+            colors["GlassFillMid"] = colors["CardBg"];
+            colors["GlassFillBottom"] = colors["CardBg"];
+            colors["TopBarBg"] = "#00000000";
+            colors["ChromeGlass"] = "#00000000";
+        }
         return colors;
     }
 
-    private static Dictionary<string, string> FluentDict(string? name) => name switch
-    {
-        ThemeManager.Light => FluentLight,
-        ThemeManager.DeepBlue => FluentDeepBlue,
-        _ => FluentDark,
-    };
-
-    private static Dictionary<string, string> GlassDict(string? name) => name switch
-    {
-        ThemeManager.Light => GlassLight,
-        ThemeManager.DeepBlue => GlassDeepBlue,
-        _ => GlassDark,
-    };
-
-    /// <summary>
-    /// 世界维度 Token 一次派生：
-    ///  - Fluent 侧全部由既有 Token 推出 —— 切回默认外观时观感与 v7.3 一致
-    ///    （蓝强调色指示条、实心强调色主按钮、无卡片投影、顶栏透明）；
-    ///  - Glass 侧给出玻璃质感数值（浅灰选中、强调色主按钮、通透渐变卡片、顶栏淡黑玻璃）。
-    /// </summary>
-    private static void ApplyWorldTokens(Dictionary<string, string> c, bool glass, bool isLight)
-    {
-        if (glass)
-        {
-            // 选中语言：中性浅灰玻璃表达选中，指示条与选中文字同色（不靠色相）
-            c["SelectBar"] = c["SelectFg"];
-            c["SubTabSelFill"] = Get(c, "SubTabSelFill", "#664A4A50");
-            c["SubTabSelStroke"] = Get(c, "SubTabSelStroke", "#4DFFFFFF");
-            // 主按钮：强调色精致渐变 + 柔和高光描边（消除刺眼纯白方块）
-            c["PrimaryBtnFrom"] = c["Accent"];
-            c["PrimaryBtnMid"] = c["Accent"];
-            c["PrimaryBtnTo"] = c["BrandTo"];
-            c["TextOnPrimary"] = c["TextOnAccent"];
-            c["PrimaryBtnStroke"] = isLight ? "#22000000" : "#2EFFFFFF";
-            c["BtnFlash"] = "#FFFFFFFF";
-            // 卡片玻璃渐变：克制细腻的光影过渡，告别厚重雾白顶边
-            c["GlassFillTop"] = isLight ? "#E0FFFFFF" : "#14FFFFFF";
-            c["GlassFillMid"] = isLight ? "#CCFFFFFF" : "#0DFFFFFF";
-            c["GlassFillBottom"] = isLight ? "#B8FFFFFF" : "#09FFFFFF";
-            // 顶栏玻璃蒙版：与左右栏同一张淡黑玻璃
-            c["TopBarBg"] = c["ChromeGlass"];
-        }
-        else
-        {
-            c["SelectFill"] = c["ControlFill"];
-            c["SelectFillStrong"] = c["Surface2"];
-            c["SelectBorder"] = "#00000000";
-            c["SelectFg"] = c["TextPrimary"];
-            c["SelectBar"] = c["Accent"];                    // Win11 导航项的蓝色指示条
-            c["SubTabSelFill"] = c["Surface2"];
-            c["SubTabSelStroke"] = c["AccentBorder"];
-            c["ChipFill"] = c["ControlFill"];
-            c["ChipStroke"] = c["ControlStroke"];
-            c["ComboBg"] = c["InputBg"];
-            c["ComboPopupBg"] = Opaque(c["ContentBg"]);      // 实心底，盖住下层文字
-            c["PrimaryBtnFrom"] = c["Accent"];
-            c["PrimaryBtnMid"] = c["Accent"];
-            c["PrimaryBtnTo"] = c["Accent"];
-            c["TextOnPrimary"] = c["TextOnAccent"];
-            c["PrimaryBtnStroke"] = "#00000000";
-            c["BtnFlash"] = "#FFFFFFFF";                     // Win11 强调色按钮悬停提亮
-            c["GlassFillTop"] = c["CardBg"];                 // 三停同色 = 平铺的旧版卡片底
-            c["GlassFillMid"] = c["CardBg"];
-            c["GlassFillBottom"] = c["CardBg"];
-            c["TopBarBg"] = "#00000000";
-            // 玻璃蒙版 token 在 Fluent 里用不到，但六张表必须同名（Validate 会点名）：
-            // 给透明值，任何误引用都只是「不画」，不会变成一块脏色。
-            c["ChromeGlass"] = "#00000000";
-        }
-    }
-
-    private static string Get(IReadOnlyDictionary<string, string> c, string key, string fallback)
-        => c.TryGetValue(key, out var v) ? v : fallback;
-
-    /// <summary>把带透明度的 #AARRGGBB 换成不透明（下拉弹出层必须是实底）。</summary>
-    private static string Opaque(string hex) => hex.Length == 9 ? "#FF" + hex[3..] : hex;
-
-    /// <summary>自检：2 世界 × 3 亮度派生后 Token 名必须完全一致。返回空表示完整。</summary>
+    /// <summary>自检：2 世界 × 5 主题共 10 组调色板的 Token 键集必须完全一致。返回空数组表示完整。</summary>
     public static string[] Validate()
     {
-        var reference = For(ThemeManager.Dark, ThemeManager.WorldFluent);
+        var reference = For(ThemeManager.Obsidian, ThemeManager.WorldGlass);
         var problems = new List<string>();
         foreach (var world in ThemeManager.Worlds)
         {
@@ -122,542 +246,161 @@ public static class ThemePalette
         return [.. problems];
     }
 
-    // ================= 世界 Fluent（Win11，默认）=================
-
-    private static readonly Dictionary<string, string> FluentDark = new()
+    private static Dictionary<string, string> BuildDarkPalette(
+        string windowBg,
+        string contentBg,
+        string dialogBg,
+        string glassBg,
+        string comboPopupBg,
+        string chromeGlass,
+        string accent,
+        string accentHover,
+        string accentGlow,
+        string accentLight,
+        string accentBorder,
+        string accentSoft,
+        string accentBorderStrong,
+        string textOnAccent,
+        string logTag,
+        string brandFrom,
+        string brandTo,
+        string bannerFrom,
+        string bannerTo,
+        string heroGlowFrom,
+        string heroGlowFade,
+        string heroTitleMid,
+        string heroTitleTo,
+        string toggleOn,
+        string toggleThumbOn,
+        string? primaryBtnFrom = null,
+        string? primaryBtnMid = null,
+        string? primaryBtnTo = null,
+        string? primaryBtnStroke = null,
+        string textOnPrimary = "#FFFFFFFF",
+        string danger = "#FFEF4444",
+        string dangerHover = "#FFF87171",
+        string dangerText = "#FFFCA5A5",
+        string dangerBorder = "#66EF4444",
+        string dangerSoft = "#26EF4444",
+        string cardBorder = "#20FFFFFF",
+        string glassFillTop = "#14FFFFFF",
+        string glassFillMid = "#0DFFFFFF",
+        string glassFillBottom = "#09FFFFFF",
+        string sideLeftBg = "#59000000",
+        string sideRightBg = "#42000000",
+        string cardBg = "#12FFFFFF")
     {
-        ["WindowBg"] = "#FF1F1F1F",
-        ["ContentBg"] = "#F21F1F1F",
-        ["CardBg"] = "#14FFFFFF",
-        ["CardBorder"] = "#1FFFFFFF",
-        ["SideLeftBg"] = "#66000000",
-        ["SideRightBg"] = "#4D000000",
-        ["Surface2"] = "#1FFFFFFF",
-        ["InsetBg"] = "#0F000000",
-        ["TrackBg"] = "#4D000000",
-        ["GlassBg"] = "#CC262626",
-        ["GlassStroke"] = "#1FFFFFFF",
-        ["DialogBg"] = "#F5222226",
-        ["ControlFill"] = "#0FFFFFFF",
-        ["ControlStroke"] = "#26FFFFFF",
-        ["TextPrimary"] = "#FFFFFFFF",
-        ["TextSecondary"] = "#FFC7C7C7",
-        ["TextMuted"] = "#FF9A9A9A",
-        ["NavLabelFg"] = "#FF9A9A9A",
-        ["NavDescFg"] = "#FFB4B4B4",
-        ["SegTabFg"] = "#FFC7C7C7",
-        ["SegTabHover"] = "#14FFFFFF",
-        ["SegTabHoverFg"] = "#FFFFFFFF",
-        ["LogInfo"] = "#FFD6D6D6",
-        ["LogTime"] = "#FF7E8694",
-        ["LogTag"] = "#FF7AB8FF",
-        ["Accent"] = "#FF2563EB",
-        ["AccentHover"] = "#FF3B82F6",
-        ["AccentGlow"] = "#FF60A5FA",
-        ["AccentLight"] = "#3360CDFF",
-        ["AccentBorder"] = "#5560CDFF",
-        ["AccentSoft"] = "#1F60CDFF",
-        ["AccentBorderStrong"] = "#8060CDFF",
-        ["TextOnAccent"] = "#FFFFFFFF",
-        ["Danger"] = "#FFFF99A4",
-        ["DangerHover"] = "#FFFFB3BC",
-        ["DangerText"] = "#FFFF99A4",
-        ["DangerBorder"] = "#66FF99A4",
-        ["DangerSoft"] = "#26FF99A4",
-        ["TextOnDanger"] = "#FF2B080C",
-        ["Warning"] = "#FFFCE100",
-        ["Success"] = "#FF6CCB5F",
-        ["Info"] = "#FF60CDFF",
-        ["Amber"] = "#FFFCE100",
-        ["Orange"] = "#FFFFB900",
-        ["Teal"] = "#FF6CCB5F",
-        ["InputBg"] = "#0FFFFFFF",
-        ["InputBorder"] = "#26FFFFFF",
-        ["HoverOverlay"] = "#14FFFFFF",
-        ["ScrollThumb"] = "#66FFFFFF",
-        ["ToggleOff"] = "#33FFFFFF",
-        ["ToggleOn"] = "#FF60CDFF",
-        ["ToggleThumbOn"] = "#FFFFFFFF",
-        ["ModuleDot"] = "#FF7A7A7A",
-        ["EnvDotIdle"] = "#FF8A8A8A",
-        ["Divider"] = "#17FFFFFF",
-        ["HairlineStrong"] = "#33FFFFFF",
-        ["Scrim"] = "#F00A0A0A",
-        ["ScrimSoft"] = "#CC0A0A0A",
-        ["PreviewBg"] = "#FF000000",
-        ["NavSectionBg"] = "#33FFFFFF",
-        ["NavSectionBorder"] = "#1FFFFFFF",
-        ["TabTrackBg"] = "#4D000000",
-        ["IntlTabBg"] = "#4D000000",
-        ["IntlTabBorder"] = "#1FFFFFFF",
-        ["BrandFrom"] = "#FF3B82F6",
-        ["BrandTo"] = "#FF1D4ED8",
-        ["BannerFrom"] = "#FF0F6CBD",
-        ["BannerTo"] = "#FF0B4F8A",
-        ["TextOnBanner"] = "#FFFFFFFF",
-        ["HeroGlowFrom"] = "#1A60CDFF",
-        ["HeroGlowFade"] = "#0060CDFF",
-        ["HeroTitleFrom"] = "#FFFFFFFF",
-        ["HeroTitleMid"] = "#FFCFEFFF",
-        ["HeroTitleTo"] = "#FF9BEBFF",
-        ["TooltipBg"] = "#F22B2B2B",
-        ["TooltipBorder"] = "#2EFFFFFF",
-        ["TooltipFg"] = "#FFFFFFFF",
-    };
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["WindowBg"] = windowBg,
+            ["ContentBg"] = contentBg,
+            ["CardBg"] = cardBg,
+            ["ComboBg"] = "#2A242428",
+            ["ComboPopupBg"] = comboPopupBg,
+            ["CardBorder"] = cardBorder,
+            ["SideLeftBg"] = sideLeftBg,
+            ["SideRightBg"] = sideRightBg,
+            ["Surface2"] = "#1CFFFFFF",
+            ["InsetBg"] = "#0A000000",
+            ["TrackBg"] = "#4D000000",
+            ["GlassBg"] = glassBg,
+            ["GlassStroke"] = "#24FFFFFF",
+            ["DialogBg"] = dialogBg,
+            ["ControlFill"] = "#18FFFFFF",
+            ["ControlStroke"] = "#2EFFFFFF",
+            ["ChipFill"] = "#3D000000",
+            ["ChipStroke"] = "#3DFFFFFF",
+            ["ChromeGlass"] = chromeGlass,
+            ["TopBarBg"] = chromeGlass,
 
-    // ---------------- 亮色 · Windows 11 浅色 ----------------
-    private static readonly Dictionary<string, string> FluentLight = new()
-    {
-        ["WindowBg"] = "#FFF3F3F3",
-        ["ContentBg"] = "#FFF9F9F9",
-        ["CardBg"] = "#B3FFFFFF",
-        ["CardBorder"] = "#1A000000",
-        ["SideLeftBg"] = "#99FFFFFF",
-        ["SideRightBg"] = "#80FFFFFF",
-        ["Surface2"] = "#F2FFFFFF",
-        ["InsetBg"] = "#FFF2F2F2",
-        ["TrackBg"] = "#0A000000",
-        ["GlassBg"] = "#E6FBFBFB",
-        ["GlassStroke"] = "#14000000",
-        ["DialogBg"] = "#FAFFFFFF",
-        ["ControlFill"] = "#B3FFFFFF",
-        ["ControlStroke"] = "#29000000",
-        ["TextPrimary"] = "#FF1A1A1A",
-        ["TextSecondary"] = "#FF5C5C5C",
-        ["TextMuted"] = "#FF6E6E6E",
-        ["NavLabelFg"] = "#FF6E6E6E",
-        ["NavDescFg"] = "#FF5C5C5C",
-        ["SegTabFg"] = "#FF5C5C5C",
-        ["SegTabHover"] = "#0A000000",
-        ["SegTabHoverFg"] = "#FF1A1A1A",
-        ["LogInfo"] = "#FF1A1A1A",
-        ["LogTime"] = "#FF78716C",
-        ["LogTag"] = "#FF1D4ED8",
-        ["Accent"] = "#FF0067C0",
-        ["AccentHover"] = "#FF1975C5",
-        ["AccentGlow"] = "#FF0F6CBD",
-        ["AccentLight"] = "#1A0067C0",
-        ["AccentBorder"] = "#550067C0",
-        ["AccentSoft"] = "#140067C0",
-        ["AccentBorderStrong"] = "#800067C0",
-        ["TextOnAccent"] = "#FFFFFFFF",
-        ["Danger"] = "#FFC42B1C",
-        ["DangerHover"] = "#FFA92215",
-        ["DangerText"] = "#FFC42B1C",
-        ["DangerBorder"] = "#55C42B1C",
-        ["DangerSoft"] = "#1AC42B1C",
-        ["TextOnDanger"] = "#FFFFFFFF",
-        ["Warning"] = "#FF9D5D00",
-        ["Success"] = "#FF0F7B0F",
-        ["Info"] = "#FF0067C0",
-        ["Amber"] = "#FF9D5D00",
-        ["Orange"] = "#FF8A5300",
-        ["Teal"] = "#FF0F7B0F",
-        ["InputBg"] = "#B3FFFFFF",
-        ["InputBorder"] = "#29000000",
-        ["HoverOverlay"] = "#0A000000",
-        ["ScrollThumb"] = "#66000000",
-        ["ToggleOff"] = "#33000000",
-        ["ToggleOn"] = "#FF0067C0",
-        ["ToggleThumbOn"] = "#FFFFFFFF",
-        ["ModuleDot"] = "#FF8A8A8A",
-        ["EnvDotIdle"] = "#FF9A9A9A",
-        ["Divider"] = "#14000000",
-        ["HairlineStrong"] = "#22000000",
-        ["Scrim"] = "#CCF3F3F3",
-        ["ScrimSoft"] = "#99F3F3F3",
-        ["PreviewBg"] = "#FF000000",
-        ["NavSectionBg"] = "#4DFFFFFF",
-        ["NavSectionBorder"] = "#14000000",
-        ["TabTrackBg"] = "#0A000000",
-        ["IntlTabBg"] = "#0A000000",
-        ["IntlTabBorder"] = "#14000000",
-        ["BrandFrom"] = "#FF0067C0",
-        ["BrandTo"] = "#FF0F6CBD",
-        ["BannerFrom"] = "#FF0067C0",
-        ["BannerTo"] = "#FF0B4F8A",
-        ["TextOnBanner"] = "#FFFFFFFF",
-        ["HeroGlowFrom"] = "#140067C0",
-        ["HeroGlowFade"] = "#000067C0",
-        ["HeroTitleFrom"] = "#FF1A1A1A",
-        ["HeroTitleMid"] = "#FF0F6CBD",
-        ["HeroTitleTo"] = "#FF0067C0",
-        ["TooltipBg"] = "#F7FFFFFF",
-        ["TooltipBorder"] = "#29000000",
-        ["TooltipFg"] = "#FF1A1A1A",
-    };
+            ["TextPrimary"] = "#FFFFFFFF",
+            ["TextSecondary"] = "#FFE5E5EA",
+            ["TextMuted"] = "#FF98989F",
+            ["NavLabelFg"] = "#FF98989F",
+            ["NavDescFg"] = "#FFB8B8BF",
+            ["SegTabFg"] = "#FFE5E5EA",
+            ["SegTabHover"] = "#1AFFFFFF",
+            ["SegTabHoverFg"] = "#FFFFFFFF",
+            ["LogInfo"] = "#FFE5E5EA",
+            ["LogTime"] = "#FF7E8694",
+            ["LogTag"] = logTag,
 
-    // ---------------- 深蓝 · Win11 深色 + 蓝调背景 ----------------
-    private static readonly Dictionary<string, string> FluentDeepBlue = new()
-    {
-        ["WindowBg"] = "#FF101828",
-        ["ContentBg"] = "#F2141C2B",
-        ["CardBg"] = "#14FFFFFF",
-        ["CardBorder"] = "#1F9CC7FF",
-        ["SideLeftBg"] = "#66060A12",
-        ["SideRightBg"] = "#4D060A12",
-        ["Surface2"] = "#1FFFFFFF",
-        ["InsetBg"] = "#0F000000",
-        ["TrackBg"] = "#4D060A12",
-        ["GlassBg"] = "#991B2436",
-        ["GlassStroke"] = "#1F9CC7FF",
-        ["DialogBg"] = "#F5151E2E",
-        ["ControlFill"] = "#0FFFFFFF",
-        ["ControlStroke"] = "#33FFFFFF",
-        ["TextPrimary"] = "#FFF5F8FF",
-        ["TextSecondary"] = "#FFC6D3E6",
-        ["TextMuted"] = "#FF98AAC4",
-        ["NavLabelFg"] = "#FF98AAC4",
-        ["NavDescFg"] = "#FFAEC0D8",
-        ["SegTabFg"] = "#FFC6D3E6",
-        ["SegTabHover"] = "#14FFFFFF",
-        ["SegTabHoverFg"] = "#FFFFFFFF",
-        ["LogInfo"] = "#FFD8E4F5",
-        ["LogTime"] = "#FF7E8A9E",
-        ["LogTag"] = "#FF7AB8FF",
-        ["Accent"] = "#FF2563EB",
-        ["AccentHover"] = "#FF3B82F6",
-        ["AccentGlow"] = "#FF60A5FA",
-        ["AccentLight"] = "#337CC4FF",
-        ["AccentBorder"] = "#557CC4FF",
-        ["AccentSoft"] = "#1F7CC4FF",
-        ["AccentBorderStrong"] = "#807CC4FF",
-        ["TextOnAccent"] = "#FFFFFFFF",
-        ["Danger"] = "#FFFF9AA5",
-        ["DangerHover"] = "#FFFFB4BD",
-        ["DangerText"] = "#FFFF9AA5",
-        ["DangerBorder"] = "#66FF9AA5",
-        ["DangerSoft"] = "#26FF9AA5",
-        ["TextOnDanger"] = "#FF2B080C",
-        ["Warning"] = "#FFFCE100",
-        ["Success"] = "#FF7BD86E",
-        ["Info"] = "#FF7CC4FF",
-        ["Amber"] = "#FFFCE100",
-        ["Orange"] = "#FFFFB900",
-        ["Teal"] = "#FF7BD86E",
-        ["InputBg"] = "#0FFFFFFF",
-        ["InputBorder"] = "#33FFFFFF",
-        ["HoverOverlay"] = "#14FFFFFF",
-        ["ScrollThumb"] = "#66FFFFFF",
-        ["ToggleOff"] = "#33FFFFFF",
-        ["ToggleOn"] = "#FF7CC4FF",
-        ["ToggleThumbOn"] = "#FFFFFFFF",
-        ["ModuleDot"] = "#FF8098B8",
-        ["EnvDotIdle"] = "#FF92A6C0",
-        ["Divider"] = "#1FFFFFFF",
-        ["HairlineStrong"] = "#33FFFFFF",
-        ["Scrim"] = "#F005080F",
-        ["ScrimSoft"] = "#CC05080F",
-        ["PreviewBg"] = "#FF000000",
-        ["NavSectionBg"] = "#33060A12",
-        ["NavSectionBorder"] = "#1FFFFFFF",
-        ["TabTrackBg"] = "#4D060A12",
-        ["IntlTabBg"] = "#4D060A12",
-        ["IntlTabBorder"] = "#1FFFFFFF",
-        ["BrandFrom"] = "#FF3B82F6",
-        ["BrandTo"] = "#FF1D4ED8",
-        ["BannerFrom"] = "#FF1F6FB5",
-        ["BannerTo"] = "#FF144F84",
-        ["TextOnBanner"] = "#FFFFFFFF",
-        ["HeroGlowFrom"] = "#1A7CC4FF",
-        ["HeroGlowFade"] = "#007CC4FF",
-        ["HeroTitleFrom"] = "#FFFFFFFF",
-        ["HeroTitleMid"] = "#FFD5EBFF",
-        ["HeroTitleTo"] = "#FFB7E2FF",
-        ["TooltipBg"] = "#F0131C2A",
-        ["TooltipBorder"] = "#33FFFFFF",
-        ["TooltipFg"] = "#FFF5F8FF",
-    };
+            ["SelectFill"] = "#26FFFFFF",
+            ["SelectFillStrong"] = "#36FFFFFF",
+            ["SelectBorder"] = "#38FFFFFF",
+            ["SelectFg"] = "#FFFFFFFF",
+            ["SelectBar"] = accent,
+            ["SubTabSelFill"] = "#5C42424A",
+            ["SubTabSelStroke"] = "#4DFFFFFF",
 
-    // ================= 世界 Glass（Apple 黑玻璃）=================
+            ["Accent"] = accent,
+            ["AccentHover"] = accentHover,
+            ["AccentGlow"] = accentGlow,
+            ["AccentLight"] = accentLight,
+            ["AccentBorder"] = accentBorder,
+            ["AccentSoft"] = accentSoft,
+            ["AccentBorderStrong"] = accentBorderStrong,
+            ["TextOnAccent"] = textOnAccent,
 
-    private static readonly Dictionary<string, string> GlassDark = new()
-    {
-        ["WindowBg"] = "#FF08080A",
-        ["ContentBg"] = "#F208080A",
-        ["CardBg"] = "#12FFFFFF",
-        // 下拉选择卡：控件本体与弹出层用更实的底色，盖住下层文字避免重叠难辨
-        ["ComboBg"] = "#2A242428",
-        ["ComboPopupBg"] = "#F0161618",
-        ["CardBorder"] = "#20FFFFFF",
-        ["SideLeftBg"] = "#59000000",
-        ["SideRightBg"] = "#42000000",
-        ["Surface2"] = "#1CFFFFFF",
-        ["InsetBg"] = "#0A000000",
-        ["TrackBg"] = "#4D000000",
-        ["GlassBg"] = "#D9101012",
-        ["GlassStroke"] = "#24FFFFFF",
-        ["DialogBg"] = "#F516161A",
-        ["ControlFill"] = "#18FFFFFF",
-        ["ControlStroke"] = "#2EFFFFFF",
-        // Chip（热键等标签）：更实的深色毛玻璃 + 方形小圆角
-        ["ChipFill"] = "#3D000000",
-        ["ChipStroke"] = "#3DFFFFFF",
-        ["ChromeGlass"] = "#4D08080A",
-        ["TextPrimary"] = "#FFFFFFFF",
-        ["TextSecondary"] = "#FFE5E5EA",
-        ["TextMuted"] = "#FF98989F",
-        ["NavLabelFg"] = "#FF98989F",
-        ["NavDescFg"] = "#FFB8B8BF",
-        ["SegTabFg"] = "#FFE5E5EA",
-        ["SegTabHover"] = "#1AFFFFFF",
-        ["SegTabHoverFg"] = "#FFFFFFFF",
-        ["LogInfo"] = "#FFE5E5EA",
-        ["LogTime"] = "#FF7E8694",
-        ["LogTag"] = "#FF7AB8FF",
-        ["Accent"] = "#FF2563EB",
-        ["AccentHover"] = "#FF3B82F6",
-        ["AccentGlow"] = "#FF60A5FA",
-        ["AccentLight"] = "#330A84FF",
-        ["AccentBorder"] = "#660A84FF",
-        ["AccentSoft"] = "#260A84FF",
-        ["AccentBorderStrong"] = "#990A84FF",
-        ["TextOnAccent"] = "#FFFFFFFF",
-        // 浅灰毛玻璃选中态：替代蓝色高亮，靠玻璃质感而非色相表达"选中"
-        ["SelectFill"] = "#2EFFFFFF",
-        ["SelectFillStrong"] = "#3DFFFFFF",
-        ["SelectBorder"] = "#3DFFFFFF",
-        ["SelectFg"] = "#FFFFFFFF",
-        // 功能分类页签选中：明显的灰色磨砂方框
-        ["SubTabSelFill"] = "#664A4A50",
-        ["SubTabSelStroke"] = "#4DFFFFFF",
-        ["Danger"] = "#FFFF453A",
-        ["DangerHover"] = "#FFFF695F",
-        ["DangerText"] = "#FFFF6966",
-        ["DangerBorder"] = "#66FF453A",
-        ["DangerSoft"] = "#26FF453A",
-        ["TextOnDanger"] = "#FFFFFFFF",
-        ["Warning"] = "#FFFFD60A",
-        ["Success"] = "#FF30D158",
-        ["Info"] = "#FF0A84FF",
-        ["Amber"] = "#FFFFD60A",
-        ["Orange"] = "#FFFF9F0A",
-        ["Teal"] = "#FF40C8E0",
-        ["InputBg"] = "#1FFFFFFF",
-        ["InputBorder"] = "#33FFFFFF",
-        ["HoverOverlay"] = "#1AFFFFFF",
-        ["ScrollThumb"] = "#66FFFFFF",
-        ["ToggleOff"] = "#38FFFFFF",
-        ["ToggleOn"] = "#FF30D158",
-        ["ToggleThumbOn"] = "#FFFFFFFF",
-        ["ModuleDot"] = "#FF8E8E93",
-        ["EnvDotIdle"] = "#FF8E8E93",
-        ["Divider"] = "#29FFFFFF",
-        ["HairlineStrong"] = "#3DFFFFFF",
-        ["Scrim"] = "#F0000000",
-        ["ScrimSoft"] = "#CC000000",
-        ["PreviewBg"] = "#FF000000",
-        ["NavSectionBg"] = "#33FFFFFF",
-        ["NavSectionBorder"] = "#1FFFFFFF",
-        ["TabTrackBg"] = "#4D000000",
-        ["IntlTabBg"] = "#4D000000",
-        ["IntlTabBorder"] = "#1FFFFFFF",
-        ["BrandFrom"] = "#FF3B82F6",
-        ["BrandTo"] = "#FF1D4ED8",
-        ["BannerFrom"] = "#FF0A84FF",
-        ["BannerTo"] = "#FF0057D6",
-        ["TextOnBanner"] = "#FFFFFFFF",
-        ["HeroGlowFrom"] = "#260A84FF",
-        ["HeroGlowFade"] = "#000A84FF",
-        ["HeroTitleFrom"] = "#FFFFFFFF",
-        ["HeroTitleMid"] = "#FFCFE6FF",
-        ["HeroTitleTo"] = "#FF9CCBFF",
-        ["TooltipBg"] = "#F22C2C2E",
-        ["TooltipBorder"] = "#33FFFFFF",
-        ["TooltipFg"] = "#FFFFFFFF",
-    };
+            ["PrimaryBtnFrom"] = primaryBtnFrom ?? accent,
+            ["PrimaryBtnMid"] = primaryBtnMid ?? accent,
+            ["PrimaryBtnTo"] = primaryBtnTo ?? brandTo,
+            ["TextOnPrimary"] = textOnPrimary,
+            ["PrimaryBtnStroke"] = primaryBtnStroke ?? "#78FFFFFF",
+            ["BtnFlash"] = "#FFFFFFFF",
 
-    // ---------------- 亮色 · Apple 浅色 ----------------
-    private static readonly Dictionary<string, string> GlassLight = new()
-    {
-        ["WindowBg"] = "#FFF2F2F7",
-        ["ContentBg"] = "#F2FFFFFF",
-        ["CardBg"] = "#B3FFFFFF",
-        // 亮色下拉选择卡：浅色实底
-        ["ComboBg"] = "#E8F2F2F7",
-        ["ComboPopupBg"] = "#FAF2F2F7",
-        ["CardBorder"] = "#1A000000",
-        ["SideLeftBg"] = "#99F2F2F7",
-        ["SideRightBg"] = "#80F2F2F7",
-        ["Surface2"] = "#F2FFFFFF",
-        ["InsetBg"] = "#FFF2F2F7",
-        ["TrackBg"] = "#14000000",
-        ["GlassBg"] = "#E6FFFFFF",
-        ["GlassStroke"] = "#1A000000",
-        ["DialogBg"] = "#FAF7F7FA",
-        ["ControlFill"] = "#B3FFFFFF",
-        ["ControlStroke"] = "#29000000",
-        // 亮色 Chip：浅灰磨砂 + 深描边（确保深色文字清晰可读）
-        ["ChipFill"] = "#18000000",
-        ["ChipStroke"] = "#2E000000",
-        ["ChromeGlass"] = "#59F2F2F7",
-        ["TextPrimary"] = "#FF1C1C1E",
-        ["TextSecondary"] = "#FF3C3C43",
-        ["TextMuted"] = "#FF6E6E73",
-        ["NavLabelFg"] = "#FF6E6E73",
-        ["NavDescFg"] = "#FF3C3C43",
-        ["SegTabFg"] = "#FF3C3C43",
-        ["SegTabHover"] = "#0A000000",
-        ["SegTabHoverFg"] = "#FF1C1C1E",
-        ["LogInfo"] = "#FF1C1C1E",
-        ["LogTime"] = "#FF78716C",
-        ["LogTag"] = "#FF1D4ED8",
-        ["Accent"] = "#FF0067C0",
-        ["AccentHover"] = "#FF1975C5",
-        ["AccentGlow"] = "#FF0F6CBD",
-        ["AccentLight"] = "#1A007AFF",
-        ["AccentBorder"] = "#55007AFF",
-        ["AccentSoft"] = "#14007AFF",
-        ["AccentBorderStrong"] = "#80007AFF",
-        ["TextOnAccent"] = "#FFFFFFFF",
-        // 亮色主题的浅灰玻璃选中态：半透明黑底 + 深色字
-        ["SelectFill"] = "#1A000000",
-        ["SelectFillStrong"] = "#26000000",
-        ["SelectBorder"] = "#26000000",
-        ["SelectFg"] = "#FF1C1C1E",
-        // 亮色功能页签选中：稍实的灰色磨砂方框
-        ["SubTabSelFill"] = "#3D8E8E93",
-        ["SubTabSelStroke"] = "#268E8E93",
-        ["Danger"] = "#FFFF3B30",
-        ["DangerHover"] = "#FFFF5A50",
-        ["DangerText"] = "#FFFF3B30",
-        ["DangerBorder"] = "#66FF3B30",
-        ["DangerSoft"] = "#1AFF3B30",
-        ["TextOnDanger"] = "#FFFFFFFF",
-        ["Warning"] = "#FFFFCC00",
-        ["Success"] = "#FF34C759",
-        ["Info"] = "#FF007AFF",
-        ["Amber"] = "#FFFFCC00",
-        ["Orange"] = "#FFFF9500",
-        ["Teal"] = "#FF30B0C7",
-        ["InputBg"] = "#B3FFFFFF",
-        ["InputBorder"] = "#29000000",
-        ["HoverOverlay"] = "#0A000000",
-        ["ScrollThumb"] = "#59000000",
-        ["ToggleOff"] = "#2E000000",
-        ["ToggleOn"] = "#FF34C759",
-        ["ToggleThumbOn"] = "#FFFFFFFF",
-        ["ModuleDot"] = "#FF8E8E93",
-        ["EnvDotIdle"] = "#FF8E8E93",
-        ["Divider"] = "#1A000000",
-        ["HairlineStrong"] = "#29000000",
-        ["Scrim"] = "#CCF2F2F7",
-        ["ScrimSoft"] = "#99F2F2F7",
-        ["PreviewBg"] = "#FF000000",
-        ["NavSectionBg"] = "#4DFFFFFF",
-        ["NavSectionBorder"] = "#1A000000",
-        ["TabTrackBg"] = "#0A000000",
-        ["IntlTabBg"] = "#0A000000",
-        ["IntlTabBorder"] = "#1A000000",
-        ["BrandFrom"] = "#FF0067C0",
-        ["BrandTo"] = "#FF0055A3",
-        ["BannerFrom"] = "#FF007AFF",
-        ["BannerTo"] = "#FF0057D6",
-        ["TextOnBanner"] = "#FFFFFFFF",
-        ["HeroGlowFrom"] = "#1A007AFF",
-        ["HeroGlowFade"] = "#00007AFF",
-        ["HeroTitleFrom"] = "#FF1C1C1E",
-        ["HeroTitleMid"] = "#FF007AFF",
-        ["HeroTitleTo"] = "#FF0057D6",
-        ["TooltipBg"] = "#F7FFFFFF",
-        ["TooltipBorder"] = "#29000000",
-        ["TooltipFg"] = "#FF1C1C1E",
-    };
+            ["GlassFillTop"] = glassFillTop,
+            ["GlassFillMid"] = glassFillMid,
+            ["GlassFillBottom"] = glassFillBottom,
 
-    // ---------------- 深蓝 · Apple 石墨灰 + 青蓝强调（冷色变体） ----------------
-    private static readonly Dictionary<string, string> GlassDeepBlue = new()
-    {
-        ["WindowBg"] = "#FF1C1C20",
-        ["ContentBg"] = "#E61C1C20",
-        ["CardBg"] = "#1AFFFFFF",
-        // 深蓝下拉选择卡
-        ["ComboBg"] = "#2A1C2028",
-        ["ComboPopupBg"] = "#F0161A22",
-        ["CardBorder"] = "#24A0C8FF",
-        ["SideLeftBg"] = "#66151A22",
-        ["SideRightBg"] = "#4D151A22",
-        ["Surface2"] = "#24FFFFFF",
-        ["InsetBg"] = "#14FFFFFF",
-        ["TrackBg"] = "#4D000000",
-        ["GlassBg"] = "#CC2C3036",
-        ["GlassStroke"] = "#29A0C8FF",
-        ["DialogBg"] = "#F5181C24",
-        ["ControlFill"] = "#1FFFFFFF",
-        ["ControlStroke"] = "#33FFFFFF",
-        // 深蓝 Chip：更实的深色毛玻璃
-        ["ChipFill"] = "#420A0E14",
-        ["ChipStroke"] = "#3DFFFFFF",
-        ["ChromeGlass"] = "#4D08080A",
-        ["TextPrimary"] = "#FFF5F8FF",
-        ["TextSecondary"] = "#FFE0E8F2",
-        ["TextMuted"] = "#FF98A6B8",
-        ["NavLabelFg"] = "#FF98A6B8",
-        ["NavDescFg"] = "#FFBAC8D8",
-        ["SegTabFg"] = "#FFE0E8F2",
-        ["SegTabHover"] = "#1AFFFFFF",
-        ["SegTabHoverFg"] = "#FFFFFFFF",
-        ["LogInfo"] = "#FFE0E8F2",
-        ["LogTime"] = "#FF7E8A9E",
-        ["LogTag"] = "#FF7AB8FF",
-        ["Accent"] = "#FF2563EB",
-        ["AccentHover"] = "#FF3B82F6",
-        ["AccentGlow"] = "#FF60A5FA",
-        ["AccentLight"] = "#335AC8FA",
-        ["AccentBorder"] = "#665AC8FA",
-        ["AccentSoft"] = "#265AC8FA",
-        ["AccentBorderStrong"] = "#995AC8FA",
-        ["TextOnAccent"] = "#FFFFFFFF",
-        // 深蓝主题的浅灰玻璃选中态
-        ["SelectFill"] = "#2EFFFFFF",
-        ["SelectFillStrong"] = "#3DFFFFFF",
-        ["SelectBorder"] = "#3DFFFFFF",
-        ["SelectFg"] = "#FFF5F8FF",
-        // 深蓝功能页签选中：灰色磨砂方框
-        ["SubTabSelFill"] = "#664A4A50",
-        ["SubTabSelStroke"] = "#4DFFFFFF",
-        ["Danger"] = "#FFFF453A",
-        ["DangerHover"] = "#FFFF695F",
-        ["DangerText"] = "#FFFF6966",
-        ["DangerBorder"] = "#66FF453A",
-        ["DangerSoft"] = "#26FF453A",
-        ["TextOnDanger"] = "#FFFFFFFF",
-        ["Warning"] = "#FFFFD60A",
-        ["Success"] = "#FF30D158",
-        ["Info"] = "#FF5AC8FA",
-        ["Amber"] = "#FFFFD60A",
-        ["Orange"] = "#FFFF9F0A",
-        ["Teal"] = "#FF40C8E0",
-        ["InputBg"] = "#1FFFFFFF",
-        ["InputBorder"] = "#33FFFFFF",
-        ["HoverOverlay"] = "#1AFFFFFF",
-        ["ScrollThumb"] = "#66FFFFFF",
-        ["ToggleOff"] = "#38FFFFFF",
-        ["ToggleOn"] = "#FF30D158",
-        ["ToggleThumbOn"] = "#FFFFFFFF",
-        ["ModuleDot"] = "#FF8E9AB0",
-        ["EnvDotIdle"] = "#FF8E9AB0",
-        ["Divider"] = "#29A0C8FF",
-        ["HairlineStrong"] = "#3DFFFFFF",
-        ["Scrim"] = "#F00C0D10",
-        ["ScrimSoft"] = "#CC0C0D10",
-        ["PreviewBg"] = "#FF000000",
-        ["NavSectionBg"] = "#33A0C8FF",
-        ["NavSectionBorder"] = "#1FFFFFFF",
-        ["TabTrackBg"] = "#4D151A22",
-        ["IntlTabBg"] = "#4D151A22",
-        ["IntlTabBorder"] = "#1FFFFFFF",
-        ["BrandFrom"] = "#FF3B82F6",
-        ["BrandTo"] = "#FF1D4ED8",
-        ["BannerFrom"] = "#FF5AC8FA",
-        ["BannerTo"] = "#FF0A84FF",
-        ["TextOnBanner"] = "#FFFFFFFF",
-        ["HeroGlowFrom"] = "#265AC8FA",
-        ["HeroGlowFade"] = "#005AC8FA",
-        ["HeroTitleFrom"] = "#FFFFFFFF",
-        ["HeroTitleMid"] = "#FFD6ECFF",
-        ["HeroTitleTo"] = "#FFA6E4FF",
-        ["TooltipBg"] = "#F22C3036",
-        ["TooltipBorder"] = "#33A0C8FF",
-        ["TooltipFg"] = "#FFF5F8FF",
-    };
+            ["Danger"] = danger,
+            ["DangerHover"] = dangerHover,
+            ["DangerText"] = dangerText,
+            ["DangerBorder"] = dangerBorder,
+            ["DangerSoft"] = dangerSoft,
+            ["TextOnDanger"] = "#FFFFFFFF",
+            ["Warning"] = "#FFF59E0B",
+            ["Success"] = "#FF10B981",
+            ["Info"] = accentGlow,
+            ["Amber"] = "#FFF59E0B",
+            ["Orange"] = "#FFFB923C",
+            ["Teal"] = "#FF2DD4BF",
+
+            ["InputBg"] = "#1FFFFFFF",
+            ["InputBorder"] = "#33FFFFFF",
+            ["HoverOverlay"] = "#1AFFFFFF",
+            ["ScrollThumb"] = "#66FFFFFF",
+            ["ToggleOff"] = "#38FFFFFF",
+            ["ToggleOn"] = toggleOn,
+            ["ToggleThumbOn"] = toggleThumbOn,
+            ["ModuleDot"] = "#FF8E8E93",
+            ["EnvDotIdle"] = "#FF8E8E93",
+
+            ["Divider"] = "#29FFFFFF",
+            ["HairlineStrong"] = "#3DFFFFFF",
+            ["Scrim"] = "#F0000000",
+            ["ScrimSoft"] = "#CC000000",
+            ["PreviewBg"] = "#FF000000",
+            ["NavSectionBg"] = "#33FFFFFF",
+            ["NavSectionBorder"] = "#1FFFFFFF",
+            ["TabTrackBg"] = "#4D000000",
+            ["IntlTabBg"] = "#4D000000",
+            ["IntlTabBorder"] = "#1FFFFFFF",
+
+            ["BrandFrom"] = brandFrom,
+            ["BrandTo"] = brandTo,
+            ["BannerFrom"] = bannerFrom,
+            ["BannerTo"] = bannerTo,
+            ["TextOnBanner"] = "#FFFFFFFF",
+            ["HeroGlowFrom"] = heroGlowFrom,
+            ["HeroGlowFade"] = heroGlowFade,
+            ["HeroTitleFrom"] = "#FFFFFFFF",
+            ["HeroTitleMid"] = heroTitleMid,
+            ["HeroTitleTo"] = heroTitleTo,
+
+            ["TooltipBg"] = "#F2242428",
+            ["TooltipBorder"] = "#33FFFFFF",
+            ["TooltipFg"] = "#FFFFFFFF",
+        };
+    }
 }

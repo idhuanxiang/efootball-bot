@@ -38,10 +38,10 @@ public partial class MainWindow
     private bool _starting;
     private bool _stopping;
     private bool _autoCloseScheduled;
-    private string _pendingTheme = ThemeManager.Dark;
-    private string _pendingWorld = ThemeManager.WorldFluent;
-    private string _origTheme = ThemeManager.Dark;
-    private string _origWorld = ThemeManager.WorldFluent;
+    private string _pendingTheme = ThemeManager.Obsidian;
+    private string _pendingWorld = ThemeManager.WorldGlass;
+    private string _origTheme = ThemeManager.Obsidian;
+    private string _origWorld = ThemeManager.WorldGlass;
 
     // 代码颜色统一在 MainWindow.Logs.cs 定义（运行时从 Application 资源读取，跟随主题）
 
@@ -77,10 +77,8 @@ public partial class MainWindow
         // 会按「未配置主源」跑，白白退回 GitHub。
         Updater.Configure(_cfg.Update.PrimaryBaseUrl);
 
-        // 首次启动（无 Theme 字段或为空）→ 显示主题选择覆盖层
-        if (string.IsNullOrWhiteSpace(_cfg.Theme))
-            _cfg.Theme = ThemeManager.Dark;
-        // 外观世界：老配置没有这个字段 = Fluent（保持 v7.3 观感，不偷偷换成新皮肤）
+        // 规范化主题与外观世界（老配置 Dark/Light/DeepBlue 回落为 Obsidian；默认 Apple Glass）
+        _cfg.Theme = ThemeManager.NormalizeTheme(_cfg.Theme);
         _cfg.Appearance.World = ThemeManager.NormalizeWorld(_cfg.Appearance.World);
         ThemeManager.ApplyTheme(_cfg.Theme, _cfg.Appearance.World);
 
@@ -241,11 +239,9 @@ public partial class MainWindow
         {
             if (!ReferenceEquals(host, _workerHost)) return;
             AppendLog($"需要处理：{reason.Replace("\n", " ")}", LogLevel.Error);
-            System.Windows.MessageBox.Show(this,
-                reason + "\n\n处理后点击「开始挂机」重试。",
+            EfootballBot.Views.AppDialog.Warn(this,
                 "无法接管手柄",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                reason + "\n\n处理后点击「开始挂机」重试。");
         });
         return host;
     }
@@ -353,9 +349,9 @@ public partial class MainWindow
             if (!training && _cfg.StudTraining.BuyGoalkeeperCount == 0
                 && _cfg.StudTraining.BuyOutfieldCount == 0)
             {
-                System.Windows.MessageBox.Show(this,
-                    "购买数量为 0：请至少给「门将数量」或「非门将数量」设置一个大于 0 的值。",
-                    "没有要买的球员", MessageBoxButton.OK, MessageBoxImage.Information);
+                EfootballBot.Views.AppDialog.Info(this,
+                    "没有要买的球员",
+                    "购买数量为 0：请至少给「门将数量」或「非门将数量」设置一个大于 0 的值。");
                 return;
             }
         }

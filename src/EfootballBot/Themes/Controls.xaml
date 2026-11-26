@@ -100,9 +100,8 @@
         </Setter>
     </Style>
 
-    <!-- ============ 主按钮（一屏一个）：Fluent = 实心强调色 + 白字；
-         Glass = 白玻璃渐变 + 深字 + 顶高光描边。差异全在 PrimaryBtnFrom/Mid/To、
-         TextOnPrimary、PrimaryBtnStroke、BtnFlash 这几个 token 上，样式本身不分世界 ============ -->
+    <!-- ============ 主按钮（一屏一个）：通透半透明玻璃渐变 + 主题色高光描边 + 顶部细高光 + 纯白清晰文字，
+         与底色融为一体又明显区分于普通 GhostBtn ============ -->
     <Style x:Key="PrimaryBtn" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource PrimaryBtnFill}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextOnPrimary}"/>
@@ -121,22 +120,35 @@
                         <Grid.RenderTransform>
                             <ScaleTransform ScaleX="1" ScaleY="1"/>
                         </Grid.RenderTransform>
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8"
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                CornerRadius="8"
                                 BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
-                                Padding="{TemplateBinding Padding}" Effect="{DynamicResource CardShadowEffect}">
+                                Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
-                        <!-- 悬停压暗/提亮层 -->
-                        <Border x:Name="flash" CornerRadius="8" Background="{DynamicResource BtnFlash}" Opacity="0"
+                        <!-- 顶部 1px 玻璃高光细线 -->
+                        <Border Height="1" VerticalAlignment="Top" Margin="8,1,8,0"
+                                IsHitTestVisible="False">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#00FFFFFF" Offset="0"/>
+                                    <GradientStop Color="#59FFFFFF" Offset="0.5"/>
+                                    <GradientStop Color="#00FFFFFF" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <!-- 悬停提亮层 -->
+                        <Border x:Name="flash" CornerRadius="8"
+                                Background="{DynamicResource BtnFlash}" Opacity="0"
                                 IsHitTestVisible="False"/>
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="flash" Property="Opacity" Value="0.10"/>
+                            <Setter TargetName="flash" Property="Opacity" Value="0.14"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="root" Property="RenderTransform"><Setter.Value><ScaleTransform ScaleX="0.98" ScaleY="0.98"/></Setter.Value></Setter>
-                            <Setter TargetName="flash" Property="Opacity" Value="0.18"/>
+                            <Setter TargetName="root" Property="RenderTransform"><Setter.Value><ScaleTransform ScaleX="0.985" ScaleY="0.985"/></Setter.Value></Setter>
+                            <Setter TargetName="flash" Property="Opacity" Value="0.22"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.34"/>
@@ -169,7 +181,8 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8"
+                    <Border x:Name="bd" Background="{TemplateBinding Background}"
+                            CornerRadius="8"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             Padding="{TemplateBinding Padding}"
@@ -240,7 +253,8 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8"
+                    <Border x:Name="bd" Background="{TemplateBinding Background}"
+                            CornerRadius="8"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             Padding="{TemplateBinding Padding}"
@@ -286,7 +300,7 @@
                             <Border x:Name="box" CornerRadius="6" Background="{DynamicResource InputBg}"
                                     BorderBrush="{DynamicResource InputBorder}" BorderThickness="1"/>
                             <Path x:Name="check" Data="M 3.5,9.5 L 7.5,13 L 14.5,4.5"
-                                  Stroke="White" StrokeThickness="2"
+                                  Stroke="{DynamicResource TextOnAccent}" StrokeThickness="2"
                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                                   Visibility="Collapsed"/>
                         </Grid>
@@ -330,7 +344,11 @@
                             <Border x:Name="track" CornerRadius="10.5" Background="{DynamicResource ToggleOff}"
                                     BorderBrush="{DynamicResource Divider}" BorderThickness="1"/>
                             <Border x:Name="thumb" Width="17" Height="17" CornerRadius="8.5" Background="White"
-                                    HorizontalAlignment="Left" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                                    HorizontalAlignment="Left" VerticalAlignment="Center" Margin="2,0,0,0">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#FF000000" BlurRadius="4" ShadowDepth="1" Opacity="0.35"/>
+                                </Border.Effect>
+                            </Border>
                         </Grid>
                         <ContentPresenter Grid.Column="1" VerticalAlignment="Center"/>
                     </Grid>
@@ -360,13 +378,15 @@
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource InputBorder}"/>
         <Setter Property="CaretBrush" Value="{DynamicResource AccentGlow}"/>
+        <Setter Property="FontSize" Value="12.5"/>
         <Setter Property="MinHeight" Value="30"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
                     <Border x:Name="bd" Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8">
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                            CornerRadius="8">
                         <ScrollViewer x:Name="PART_ContentHost" Margin="10,0" Focusable="False"
                                       VerticalAlignment="Center"/>
                     </Border>
@@ -394,6 +414,7 @@
         <Setter Property="Background" Value="{DynamicResource ComboBg}"/>
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource InputBorder}"/>
+        <Setter Property="FontSize" Value="12.5"/>
         <Setter Property="MinHeight" Value="30"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Template">
@@ -434,16 +455,19 @@
                         <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True"
                                Focusable="False" PopupAnimation="Fade"
                                IsOpen="{TemplateBinding IsDropDownOpen}">
-                            <Border Background="{DynamicResource ComboPopupBg}"
-                                    BorderBrush="{DynamicResource HairlineStrong}" BorderThickness="1"
-                                    CornerRadius="10" Margin="0,5,0,9" Padding="4"
-                                    Effect="{StaticResource FloatShadow}"
-                                    MinWidth="{Binding ActualWidth,RelativeSource={RelativeSource TemplatedParent}}">
-                                <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto"
-                                              HorizontalScrollBarVisibility="Disabled" Focusable="False">
-                                    <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
-                                </ScrollViewer>
-                            </Border>
+                            <Grid Margin="0,5,0,9"
+                                  MinWidth="{Binding ActualWidth,RelativeSource={RelativeSource TemplatedParent}}">
+                                <Border Background="{DynamicResource ComboPopupBg}" CornerRadius="10"
+                                        Effect="{StaticResource FloatShadow}" IsHitTestVisible="False"/>
+                                <Border Background="{DynamicResource ComboPopupBg}"
+                                        BorderBrush="{DynamicResource HairlineStrong}" BorderThickness="1"
+                                        CornerRadius="10" Padding="4">
+                                    <ScrollViewer MaxHeight="280" VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
                         </Popup>
                     </Grid>
                     <ControlTemplate.Triggers>
@@ -620,26 +644,38 @@
         <Setter Property="Padding" Value="10,7"/>
         <!-- 固定高度：动态模式下 2 格/3 格/4 格都保持同样大小，不因内容长短一大一小 -->
         <Setter Property="Height" Value="42"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{DynamicResource Surface2}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource HairlineStrong}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
-    <!-- ============ 操作栏容器（本次运行 / 主要操作） ============ -->
+    <!-- ============ 操作栏容器（本次运行 / 主要操作 / 运行日志）：不挂 Effect 保持 ClearType 锐利 ============ -->
     <Style x:Key="RailCard" TargetType="Border">
-        <Setter Property="Background" Value="{DynamicResource CardBg}"/>
+        <Setter Property="Background" Value="{DynamicResource GlassFill}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="10"/>
         <Setter Property="Padding" Value="12,12"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource HairlineStrong}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
-    <!-- ============ 进度条（胶囊轨道 + 绿色填充） ============ -->
+    <!-- ============ 进度条（胶囊轨道 + 主题渐变填充） ============ -->
     <Style TargetType="ProgressBar">
         <Setter Property="Height" Value="6"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ProgressBar">
                     <Grid>
-                        <Border x:Name="PART_Track" Background="{DynamicResource InsetBg}" CornerRadius="3"/>
-                        <Border x:Name="PART_Indicator" Background="{DynamicResource Accent}"
+                        <Border x:Name="PART_Track" Background="{DynamicResource InsetBg}"
+                                BorderBrush="{DynamicResource Divider}" BorderThickness="1" CornerRadius="3"/>
+                        <Border x:Name="PART_Indicator" Background="{DynamicResource PrimaryBtnFill}"
                                 CornerRadius="3" HorizontalAlignment="Left"/>
                     </Grid>
                 </ControlTemplate>
@@ -647,19 +683,99 @@
         </Setter>
     </Style>
 
-    <!-- ============ ToolTip（深色浮层，三主题统一） ============ -->
+    <!-- ============ ToolTip（深色浮层，阴影层与文本层分离保持锐利） ============ -->
     <Style TargetType="ToolTip">
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToolTip">
-                    <Border Background="{DynamicResource TooltipBg}" BorderBrush="{DynamicResource TooltipBorder}" BorderThickness="1"
-                            CornerRadius="8" Padding="11,7" MaxWidth="340"
-                            Effect="{StaticResource FloatShadow}">
-                        <TextBlock Text="{TemplateBinding Content}" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource TooltipFg}" FontSize="12"
-                                   LineHeight="18"
-                                   FontFamily="Microsoft YaHei UI"/>
+                    <Grid>
+                        <Border Background="{DynamicResource TooltipBg}" CornerRadius="8"
+                                Effect="{StaticResource FloatShadow}" IsHitTestVisible="False"/>
+                        <Border Background="{DynamicResource TooltipBg}" BorderBrush="{DynamicResource TooltipBorder}" BorderThickness="1"
+                                CornerRadius="8" Padding="11,7" MaxWidth="340">
+                            <TextBlock Text="{TemplateBinding Content}" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TooltipFg}" FontSize="12"
+                                       LineHeight="18"
+                                       FontFamily="{StaticResource UiFont}"/>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============ 右键菜单（全局深色毛玻璃，阴影层与文本层分离） ============ -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="Background" Value="{DynamicResource DialogBg}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource GlassStroke}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Padding" Value="4"/>
+        <Setter Property="HasDropShadow" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Grid>
+                        <Border Background="{TemplateBinding Background}" CornerRadius="10"
+                                Effect="{StaticResource FloatShadow}" IsHitTestVisible="False"/>
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+        <Setter Property="Height" Value="1"/>
+        <Setter Property="Margin" Value="8,4"/>
+        <Setter Property="Background" Value="{DynamicResource Divider}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="{TemplateBinding Height}" Background="{TemplateBinding Background}"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+        <Setter Property="FontSize" Value="12.5"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="6"
+                            Padding="{TemplateBinding Padding}" Margin="1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ContentPresenter ContentSource="Header" VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                            <TextBlock Grid.Column="1" Text="{TemplateBinding InputGestureText}"
+                                       Foreground="{DynamicResource TextMuted}" FontSize="11.5"
+                                       VerticalAlignment="Center" Margin="18,0,0,0"/>
+                        </Grid>
                     </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="bd" Property="Background" Value="{DynamicResource HoverOverlay}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

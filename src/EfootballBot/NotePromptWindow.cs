@@ -1,21 +1,15 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 
 namespace EfootballBot;
 
 /// <summary>
 /// 「发现问题手动停止」的可选补充说明弹窗。
-/// 用户点「生成反馈包」= 带说明生成；点「取消」或关闭窗口 = 不生成。
-/// <see cref="Ask"/> 返回说明文本；返回 null 表示用户选择不生成反馈包。
-///
-/// 【2026-11-21 修「弹出来整张白」】旧版直接 <c>new Window()</c>：WPF 默认 Window 底色是白色，
-/// 而 App.xaml 的深色世界只落在显式写 Background 的窗口（MainWindow / ConnectionOverlay）上；
-/// 这里既没设 Background 也没设 Foreground，深色主题下就是白底 + 12.5px 白字 = 只剩输入光标可见，
-/// 两个按钮同样白底白字（控件模板不设默认态颜色）。现在按 DESIGN.md 走：
-/// 底色绑 WindowBg、文字绑 TextPrimary、按钮用 App 级 PrimaryBtn / GhostBtn、
-/// 标题栏挂 FluentWindow（暗色，无标题栏快捷键 Alt+Space）。
+/// 无边框主题化毛玻璃样式，点「生成反馈包」= 带说明生成；点「取消」或关闭窗口 = 不生成。
 /// </summary>
-public sealed class NotePromptWindow : Wpf.Ui.Controls.FluentWindow
+public sealed class NotePromptWindow : Window
 {
     private readonly TextBox _box;
 
@@ -25,35 +19,81 @@ public sealed class NotePromptWindow : Wpf.Ui.Controls.FluentWindow
     {
         Title = title;
         Width = 500;
-        Height = 300;
+        SizeToContent = SizeToContent.Height;
         MinWidth = 420;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.NoResize;
+        WindowStyle = WindowStyle.None;
+        AllowsTransparency = true;
+        Background = Brushes.Transparent;
         ShowInTaskbar = false;
 
-        // 主题：App.xaml 合并了 WPF-UI 的 Dark 基底，自定义 token 由 ThemeManager.ApplyTheme 写进
-        // Application.Resources，所以这里的 DynamicResource 一定解析得到，且跟随主题切换。
-        SetResourceReference(BackgroundProperty, "WindowBg");
         SetResourceReference(ForegroundProperty, "TextPrimary");
-        // 中文正文回落雅黑 UI：本仓库的字体快照里 UiFont = "Segoe UI Variable Text, Microsoft YaHei UI"
         SetResourceReference(FontFamilyProperty, "UiFont");
+        TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
+        TextOptions.SetTextRenderingMode(this, TextRenderingMode.ClearType);
         FontSize = 13;
 
-        var root = new Grid { Margin = new Thickness(18, 16, 18, 16) };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var shell = new Border
+        {
+            CornerRadius = new CornerRadius(12),
+            BorderThickness = new Thickness(1),
+        };
+        shell.SetResourceReference(Border.BackgroundProperty, "DialogBg");
+        shell.SetResourceReference(Border.BorderBrushProperty, "GlassStroke");
+        if (TryFindResource("FloatShadow") is System.Windows.Media.Effects.Effect fx)
+            shell.Effect = fx;
 
-        var head = new TextBlock
+        var outer = new StackPanel();
+
+        // 自绘标题栏
+        var titleBar = new Grid
+        {
+            Height = 38,
+            Margin = new Thickness(16, 0, 10, 0),
+            Background = Brushes.Transparent,
+        };
+        titleBar.MouseLeftButtonDown += (_, e) =>
+        {
+            if (e.ButtonState == MouseButtonState.Pressed)
+            {
+                try { DragMove(); }
+                catch (InvalidOperationException) { }
+            }
+        };
+        var titleText = new TextBlock
         {
             Text = title,
-            Style = (Style)Application.Current.Resources["PageTitle"],
-            FontSize = 15,   // 页面级 20 在 500px 弹窗里过大，压一档
+            FontSize = 12.5,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
         };
-        Grid.SetRow(head, 0);
-        root.Children.Add(head);
+        titleText.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondary");
+        titleBar.Children.Add(titleText);
 
-        var body = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var closeBtn = new Button
+        {
+            Content = "✕",
+            Width = 28,
+            Height = 28,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Cursor = Cursors.Hand,
+            FontSize = 14,
+            ToolTip = "关闭",
+        };
+        closeBtn.SetResourceReference(Control.ForegroundProperty, "TextMuted");
+        closeBtn.Click += (_, _) => { Note = null; DialogResult = false; Close(); };
+        titleBar.Children.Add(closeBtn);
+        outer.Children.Add(titleBar);
+
+        var root = new Grid { Margin = new Thickness(20, 4, 20, 20) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var body = new StackPanel();
         body.Children.Add(new TextBlock
         {
             Text = hint,
@@ -72,7 +112,7 @@ public sealed class NotePromptWindow : Wpf.Ui.Controls.FluentWindow
             MaxLength = 800,
         };
         body.Children.Add(_box);
-        Grid.SetRow(body, 1);
+        Grid.SetRow(body, 0);
         root.Children.Add(body);
 
         var btns = new StackPanel
@@ -91,15 +131,15 @@ public sealed class NotePromptWindow : Wpf.Ui.Controls.FluentWindow
         {
             Content = "取消",
             MinWidth = 82,
-            Margin = new Thickness(8, 0, 0, 0),
+            Margin = new Thickness(0, 0, 10, 0),
             Style = (Style)Application.Current.Resources["GhostBtn"],
         };
         ok.Click += (_, _) => { Note = _box.Text; DialogResult = true; Close(); };
         cancel.Click += (_, _) => { Note = null; DialogResult = false; Close(); };
-        ok.IsDefault = true;   // 回车 = 生成反馈包
+        ok.IsDefault = true;
         PreviewKeyDown += (_, e) =>
         {
-            if (e.Key == System.Windows.Input.Key.Escape)
+            if (e.Key == Key.Escape)
             {
                 e.Handled = true;
                 Note = null;
@@ -107,14 +147,15 @@ public sealed class NotePromptWindow : Wpf.Ui.Controls.FluentWindow
                 Close();
             }
         };
-        btns.Children.Add(ok);
         btns.Children.Add(cancel);
-        Grid.SetRow(btns, 2);
+        btns.Children.Add(ok);
+        Grid.SetRow(btns, 1);
         root.Children.Add(btns);
 
-        Content = root;
+        outer.Children.Add(root);
+        shell.Child = outer;
+        Content = shell;
 
-        // 打开即聚焦输入框（用户真正要做的事）。回车见 ok.IsDefault，Esc 见 PreviewKeyDown。
         Loaded += (_, _) => _box.Focus();
     }
 

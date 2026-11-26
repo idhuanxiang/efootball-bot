@@ -2,7 +2,7 @@
 
 > 为实况足球（eFootball）端游打造的自动化挂机工具 —— 国际服 / 国服双支持：自动比赛、自动领奖、自动换人、自动切活动，解放双手。
 
-![version](https://img.shields.io/badge/version-9.1.0-2ea44f)
+![version](https://img.shields.io/badge/version-9.2.0-2ea44f)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078d4)
 ![runtime](https://img.shields.io/badge/.NET-10%20%E8%87%AA%E5%B8%A6%E8%BF%90%E8%A1%8C%E6%97%B6-512bd4)
 ![license](https://img.shields.io/badge/license-%E5%85%8D%E8%B4%B9%E4%B8%AA%E4%BA%BA%E4%BD%BF%E7%94%A8-lightgrey)
@@ -254,7 +254,7 @@
 - `src/EfootballBot/Themes/` —— 样式字典：`Tokens`（颜色）/ `Surfaces`（容器与字体）/ `Controls`（控件）/ `Templates`（页面局部样式）
 - `src/EfootballBot/MainWindow.Shell.cs` —— 导航路由表：加一个页面 = 一行数据 + 一个 UserControl
 - `src/EfootballBot/Views/` —— 独立页面（`AboutPage` 是新页面的样板）
-- `src/EfootballBot/Core/UI/ThemePalette.cs` —— 三套主题的 token 值（启动自带完整性自检）
+- `src/EfootballBot/Core/UI/ThemePalette.cs` —— 五套暗黑毛玻璃主题 × 双外观世界（Apple Glass / Windows 11 云母）的 token 值（启动自带完整性自检）
 
 自测界面：`EfootballBot.exe --page settings:display` 可把任意页面直接开到指定状态（应用需要管理员权限，
 模拟点击不可靠），配合 `tools/ui-shots.ps1` 批量截图、`tools/ui-crop.ps1` 局部放大看细节。

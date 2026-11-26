@@ -636,13 +636,16 @@ public sealed class AppearanceConfig
     /// 只影响颜色/材质/投影/噪点与窗口不透明度，版式与字体阶梯两个世界共用。
     /// 由左栏「主题外观」里的「外观风格」切换，改完即时生效，不需要重启。
     /// </summary>
-    public string World { get; set; } = "Fluent";
+    public string World { get; set; } = "Glass";
 
     /// <summary>窗口材质：Acrylic（默认，毛玻璃）/ Mica / Tabbed / Auto（Win11 用 Mica）/ None。Win10 自动回退纯色。</summary>
     public string Backdrop { get; set; } = "Acrylic";
 
     /// <summary>切页动效：180 ms 淡入 + 4 px 上浮。关闭后页面瞬时切换。</summary>
     public bool PageTransition { get; set; } = true;
+
+    /// <summary>右栏记忆宽度（像素，0 表示使用默认比例 0.55*）。</summary>
+    public double RightPanelWidth { get; set; } = 0;
 }
 
 /// <summary>
@@ -696,7 +699,7 @@ public sealed class AppConfig
     [JsonPropertyName("SchemaVersion")]
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
 
-    public string Theme { get; set; } = "Dark"; // Dark / Light / DeepBlue
+    public string Theme { get; set; } = "Obsidian"; // Obsidian / Silver / Violet / Emerald / Crimson
     /// <summary>OCR 识别引擎：SimdPaddle（纯托管 PP-OCR，默认）/ RapidV6（ONNX Runtime CPU）/
     /// UnlimitedOcr（外部 VLM 服务，HTTP 接入）。旧值 Windows(1)=已删除的 Windows 内置 OCR，
     /// 读取后按 SimdPaddle 处理。下次启动挂机生效。</summary>

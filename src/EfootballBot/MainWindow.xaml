@@ -9,7 +9,8 @@
         Icon="app.ico"
         MinHeight="640" MinWidth="1020"
         Background="{DynamicResource WindowBg}" Foreground="{DynamicResource TextPrimary}"
-        FontFamily="Microsoft YaHei UI"
+        FontFamily="{StaticResource UiFont}"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType">
 
     <!-- 根容器保持完全透明：黑色毛玻璃的「透」来自窗口底那一层半透明黑 + 系统 Acrylic。
@@ -75,7 +76,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="196"/>
                 <ColumnDefinition Width="1.45*" MinWidth="460"/>
-                <ColumnDefinition x:Name="RightCol" Width="0.55*" MinWidth="320" MaxWidth="400"/>
+                <ColumnDefinition x:Name="RightCol" Width="0.55*" MinWidth="320" MaxWidth="540"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
@@ -88,7 +89,7 @@
                     <Rectangle Style="{StaticResource Hairline}" Margin="2,0,2,10"/>
                     <Button x:Name="BtnTheme" Style="{StaticResource NavToolBtn}"
                             Click="BtnTheme_Click" HorizontalAlignment="Stretch"
-                            ToolTip="切换界面主题（暗色 / 亮色 / 深蓝）与外观风格（Win11 云母 / Apple 黑玻璃）">
+                            ToolTip="切换 5 套主题与外观风格（黑曜极夜 / 霜银流光 / 玄夜幻紫 / 翡翠绿茵 / 绯焰流火）">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource IconPath}"
                                   Stroke="{Binding Foreground,RelativeSource={RelativeSource AncestorType=Button}}"
@@ -655,8 +656,7 @@
             <!-- 更新提醒横幅（有新版本时显示） -->
             <Border x:Name="UpdateBanner" Grid.Row="0" Visibility="Collapsed"
                     CornerRadius="12" Padding="16,12" Margin="0,0,0,12"
-                    BorderBrush="{DynamicResource AccentBorderStrong}" BorderThickness="1"
-                    Effect="{StaticResource FloatShadow}">
+                    BorderBrush="{DynamicResource AccentBorderStrong}" BorderThickness="1">
                 <Border.Background>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                         <GradientStop Color="{DynamicResource BannerFromColor}" Offset="0"/>
@@ -796,7 +796,7 @@
                                             Style="{StaticResource DangerOutlineBtn}" Height="34" Margin="0,0,12,8"
                                             IsEnabled="False" Click="BtnManualStop_Click"/>
                                     <CheckBox x:Name="ChkMuteMyLeague" Content="挂机时静音游戏" Margin="0,0,12,8"
-                                              FontSize="12" VerticalAlignment="Center"
+                                              VerticalAlignment="Center"
                                               Checked="ChkMuteGame_Toggled" Unchecked="ChkMuteGame_Toggled"/>
                                     <Border Style="{StaticResource Chip}" Margin="0,0,0,8"
                                             ToolTip="全局热键：运行中按一次=暂停，暂停中再按一次=彻底终止">
@@ -821,7 +821,7 @@
                                 <WrapPanel Orientation="Horizontal">
                                     <StackPanel Margin="0,0,16,8">
                                         <TextBlock Text="比赛难度" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
-                                        <ComboBox x:Name="CmbDifficulty" Height="30" FontSize="11.5" Width="128"
+                                        <ComboBox x:Name="CmbDifficulty" Height="30" Width="128"
                                                   HorizontalAlignment="Left" SelectedIndex="0">
                                             <ComboBoxItem Content="新手"/>
                                             <ComboBoxItem Content="业余"/>
@@ -835,7 +835,7 @@
                                     <StackPanel Margin="0,0,16,8">
                                         <TextBlock Text="完成场次停止" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
                                         <StackPanel Orientation="Horizontal">
-                                            <ComboBox x:Name="CmbStopAfterMatches" Height="30" FontSize="11.5" Width="108"
+                                            <ComboBox x:Name="CmbStopAfterMatches" Height="30" Width="108"
                                                       SelectedIndex="0" SelectionChanged="CmbStopAfter_SelectionChanged">
                                                 <ComboBoxItem Content="0（无限）"/>
                                                 <ComboBoxItem Content="1"/>
@@ -845,16 +845,16 @@
                                                 <ComboBoxItem Content="20"/>
                                                 <ComboBoxItem Content="自定义"/>
                                             </ComboBox>
-                                            <TextBox x:Name="TxtStopAfterMatches" Width="44" Height="30" FontSize="11.5"
+                                            <TextBox x:Name="TxtStopAfterMatches" Width="44" Height="30"
                                                      Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" Text="1"/>
-                                            <TextBlock Text="场" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0"
+                                            <TextBlock Text="场" FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0"
                                                        Foreground="{DynamicResource TextMuted}"/>
                                         </StackPanel>
                                     </StackPanel>
                                     <StackPanel Margin="0,0,0,8">
                                         <TextBlock Text="关键比赛停止" Style="{StaticResource FieldLabel}" Margin="0,0,0,6"/>
                                         <StackPanel Orientation="Horizontal">
-                                            <ComboBox x:Name="CmbStopAfterKeyMatches" Height="30" FontSize="11.5" Width="108"
+                                            <ComboBox x:Name="CmbStopAfterKeyMatches" Height="30" Width="108"
                                                       SelectedIndex="0" SelectionChanged="CmbStopAfter_SelectionChanged">
                                                 <ComboBoxItem Content="0（无限）"/>
                                                 <ComboBoxItem Content="1"/>
@@ -864,9 +864,9 @@
                                                 <ComboBoxItem Content="20"/>
                                                 <ComboBoxItem Content="自定义"/>
                                             </ComboBox>
-                                            <TextBox x:Name="TxtStopAfterKeyMatches" Width="44" Height="30" FontSize="11.5"
+                                            <TextBox x:Name="TxtStopAfterKeyMatches" Width="44" Height="30"
                                                      Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed" Text="1"/>
-                                            <TextBlock Text="场" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0"
+                                            <TextBlock Text="场" FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0"
                                                        Foreground="{DynamicResource TextMuted}"/>
                                         </StackPanel>
                                     </StackPanel>
@@ -875,11 +875,11 @@
                                 <Rectangle Style="{StaticResource Hairline}" Margin="0,6,0,10"/>
 
                                 <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <CheckBox x:Name="ChkOnlyKeyMatches" FontSize="12" Margin="0,0,14,4" VerticalAlignment="Center">
-                                        <TextBlock Text="只打关键比赛" VerticalAlignment="Center" FontSize="12"/>
+                                    <CheckBox x:Name="ChkOnlyKeyMatches" Margin="0,0,14,4" VerticalAlignment="Center">
+                                        <TextBlock Text="只打关键比赛" VerticalAlignment="Center"/>
                                     </CheckBox>
-                                    <TextBlock FontSize="11.5" VerticalAlignment="Center" TextWrapping="Wrap"
-                                               Foreground="{DynamicResource TextMuted}" Margin="0,0,0,4"
+                                    <TextBlock Style="{StaticResource SmallText}" VerticalAlignment="Center"
+                                               Margin="0,0,0,4"
                                                Text="每跳过一场需重启游戏（约 1~2 分钟），连续 3 次失败自动停用"/>
                                 </WrapPanel>
 
@@ -888,19 +888,19 @@
                                 <TextBlock Text="物品页自动购买" Style="{StaticResource FieldLabel}" Margin="0,0,0,8"/>
                                 <WrapPanel>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,22,4">
-                                        <CheckBox x:Name="ChkBuyExpBoost" Content="经验值加成" FontSize="12" VerticalAlignment="Center"/>
-                                        <ComboBox x:Name="CmbExpBoostLevel" Height="30" FontSize="11.5" Width="74"
+                                        <CheckBox x:Name="ChkBuyExpBoost" Content="经验值加成" VerticalAlignment="Center"/>
+                                        <ComboBox x:Name="CmbExpBoostLevel" Height="30" Width="74"
                                                   Margin="8,0,0,0" SelectedIndex="0">
                                             <ComboBoxItem Content="2x"/>
                                             <ComboBoxItem Content="3x"/>
                                             <ComboBoxItem Content="4x"/>
                                         </ComboBox>
                                     </StackPanel>
-                                    <CheckBox x:Name="ChkBuyCoachBoost" Content="教练强化" FontSize="12"
+                                    <CheckBox x:Name="ChkBuyCoachBoost" Content="教练强化"
                                               Margin="0,0,22,4" VerticalAlignment="Center"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                        <CheckBox x:Name="ChkBuyConditionBoost" Content="状态加成" FontSize="12" VerticalAlignment="Center"/>
-                                        <ComboBox x:Name="CmbConditionLevel" Height="30" FontSize="11.5" Width="78"
+                                        <CheckBox x:Name="ChkBuyConditionBoost" Content="状态加成" VerticalAlignment="Center"/>
+                                        <ComboBox x:Name="CmbConditionLevel" Height="30" Width="78"
                                                   Margin="8,0,0,0" SelectedIndex="0">
                                             <ComboBoxItem Content="普通+"/>
                                             <ComboBoxItem Content="好+"/>
@@ -918,11 +918,11 @@
                                     <TextBlock Text="满级换人" Style="{StaticResource H2}"/>
                                 </StackPanel>
                                 <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <CheckBox x:Name="ChkAutoSwapMaxLevel" FontSize="12" VerticalAlignment="Center"
+                                    <CheckBox x:Name="ChkAutoSwapMaxLevel" VerticalAlignment="Center"
                                               Margin="0,0,10,4" Checked="ChkAutoSwapMaxLevel_Checked">
-                                        <TextBlock Text="满级自动换人" VerticalAlignment="Center" FontSize="12"/>
+                                        <TextBlock Text="满级自动换人" VerticalAlignment="Center"/>
                                     </CheckBox>
-                                    <ComboBox x:Name="CmbAutoSwapEvery" Height="30" FontSize="11.5" Width="86"
+                                    <ComboBox x:Name="CmbAutoSwapEvery" Height="30" Width="86"
                                               Margin="0,0,10,4" SelectedIndex="3" VerticalAlignment="Center">
                                         <ComboBoxItem Content="每1场"/>
                                         <ComboBoxItem Content="每2场"/>
@@ -934,9 +934,9 @@
                                             Height="34" Padding="14,0" FontSize="12.5" Margin="0,0,0,4"
                                             Click="BtnTestSwap_Click"/>
                                 </WrapPanel>
-                                <TextBlock Text="现阶段只能自动更换色卡，普卡无法自动培养，请切换手动模式"
-                                           Foreground="{DynamicResource Warning}" FontSize="11.5"
-                                           TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                <TextBlock Style="{StaticResource SmallText}"
+                                           Text="现阶段只能自动更换色卡，普卡无法自动培养，请切换手动模式"
+                                           Foreground="{DynamicResource Warning}" Margin="0,8,0,0"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -1225,7 +1225,7 @@
                                             IsEnabled="False" Click="BtnManualStop_Click"
                                             ToolTip="停止挂机并自动截取当前游戏画面，生成反馈包发给作者"/>
                                     <CheckBox x:Name="ChkMuteStud" Content="挂机时静音游戏" Margin="0,0,12,8"
-                                              FontSize="12" VerticalAlignment="Center"
+                                              VerticalAlignment="Center"
                                               Checked="ChkMuteGame_Toggled" Unchecked="ChkMuteGame_Toggled"
                                               ToolTip="开始挂机后只把游戏的声音静音（系统音量与其他软件不受影响）；点它随时开关游戏声音，停止挂机自动恢复"/>
                                     <Border Style="{StaticResource Chip}" Margin="0,0,0,8"
@@ -1300,7 +1300,7 @@
                                                 <TextBox x:Name="TxtStudGkCount" Width="54" Height="30" Margin="6,0,0,0"
                                                          VerticalAlignment="Center" Visibility="Collapsed" Text="1"
                                                          ToolTip="输入 0~999 的整数"/>
-                                                <TextBlock Text="个" FontSize="11.5" VerticalAlignment="Center" Margin="6,0,0,0"
+                                                <TextBlock Text="个" FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0"
                                                            Foreground="{DynamicResource TextMuted}"/>
                                             </StackPanel>
                                         </StackPanel>
@@ -1319,7 +1319,7 @@
                                                 <TextBox x:Name="TxtStudOutfieldCount" Width="54" Height="30" Margin="6,0,0,0"
                                                          VerticalAlignment="Center" Visibility="Collapsed" Text="1"
                                                          ToolTip="输入 0~999 的整数"/>
-                                                <TextBlock Text="个" FontSize="11.5" VerticalAlignment="Center" Margin="6,0,0,0"
+                                                <TextBlock Text="个" FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0"
                                                            Foreground="{DynamicResource TextMuted}"/>
                                             </StackPanel>
                                         </StackPanel>
@@ -3300,7 +3300,25 @@
         </Grid>
             </Grid>
 
-        <!-- ============ 右栏：实时辅助栏（预览 + 紧凑统计 + 运行日志占满剩余） ============ -->
+        <!-- ============ 右栏拖拽分隔条与实时辅助栏 ============ -->
+        <GridSplitter x:Name="RightSplitter" Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                      Width="5" Margin="-2,0,0,0" Panel.ZIndex="10" ResizeDirection="Columns"
+                      ResizeBehavior="PreviousAndCurrent" Background="Transparent" Cursor="SizeWE"
+                      DragCompleted="RightSplitter_DragCompleted" ToolTip="拖拽调整右侧栏宽度">
+            <GridSplitter.Template>
+                <ControlTemplate TargetType="GridSplitter">
+                    <Border Background="Transparent">
+                        <Border x:Name="bar" Width="2" HorizontalAlignment="Center" Margin="0,12"
+                                CornerRadius="1" Background="Transparent"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="bar" Property="Background" Value="{DynamicResource Accent}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </GridSplitter.Template>
+        </GridSplitter>
         <Border x:Name="RightPanel" Grid.Column="2" Background="{DynamicResource SideRightBg}"
                 BorderBrush="{DynamicResource Divider}" BorderThickness="1,0,0,0">
             <Grid Margin="16,16,16,14">
@@ -3563,139 +3581,215 @@
         <!-- ===== 主题选择覆盖层（首次启动 / 手动触发） ===== -->
         <Border x:Name="ThemeOverlay" Grid.ColumnSpan="4" Background="{DynamicResource Scrim}"
                 Visibility="Collapsed" Panel.ZIndex="999" MouseLeftButtonDown="ThemeOverlay_BackdropClick">
-            <Border x:Name="ThemeDialogCard" Background="{DynamicResource DialogBg}"
-                    BorderBrush="{DynamicResource HairlineStrong}"
-                    BorderThickness="1" CornerRadius="16" Padding="30,26"
-                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Effect="{StaticResource FloatShadow}">
+            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Border Background="{DynamicResource DialogBg}" CornerRadius="16"
+                        Effect="{StaticResource FloatShadow}" IsHitTestVisible="False"/>
+                <Border x:Name="ThemeDialogCard" Background="{DynamicResource DialogBg}"
+                        BorderBrush="{DynamicResource HairlineStrong}"
+                        BorderThickness="1" CornerRadius="16" Padding="30,24" Width="690">
                 <StackPanel>
-                    <TextBlock Text="选择您的主题与外观风格" FontSize="22" FontWeight="Bold"
+                    <TextBlock Text="选择主题与外观风格" FontSize="21" FontWeight="Bold"
                                HorizontalAlignment="Center"/>
-                    <TextBlock Text="点击卡片即时预览 · 随时可在左下角「主题与外观」更改" FontSize="12"
+                    <TextBlock Text="背景色调随主题切换，点击卡片即时预览" FontSize="12.5"
                                Foreground="{DynamicResource TextSecondary}"
-                               HorizontalAlignment="Center" Margin="0,6,0,22"/>
+                               HorizontalAlignment="Center" Margin="0,5,0,18"/>
 
-                    <!-- 主题卡片 -->
+                    <!-- 5 套主题卡片：背景毛玻璃色随主题变化，上排 3 张 + 下排 2 张居中 -->
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <!-- 暗色 -->
-                        <Border x:Name="CardDark" Style="{StaticResource ThemePickCard}" CornerRadius="12"
-                                Padding="3" Margin="7" Background="{DynamicResource AccentLight}"
+                        <!-- 1. 黑曜极夜 · 经典纯黑毛玻璃（默认） -->
+                        <Border x:Name="CardObsidian" Style="{StaticResource ThemePickCard}" CornerRadius="12"
+                                Padding="4" Margin="6" Background="{DynamicResource AccentLight}"
                                 BorderBrush="{DynamicResource Accent}" BorderThickness="2"
-                                MouseLeftButtonUp="ThemeCard_Click" Tag="Dark">
+                                MouseLeftButtonUp="ThemeCard_Click" Tag="Obsidian">
                             <StackPanel>
-                                <Border CornerRadius="12" Width="168" Height="104" Background="#FF08080A"
-                                        BorderBrush="#FF2C2C30" BorderThickness="1" Padding="9">
+                                <Border CornerRadius="10" Width="178" Height="96" Background="#FF08080A"
+                                        BorderBrush="#2EFFFFFF" BorderThickness="1" Padding="8">
                                     <Grid>
-                                        <Rectangle Width="32" Height="80" Fill="#FF1C1C1E" RadiusX="6" RadiusY="6"
+                                        <Rectangle Width="32" Height="78" Fill="#FF141418" RadiusX="5" RadiusY="5"
                                                    HorizontalAlignment="Left" VerticalAlignment="Top"/>
-                                        <Rectangle Width="20" Height="9" Fill="#FF0A84FF" RadiusX="4.5" RadiusY="4.5"
-                                                   HorizontalAlignment="Left" Margin="4,12" VerticalAlignment="Top"/>
-                                        <StackPanel Margin="41,3,0,0">
-                                            <Rectangle Height="6" Width="82" Fill="#FFFFFFFF" RadiusX="3" RadiusY="3" Margin="0,0,0,7"/>
-                                            <Rectangle Height="4" Width="62" Fill="#FF98989F" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
-                                            <Rectangle Height="4" Width="72" Fill="#FF98989F" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
-                                            <Rectangle Height="4" Width="56" Fill="#FF98989F" RadiusX="2" RadiusY="2"/>
+                                        <Rectangle Width="22" Height="8" Fill="#FFF2F2F7" RadiusX="4" RadiusY="4"
+                                                   HorizontalAlignment="Left" Margin="5,10,0,0" VerticalAlignment="Top"/>
+                                        <StackPanel Margin="41,4,0,0">
+                                            <Rectangle Height="6" Width="84" Fill="#FFFFFFFF" RadiusX="3" RadiusY="3" Margin="0,0,0,7"/>
+                                            <Rectangle Height="4" Width="64" Fill="#FFD4D4DC" Opacity="0.7" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
+                                            <Rectangle Height="4" Width="74" Fill="#FF98989F" RadiusX="2" RadiusY="2" Margin="0,0,0,7"/>
+                                            <Rectangle Height="12" Width="46" Fill="#FFF2F2F7" RadiusX="4" RadiusY="4" HorizontalAlignment="Left"/>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
-                                <TextBlock Text="暗色" FontSize="12" FontWeight="SemiBold"
-                                           HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,1">
+                                    <Ellipse Width="7" Height="7" Fill="#FF18181C" Stroke="#99FFFFFF" StrokeThickness="1" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="黑曜极夜" FontSize="13.5" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <TextBlock Text="Obsidian" FontSize="11" Margin="0,2,0,2"
+                                           Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- 亮色 -->
-                        <Border x:Name="CardLight" Style="{StaticResource ThemePickCard}" CornerRadius="12"
-                                Padding="3" Margin="7" Background="Transparent"
+                        <!-- 2. 霜银流光 · 冷调银灰毛玻璃 -->
+                        <Border x:Name="CardSilver" Style="{StaticResource ThemePickCard}" CornerRadius="12"
+                                Padding="4" Margin="6" Background="Transparent"
                                 BorderBrush="{DynamicResource CardBorder}" BorderThickness="2"
-                                MouseLeftButtonUp="ThemeCard_Click" Tag="Light">
+                                MouseLeftButtonUp="ThemeCard_Click" Tag="Silver">
                             <StackPanel>
-                                <Border CornerRadius="12" Width="168" Height="104" Background="#FFF2F2F7"
-                                        BorderBrush="#FFD1D1D6" BorderThickness="1" Padding="9">
+                                <Border CornerRadius="10" Width="178" Height="96" Background="#FF2A2C32"
+                                        BorderBrush="#44FFFFFF" BorderThickness="1" Padding="8">
                                     <Grid>
-                                        <Rectangle Width="32" Height="80" Fill="#FFFFFFFF" RadiusX="6" RadiusY="6"
+                                        <Rectangle Width="32" Height="78" Fill="#FF3A3D46" RadiusX="5" RadiusY="5"
                                                    HorizontalAlignment="Left" VerticalAlignment="Top"/>
-                                        <Rectangle Width="20" Height="9" Fill="#FF007AFF" RadiusX="4.5" RadiusY="4.5"
-                                                   HorizontalAlignment="Left" Margin="4,12" VerticalAlignment="Top"/>
-                                        <StackPanel Margin="41,3,0,0">
-                                            <Rectangle Height="6" Width="82" Fill="#FF1C1C1E" RadiusX="3" RadiusY="3" Margin="0,0,0,7"/>
-                                            <Rectangle Height="4" Width="62" Fill="#FF6E6E73" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
-                                            <Rectangle Height="4" Width="72" Fill="#FF6E6E73" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
-                                            <Rectangle Height="4" Width="56" Fill="#FF6E6E73" RadiusX="2" RadiusY="2"/>
+                                        <Rectangle Width="22" Height="8" Fill="#FFE4E4E7" RadiusX="4" RadiusY="4"
+                                                   HorizontalAlignment="Left" Margin="5,10,0,0" VerticalAlignment="Top"/>
+                                        <StackPanel Margin="41,4,0,0">
+                                            <Rectangle Height="6" Width="84" Fill="#FFFFFFFF" RadiusX="3" RadiusY="3" Margin="0,0,0,7"/>
+                                            <Rectangle Height="4" Width="64" Fill="#FFD4D4D8" Opacity="0.7" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
+                                            <Rectangle Height="4" Width="74" Fill="#FFB4B4BE" RadiusX="2" RadiusY="2" Margin="0,0,0,7"/>
+                                            <Rectangle Height="12" Width="46" Fill="#FFE4E4E7" RadiusX="4" RadiusY="4" HorizontalAlignment="Left"/>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
-                                <TextBlock Text="亮色" FontSize="12" FontWeight="SemiBold"
-                                           HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,1">
+                                    <Ellipse Width="7" Height="7" Fill="#FFE4E4E7" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="霜银流光" FontSize="13.5" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <TextBlock Text="Silver" FontSize="11" Margin="0,2,0,2"
+                                           Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- 深蓝 -->
-                        <Border x:Name="CardDeepBlue" Style="{StaticResource ThemePickCard}" CornerRadius="12"
-                                Padding="3" Margin="7" Background="Transparent"
+                        <!-- 3. 玄夜幻紫 · 幽邃暗紫毛玻璃 -->
+                        <Border x:Name="CardViolet" Style="{StaticResource ThemePickCard}" CornerRadius="12"
+                                Padding="4" Margin="6" Background="Transparent"
                                 BorderBrush="{DynamicResource CardBorder}" BorderThickness="2"
-                                MouseLeftButtonUp="ThemeCard_Click" Tag="DeepBlue">
+                                MouseLeftButtonUp="ThemeCard_Click" Tag="Violet">
                             <StackPanel>
-                                <Border CornerRadius="12" Width="168" Height="104" Background="#FF1C1C20"
-                                        BorderBrush="#FF3A3A40" BorderThickness="1" Padding="9">
+                                <Border CornerRadius="10" Width="178" Height="96" Background="#FF1D112C"
+                                        BorderBrush="#48C084FC" BorderThickness="1" Padding="8">
                                     <Grid>
-                                        <Rectangle Width="32" Height="80" Fill="#FF2C2C32" RadiusX="6" RadiusY="6"
+                                        <Rectangle Width="32" Height="78" Fill="#FF2A1840" RadiusX="5" RadiusY="5"
                                                    HorizontalAlignment="Left" VerticalAlignment="Top"/>
-                                        <Rectangle Width="20" Height="9" Fill="#FF5AC8FA" RadiusX="4.5" RadiusY="4.5"
-                                                   HorizontalAlignment="Left" Margin="4,12" VerticalAlignment="Top"/>
-                                        <StackPanel Margin="41,3,0,0">
-                                            <Rectangle Height="6" Width="82" Fill="#FFF5F8FF" RadiusX="3" RadiusY="3" Margin="0,0,0,7"/>
-                                            <Rectangle Height="4" Width="62" Fill="#FF98A6B8" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
-                                            <Rectangle Height="4" Width="72" Fill="#FF98A6B8" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
-                                            <Rectangle Height="4" Width="56" Fill="#FF98A6B8" RadiusX="2" RadiusY="2"/>
+                                        <Rectangle Width="22" Height="8" Fill="#FFA855F7" RadiusX="4" RadiusY="4"
+                                                   HorizontalAlignment="Left" Margin="5,10,0,0" VerticalAlignment="Top"/>
+                                        <StackPanel Margin="41,4,0,0">
+                                            <Rectangle Height="6" Width="84" Fill="#FFFFFFFF" RadiusX="3" RadiusY="3" Margin="0,0,0,7"/>
+                                            <Rectangle Height="4" Width="64" Fill="#FFD8B4FE" Opacity="0.7" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
+                                            <Rectangle Height="4" Width="74" Fill="#FFA898C0" RadiusX="2" RadiusY="2" Margin="0,0,0,7"/>
+                                            <Rectangle Height="12" Width="46" Fill="#FFA855F7" RadiusX="4" RadiusY="4" HorizontalAlignment="Left"/>
                                         </StackPanel>
                                     </Grid>
                                 </Border>
-                                <TextBlock Text="深蓝" FontSize="12" FontWeight="SemiBold"
-                                           HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,1">
+                                    <Ellipse Width="7" Height="7" Fill="#FFA855F7" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="玄夜幻紫" FontSize="13.5" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <TextBlock Text="Violet" FontSize="11" Margin="0,2,0,2"
+                                           Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
 
-                    <!-- 外观风格（视觉世界）：Fluent = Win11 云母（默认，原始观感）；Glass = Apple 黑玻璃 -->
-                    <TextBlock Text="外观风格" FontSize="12.5" FontWeight="SemiBold"
-                               Foreground="{DynamicResource TextSecondary}"
-                               HorizontalAlignment="Center" Margin="0,22,0,10"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Border x:Name="CardWorldFluent" Style="{StaticResource ThemePickCard}" CornerRadius="10"
-                                Padding="14,12" Margin="7" Width="228" Background="Transparent"
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,0">
+                        <!-- 4. 翡翠绿茵 · 深翡翠绿茵毛玻璃 -->
+                        <Border x:Name="CardEmerald" Style="{StaticResource ThemePickCard}" CornerRadius="12"
+                                Padding="4" Margin="6" Background="Transparent"
                                 BorderBrush="{DynamicResource CardBorder}" BorderThickness="2"
-                                MouseLeftButtonUp="WorldCard_Click" Tag="Fluent">
+                                MouseLeftButtonUp="ThemeCard_Click" Tag="Emerald">
                             <StackPanel>
-                                <TextBlock Text="Windows 11（云母）" FontSize="12.5" FontWeight="SemiBold"/>
-                                <TextBlock Text="系统云母/亚克力 + 强调蓝，v7.3 原始观感" FontSize="10.5"
-                                           Foreground="{DynamicResource TextMuted}" Margin="0,4,0,0"
-                                           TextWrapping="Wrap"/>
+                                <Border CornerRadius="10" Width="178" Height="96" Background="#FF0D261D"
+                                        BorderBrush="#4434D399" BorderThickness="1" Padding="8">
+                                    <Grid>
+                                        <Rectangle Width="32" Height="78" Fill="#FF103628" RadiusX="5" RadiusY="5"
+                                                   HorizontalAlignment="Left" VerticalAlignment="Top"/>
+                                        <Rectangle Width="22" Height="8" Fill="#FF10B981" RadiusX="4" RadiusY="4"
+                                                   HorizontalAlignment="Left" Margin="5,10,0,0" VerticalAlignment="Top"/>
+                                        <StackPanel Margin="41,4,0,0">
+                                            <Rectangle Height="6" Width="84" Fill="#FFFFFFFF" RadiusX="3" RadiusY="3" Margin="0,0,0,7"/>
+                                            <Rectangle Height="4" Width="64" Fill="#FF6EE7B7" Opacity="0.7" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
+                                            <Rectangle Height="4" Width="74" Fill="#FF88B0A0" RadiusX="2" RadiusY="2" Margin="0,0,0,7"/>
+                                            <Rectangle Height="12" Width="46" Fill="#FF10B981" RadiusX="4" RadiusY="4" HorizontalAlignment="Left"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,1">
+                                    <Ellipse Width="7" Height="7" Fill="#FF10B981" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="翡翠绿茵" FontSize="13.5" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <TextBlock Text="Emerald" FontSize="11" Margin="0,2,0,2"
+                                           Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Border>
+
+                        <!-- 5. 绯焰流火 · 暗酒红绯焰毛玻璃 -->
+                        <Border x:Name="CardCrimson" Style="{StaticResource ThemePickCard}" CornerRadius="12"
+                                Padding="4" Margin="6" Background="Transparent"
+                                BorderBrush="{DynamicResource CardBorder}" BorderThickness="2"
+                                MouseLeftButtonUp="ThemeCard_Click" Tag="Crimson">
+                            <StackPanel>
+                                <Border CornerRadius="10" Width="178" Height="96" Background="#FF2B0F18"
+                                        BorderBrush="#5CF43F5E" BorderThickness="1" Padding="8">
+                                    <Grid>
+                                        <Rectangle Width="32" Height="78" Fill="#FF3D1422" RadiusX="5" RadiusY="5"
+                                                   HorizontalAlignment="Left" VerticalAlignment="Top"/>
+                                        <Rectangle Width="22" Height="8" Fill="#FFE11D48" RadiusX="4" RadiusY="4"
+                                                   HorizontalAlignment="Left" Margin="5,10,0,0" VerticalAlignment="Top"/>
+                                        <StackPanel Margin="41,4,0,0">
+                                            <Rectangle Height="6" Width="84" Fill="#FFFFFFFF" RadiusX="3" RadiusY="3" Margin="0,0,0,7"/>
+                                            <Rectangle Height="4" Width="64" Fill="#FFFB7185" Opacity="0.7" RadiusX="2" RadiusY="2" Margin="0,0,0,5"/>
+                                            <Rectangle Height="4" Width="74" Fill="#FFB88A98" RadiusX="2" RadiusY="2" Margin="0,0,0,7"/>
+                                            <Rectangle Height="12" Width="46" Fill="#FFE11D48" RadiusX="4" RadiusY="4" HorizontalAlignment="Left"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,7,0,1">
+                                    <Ellipse Width="7" Height="7" Fill="#FFE11D48" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="绯焰流火" FontSize="13.5" FontWeight="SemiBold"/>
+                                </StackPanel>
+                                <TextBlock Text="Crimson" FontSize="11" Margin="0,2,0,2"
+                                           Foreground="{DynamicResource TextMuted}" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- 外观风格（Apple Glass 排第一且默认；Windows 11 云母排第二） -->
+                    <TextBlock Text="外观风格" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextSecondary}"
+                               HorizontalAlignment="Center" Margin="0,16,0,8"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <Border x:Name="CardWorldGlass" Style="{StaticResource ThemePickCard}" CornerRadius="10"
-                                Padding="14,12" Margin="7" Width="228" Background="Transparent"
+                                Padding="14,11" Margin="6" Width="264" Background="Transparent"
                                 BorderBrush="{DynamicResource CardBorder}" BorderThickness="2"
                                 MouseLeftButtonUp="WorldCard_Click" Tag="Glass">
                             <StackPanel>
-                                <TextBlock Text="Apple Glass（黑玻璃）" FontSize="12.5" FontWeight="SemiBold"/>
-                                <TextBlock Text="近纯黑毛玻璃 + 浅灰选中 + 玻璃渐变卡片" FontSize="10.5"
-                                           Foreground="{DynamicResource TextMuted}" Margin="0,4,0,0"
+                                <TextBlock Text="Apple Glass" FontSize="13.5" FontWeight="SemiBold"/>
+                                <TextBlock Text="深邃通透磨砂 + 渐变质感卡片" FontSize="11.5"
+                                           Foreground="{DynamicResource TextMuted}" Margin="0,3,0,0"
+                                           TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="CardWorldFluent" Style="{StaticResource ThemePickCard}" CornerRadius="10"
+                                Padding="14,11" Margin="6" Width="264" Background="Transparent"
+                                BorderBrush="{DynamicResource CardBorder}" BorderThickness="2"
+                                MouseLeftButtonUp="WorldCard_Click" Tag="Fluent">
+                            <StackPanel>
+                                <TextBlock Text="Windows 11（云母）" FontSize="13.5" FontWeight="SemiBold"/>
+                                <TextBlock Text="系统云母/亚克力 + 现代扁平卡片" FontSize="11.5"
+                                           Foreground="{DynamicResource TextMuted}" Margin="0,3,0,0"
                                            TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>
 
                     <!-- 操作按钮（保存 / 取消还原） -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,24,0,0">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,18,0,0">
                         <Button x:Name="BtnThemeCancel" Content="取消" Style="{StaticResource GhostBtn}"
-                                Width="112" Height="38" Margin="0,0,10,0"
+                                Width="112" Height="36" Margin="0,0,10,0"
                                 Click="BtnThemeCancel_Click"/>
                         <Button x:Name="BtnThemeConfirm" Content="保存应用" Style="{StaticResource PrimaryBtn}"
-                                Width="156" Height="38"
+                                Width="156" Height="36"
                                 Click="BtnThemeConfirm_Click" Visibility="Collapsed"/>
                     </StackPanel>
                 </StackPanel>
-            </Border>
+                </Border>
+            </Grid>
         </Border>
     </Grid>
     </Grid>

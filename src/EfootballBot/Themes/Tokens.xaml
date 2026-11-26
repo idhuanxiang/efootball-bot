@@ -1,16 +1,11 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- ==================================================================
-         Tokens.xaml —— 颜色 / 阴影：全应用唯一的颜色真相（v7.4 · 两个视觉世界）
-         改配色只动这里 + Core/UI/ThemePalette.cs（2 世界 × 3 亮度的六张同名表）。
-         世界 1 Fluent（默认）：Windows 11 云母/亚克力 + 系统强调蓝，v7.3 原始观感；
-         世界 2 Glass       ：Apple 黑玻璃 —— 近纯黑毛玻璃 + 中性浅灰选中 + 玻璃渐变卡片。
-         本文件的数值只是 Glass 暗色的「兜底 / 设计器预览」值：运行时 ApplyTheme 会按
-         (Theme, Appearance.World) 覆盖全部 token，并重建 GlassFill / PrimaryBtnFill /
-         CardShadowEffect / DitherNoiseBrush 这四个复合资源。
-         页面里只准引用 token，不写十六进制。
+         Tokens.xaml —— 颜色 / 阴影：全应用唯一的颜色真相（5 套主题）
+         本文件为默认主题 Obsidian（黑曜极夜）的兜底 / 设计器预览值：
+         运行时 ThemeManager.ApplyTheme 会按所选主题覆盖全部 token。
          ================================================================== -->
-    <!-- ===== 底层：窗口与三栏（都带透明度，让材质从后面透出来） ===== -->
+    <!-- ===== 底层：窗口与三栏 ===== -->
     <SolidColorBrush x:Key="WindowBg" Color="#FF08080A"/>
     <SolidColorBrush x:Key="ContentBg" Color="#F208080A"/>
     <SolidColorBrush x:Key="CardBg" Color="#12FFFFFF"/>
@@ -22,13 +17,12 @@
     <SolidColorBrush x:Key="TrackBg" Color="#4D000000"/>
     <SolidColorBrush x:Key="GlassBg" Color="#D9101012"/>
     <SolidColorBrush x:Key="GlassStroke" Color="#24FFFFFF"/>
-    <SolidColorBrush x:Key="DialogBg" Color="#F516161A"/>
+    <SolidColorBrush x:Key="DialogBg" Color="#F5141418"/>
     <SolidColorBrush x:Key="ControlFill" Color="#18FFFFFF"/>
     <SolidColorBrush x:Key="ControlStroke" Color="#2EFFFFFF"/>
-    <!-- 顶栏/左栏的淡黑玻璃蒙版：护住导航文字可读性，同时保留毛玻璃透射 -->
     <SolidColorBrush x:Key="ChromeGlass" Color="#4D08080A"/>
 
-    <!-- ===== 文字（Apple 三级：主 白 / 次 #E5E5EA / 弱 #98989F） ===== -->
+    <!-- ===== 文字（三级：主 白 / 次 #E5E5EA / 弱 #98989F） ===== -->
     <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFFFF"/>
     <SolidColorBrush x:Key="TextSecondary" Color="#FFE5E5EA"/>
     <SolidColorBrush x:Key="TextMuted" Color="#FF98989F"/>
@@ -39,31 +33,31 @@
     <SolidColorBrush x:Key="SegTabHoverFg" Color="#FFFFFFFF"/>
     <SolidColorBrush x:Key="LogInfo" Color="#FFE5E5EA"/>
     <SolidColorBrush x:Key="LogTime" Color="#FF7E8694"/>
-    <SolidColorBrush x:Key="LogTag" Color="#FF7AB8FF"/>
+    <SolidColorBrush x:Key="LogTag" Color="#FFD4D4DC"/>
 
-    <!-- ===== 强调色（沉稳宝石蓝 #2563EB，上面压白字） ===== -->
-    <SolidColorBrush x:Key="Accent" Color="#FF2563EB"/>
-    <SolidColorBrush x:Key="AccentHover" Color="#FF3B82F6"/>
-    <SolidColorBrush x:Key="AccentGlow" Color="#FF60A5FA"/>
-    <SolidColorBrush x:Key="AccentLight" Color="#330A84FF"/>
-    <SolidColorBrush x:Key="AccentBorder" Color="#660A84FF"/>
-    <SolidColorBrush x:Key="AccentSoft" Color="#260A84FF"/>
-    <SolidColorBrush x:Key="AccentBorderStrong" Color="#990A84FF"/>
-    <SolidColorBrush x:Key="TextOnAccent" Color="#FFFFFFFF"/>
+    <!-- ===== 强调色（默认 Obsidian 黑曜极夜：高对比珍珠白） ===== -->
+    <SolidColorBrush x:Key="Accent" Color="#FFF2F2F7"/>
+    <SolidColorBrush x:Key="AccentHover" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="AccentGlow" Color="#FFD4D4DC"/>
+    <SolidColorBrush x:Key="AccentLight" Color="#26FFFFFF"/>
+    <SolidColorBrush x:Key="AccentBorder" Color="#4DFFFFFF"/>
+    <SolidColorBrush x:Key="AccentSoft" Color="#1AFFFFFF"/>
+    <SolidColorBrush x:Key="AccentBorderStrong" Color="#78FFFFFF"/>
+    <SolidColorBrush x:Key="TextOnAccent" Color="#FF111113"/>
 
-    <!-- ===== 语义色（Apple 系统色） ===== -->
-    <SolidColorBrush x:Key="Danger" Color="#FFFF453A"/>
-    <SolidColorBrush x:Key="DangerHover" Color="#FFFF695F"/>
-    <SolidColorBrush x:Key="DangerText" Color="#FFFF6966"/>
-    <SolidColorBrush x:Key="DangerBorder" Color="#66FF453A"/>
-    <SolidColorBrush x:Key="DangerSoft" Color="#26FF453A"/>
+    <!-- ===== 语义色 ===== -->
+    <SolidColorBrush x:Key="Danger" Color="#FFEF4444"/>
+    <SolidColorBrush x:Key="DangerHover" Color="#FFF87171"/>
+    <SolidColorBrush x:Key="DangerText" Color="#FFFCA5A5"/>
+    <SolidColorBrush x:Key="DangerBorder" Color="#66EF4444"/>
+    <SolidColorBrush x:Key="DangerSoft" Color="#26EF4444"/>
     <SolidColorBrush x:Key="TextOnDanger" Color="#FFFFFFFF"/>
-    <SolidColorBrush x:Key="Warning" Color="#FFFFD60A"/>
-    <SolidColorBrush x:Key="Success" Color="#FF30D158"/>
-    <SolidColorBrush x:Key="Info" Color="#FF0A84FF"/>
-    <SolidColorBrush x:Key="Amber" Color="#FFFFD60A"/>
-    <SolidColorBrush x:Key="Orange" Color="#FFFF9F0A"/>
-    <SolidColorBrush x:Key="Teal" Color="#FF40C8E0"/>
+    <SolidColorBrush x:Key="Warning" Color="#FFF59E0B"/>
+    <SolidColorBrush x:Key="Success" Color="#FF10B981"/>
+    <SolidColorBrush x:Key="Info" Color="#FFD4D4DC"/>
+    <SolidColorBrush x:Key="Amber" Color="#FFF59E0B"/>
+    <SolidColorBrush x:Key="Orange" Color="#FFFB923C"/>
+    <SolidColorBrush x:Key="Teal" Color="#FF2DD4BF"/>
 
     <!-- ===== 输入 / 轨道 / 滚动 ===== -->
     <SolidColorBrush x:Key="InputBg" Color="#1FFFFFFF"/>
@@ -88,37 +82,32 @@
     <SolidColorBrush x:Key="IntlTabBg" Color="#4D000000"/>
     <SolidColorBrush x:Key="IntlTabBorder" Color="#1FFFFFFF"/>
 
-    <!-- ===== 品牌 / 横幅（Apple 蓝，不做渐变堆叠） ===== -->
-    <SolidColorBrush x:Key="BrandFrom" Color="#FF3B82F6"/>
-    <SolidColorBrush x:Key="BrandTo" Color="#FF1D4ED8"/>
-    <SolidColorBrush x:Key="BannerFrom" Color="#FF0A84FF"/>
-    <SolidColorBrush x:Key="BannerTo" Color="#FF0057D6"/>
+    <!-- ===== 品牌 / 横幅 ===== -->
+    <SolidColorBrush x:Key="BrandFrom" Color="#FF3A3A42"/>
+    <SolidColorBrush x:Key="BrandTo" Color="#FF1C1C22"/>
+    <SolidColorBrush x:Key="BannerFrom" Color="#FF2C2C34"/>
+    <SolidColorBrush x:Key="BannerTo" Color="#FF18181E"/>
     <SolidColorBrush x:Key="TextOnBanner" Color="#FFFFFFFF"/>
-    <SolidColorBrush x:Key="HeroGlowFrom" Color="#260A84FF"/>
-    <SolidColorBrush x:Key="HeroGlowFade" Color="#000A84FF"/>
+    <SolidColorBrush x:Key="HeroGlowFrom" Color="#16FFFFFF"/>
+    <SolidColorBrush x:Key="HeroGlowFade" Color="#00FFFFFF"/>
     <SolidColorBrush x:Key="HeroTitleFrom" Color="#FFFFFFFF"/>
-    <SolidColorBrush x:Key="HeroTitleMid" Color="#FFCFE6FF"/>
-    <SolidColorBrush x:Key="HeroTitleTo" Color="#FF9CCBFF"/>
+    <SolidColorBrush x:Key="HeroTitleMid" Color="#FFE5E5EA"/>
+    <SolidColorBrush x:Key="HeroTitleTo" Color="#FFA1A1AA"/>
 
     <!-- ===== 浮层 ===== -->
-    <SolidColorBrush x:Key="TooltipBg" Color="#F22C2C2E"/>
+    <SolidColorBrush x:Key="TooltipBg" Color="#F2242428"/>
     <SolidColorBrush x:Key="TooltipBorder" Color="#33FFFFFF"/>
     <SolidColorBrush x:Key="TooltipFg" Color="#FFFFFFFF"/>
 
-    <!-- ===== Apple 阴影：大半径、极低不透明度（浮层轻而柔） ===== -->
+    <!-- ===== 阴影 ===== -->
     <DropShadowEffect x:Key="FloatShadow" Color="#FF000000" BlurRadius="24"
                       ShadowDepth="1" Opacity="0.22"/>
-    <DropShadowEffect x:Key="AccentShadow" Color="#660A84FF" BlurRadius="20"
-                      ShadowDepth="1" Opacity="0.28"/>
-    <!-- 玻璃卡片投影：极淡的一层，只把卡片从底材上"托"起来。
-         Fluent 世界由 ApplyTheme 换成零强度投影（= 旧版卡片无阴影）。 -->
-    <DropShadowEffect x:Key="CardShadowEffect" Color="#FF000000" BlurRadius="18"
-                      ShadowDepth="2" Opacity="0.14"/>
+    <DropShadowEffect x:Key="AccentShadow" Color="#55FFFFFF" BlurRadius="18"
+                      ShadowDepth="0" Opacity="0.24"/>
+    <DropShadowEffect x:Key="CardShadowEffect" Color="#FF000000" BlurRadius="16"
+                      ShadowDepth="4" Opacity="0.36"/>
 
-    <!-- ===== 高级玻璃质感：渐变光影（高级感来自光影，不是半透明色块） =====
-         渐变停点引用主题 Color token（DynamicResource 会跟随主题切换），
-         具体色值由 ThemeManager.ApplyTheme 在运行时构造对应主题的渐变后覆盖。
-         这里给的是暗色（默认）兜底值，保证设计器里也能预览。 -->
+    <!-- ===== 玻璃质感渐变 ===== -->
     <LinearGradientBrush x:Key="GlassFill" StartPoint="0,0" EndPoint="0,1">
         <GradientStop Color="#14FFFFFF" Offset="0"/>
         <GradientStop Color="#0DFFFFFF" Offset="0.16"/>
@@ -128,11 +117,10 @@
         <GradientStop Color="{DynamicResource AccentHoverColor}" Offset="0"/>
         <GradientStop Color="{DynamicResource AccentColor}" Offset="1"/>
     </LinearGradientBrush>
-    <!-- 主按钮：强调色精致渐变 + 柔和高光描边 -->
     <LinearGradientBrush x:Key="PrimaryBtnFill" StartPoint="0,0" EndPoint="0,1">
-        <GradientStop Color="#FF2563EB" Offset="0"/>
-        <GradientStop Color="#FF2563EB" Offset="0.55"/>
-        <GradientStop Color="#FF1D4ED8" Offset="1"/>
+        <GradientStop Color="#4AFFFFFF" Offset="0"/>
+        <GradientStop Color="#36FFFFFF" Offset="0.55"/>
+        <GradientStop Color="#28FFFFFF" Offset="1"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="CardTopHighlight" StartPoint="0,0" EndPoint="1,0">
         <GradientStop Color="#00FFFFFF" Offset="0"/>
@@ -140,46 +128,35 @@
         <GradientStop Color="#00FFFFFF" Offset="1"/>
     </LinearGradientBrush>
 
-    <!-- ===== 渐变停点专用 Color 版（GradientStop.Color 只吃 Color） ===== -->
-    <Color x:Key="BrandFromColor">#FF3B82F6</Color>
-    <Color x:Key="BrandToColor">#FF1D4ED8</Color>
-    <!-- 渐变引用的兜底 Color：ApplyTheme 会在运行时按主题覆盖这些同名 key -->
-    <Color x:Key="AccentColor">#FF2563EB</Color>
-    <Color x:Key="AccentHoverColor">#FF3B82F6</Color>
+    <!-- ===== 渐变停点专用 Color 版 ===== -->
+    <Color x:Key="BrandFromColor">#FF3A3A42</Color>
+    <Color x:Key="BrandToColor">#FF1C1C22</Color>
+    <Color x:Key="AccentColor">#FFF2F2F7</Color>
+    <Color x:Key="AccentHoverColor">#FFFFFFFF</Color>
     <Color x:Key="HairlineStrongColor">#3DFFFFFF</Color>
-    <!-- 浅灰毛玻璃选中态兜底：ApplyTheme 运行时按主题覆盖 -->
-    <SolidColorBrush x:Key="SelectFill" Color="#2EFFFFFF"/>
-    <SolidColorBrush x:Key="SelectFillStrong" Color="#3DFFFFFF"/>
-    <SolidColorBrush x:Key="SelectBorder" Color="#3DFFFFFF"/>
+    <SolidColorBrush x:Key="SelectFill" Color="#26FFFFFF"/>
+    <SolidColorBrush x:Key="SelectFillStrong" Color="#36FFFFFF"/>
+    <SolidColorBrush x:Key="SelectBorder" Color="#38FFFFFF"/>
     <SolidColorBrush x:Key="SelectFg" Color="#FFFFFFFF"/>
-    <!-- 选中指示条：Fluent = 强调蓝竖条，Glass = 与选中文字同色的白色细条（ApplyTheme 派生） -->
-    <SolidColorBrush x:Key="SelectBar" Color="#FFFFFFFF"/>
-    <!-- 顶栏玻璃蒙版：Fluent = 透明，Glass = 与左右栏同一张淡黑玻璃 -->
+    <SolidColorBrush x:Key="SelectBar" Color="#FFF2F2F7"/>
     <SolidColorBrush x:Key="TopBarBg" Color="#4D08080A"/>
-    <!-- 功能分类页签选中：明显的灰色磨砂方框 -->
-    <SolidColorBrush x:Key="SubTabSelFill" Color="#664A4A50"/>
+    <SolidColorBrush x:Key="SubTabSelFill" Color="#5C42424A"/>
     <SolidColorBrush x:Key="SubTabSelStroke" Color="#4DFFFFFF"/>
-    <!-- Chip（热键等标签）：深色方形毛玻璃 -->
     <SolidColorBrush x:Key="ChipFill" Color="#3D000000"/>
     <SolidColorBrush x:Key="ChipStroke" Color="#3DFFFFFF"/>
-    <!-- 主按钮：文字色 / 顶高光描边 / 悬停压暗层（Fluent = 强调色按钮 + 白字 + 白色提亮） -->
     <SolidColorBrush x:Key="TextOnPrimary" Color="#FFFFFFFF"/>
-    <SolidColorBrush x:Key="PrimaryBtnStroke" Color="#2EFFFFFF"/>
+    <SolidColorBrush x:Key="PrimaryBtnStroke" Color="#7AFFFFFF"/>
     <SolidColorBrush x:Key="BtnFlash" Color="#FFFFFFFF"/>
-    <!-- 下拉选择卡：本体与弹出层用更实的底色，盖住下层文字 -->
     <SolidColorBrush x:Key="ComboBg" Color="#2A242428"/>
-    <SolidColorBrush x:Key="ComboPopupBg" Color="#F0161618"/>
-    <Color x:Key="HeroGlowFromColor">#260A84FF</Color>
-    <Color x:Key="HeroGlowFadeColor">#000A84FF</Color>
+    <SolidColorBrush x:Key="ComboPopupBg" Color="#F0151518"/>
+    <Color x:Key="HeroGlowFromColor">#16FFFFFF</Color>
+    <Color x:Key="HeroGlowFadeColor">#00FFFFFF</Color>
     <Color x:Key="HeroTitleFromColor">#FFFFFFFF</Color>
-    <Color x:Key="HeroTitleMidColor">#FFCFE6FF</Color>
-    <Color x:Key="HeroTitleToColor">#FF9CCBFF</Color>
-    <Color x:Key="BannerFromColor">#FF0A84FF</Color>
-    <Color x:Key="BannerToColor">#FF0057D6</Color>
+    <Color x:Key="HeroTitleMidColor">#FFE5E5EA</Color>
+    <Color x:Key="HeroTitleToColor">#FFA1A1AA</Color>
+    <Color x:Key="BannerFromColor">#FF2C2C34</Color>
+    <Color x:Key="BannerToColor">#FF18181E</Color>
 
-    <!-- ===== 抖动噪点：打散 Acrylic 深色渐变的色带(banding) =====
-         极低透明度的白噪点平铺在窗口最底层，不参与交互；视觉上几乎不可见，
-         但能打散 8-bit 色深下一条一条的色阶，让毛玻璃过渡更平滑。 -->
     <ImageBrush x:Key="DitherNoiseBrush"
                 ImageSource="pack://application:,,,/Assets/dither-noise.png"
                 TileMode="Tile" Viewport="0,0,128,128" ViewportUnits="Absolute"

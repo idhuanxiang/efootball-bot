@@ -140,19 +140,19 @@ public partial class MainWindow
             AppendLog("[手动停止] 正在生成反馈包（约 1~2 分钟，请勿关闭程序）…", LogLevel.Info);
             string result = await Task.Run(() => DiagReporter.CollectAsync(userNote: note, screenshotPath: shotPath));
             AppendLog($"[手动停止] 反馈包已生成：{result}", LogLevel.Success);
-            var ans = MessageBox.Show(this,
+            if (EfootballBot.Views.AppDialog.Confirm(this,
+                "反馈包已生成",
                 "反馈包已生成完毕。\n\n请把下面这个文件直接发给作者（或发到反馈群），即可帮你定位问题：\n\n" +
                 result + "\n\n是否现在打开反馈包所在目录？",
-                "反馈包已生成", MessageBoxButton.YesNo, MessageBoxImage.Information);
-            if (ans == MessageBoxResult.Yes)
+                "打开目录", "暂不"))
                 OpenDiagResult(result);
         }
         catch (Exception ex)
         {
             AppendLogError($"[手动停止] 生成反馈包失败：{ex.Message}", ex);
-            MessageBox.Show(this,
-                "生成反馈包失败：" + ex.Message + "\n\n截图与日志仍保留在程序 data 目录。",
-                "反馈包生成失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            EfootballBot.Views.AppDialog.Warn(this,
+                "反馈包生成失败",
+                "生成反馈包失败：" + ex.Message + "\n\n截图与日志仍保留在程序 data 目录。");
         }
         finally
         {

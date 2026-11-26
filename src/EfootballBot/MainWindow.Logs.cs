@@ -554,15 +554,12 @@ public partial class MainWindow
 
         if (path == FileLogger.Instance.CurrentLogPath)
         {
-            System.Windows.MessageBox.Show("当前正在写入的日志文件不能删除。", "无法删除",
-                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            EfootballBot.Views.AppDialog.Info(this, "无法删除", "当前正在写入的日志文件不能删除。");
             return;
         }
 
-        var result = System.Windows.MessageBox.Show($"确定要删除 {ci.Content} 吗？", "确认删除",
-            System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning);
-
-        if (result != System.Windows.MessageBoxResult.Yes) return;
+        if (!EfootballBot.Views.AppDialog.Confirm(this, "确认删除", $"确定要删除 {ci.Content} 吗？", "删除", "取消", danger: true))
+            return;
 
         try
         {

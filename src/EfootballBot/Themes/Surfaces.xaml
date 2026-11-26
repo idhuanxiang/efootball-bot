@@ -2,7 +2,7 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- ==================================================================
          Surfaces.xaml —— 容器、间距与文字阶梯（v7.3 · Windows 11 Fluent）
-         世界规则：卡片是「半透明玻璃 + 1px 描边 + 8px 圆角」，文字用 Segoe UI Variable，
+         世界规则：卡片是「半透明玻璃 + 1px 描边 + 8px 圆角」，文字用 Segoe UI Variable + 微软雅黑 UI，
          字号阶梯固定（禁止页面手写 FontSize），层级靠字重与留白，不靠色块。
          ================================================================== -->
 
@@ -12,9 +12,7 @@
     <Thickness x:Key="HeadGap">0,0,0,14</Thickness>
     <Thickness x:Key="FieldGap">0,0,0,14</Thickness>
 
-    <!-- ============ 容器（玻璃卡片：渐变底 + 高光描边 + 柔和投影）
-         Fluent 下 GlassFill 三停同色（= 旧版平铺 CardBg）、投影为零强度，观感不变；
-         Glass 下才是"顶亮底透 + 淡投影"。圆角/内距两世界共用 ============================================ -->
+    <!-- ============ 容器（玻璃卡片：渐变底 + 高光描边，不挂 Effect 避免文字光栅化发虚） ============ -->
     <Style x:Key="Card" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource GlassFill}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource CardBorder}"/>
@@ -22,7 +20,11 @@
         <Setter Property="CornerRadius" Value="12"/>
         <Setter Property="Padding" Value="16,15"/>
         <Setter Property="Margin" Value="0,0,0,12"/>
-        <Setter Property="Effect" Value="{DynamicResource CardShadowEffect}"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource HairlineStrong}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style x:Key="Inset" TargetType="Border">
@@ -37,10 +39,10 @@
         <Setter Property="Margin" Value="{StaticResource HeadGap}"/>
     </Style>
 
-    <!-- ============ 字体阶梯（Segoe UI Variable；中文回落雅黑 UI） ============ -->
-    <FontFamily x:Key="UiFont">Segoe UI Variable Text, Microsoft YaHei UI</FontFamily>
+    <!-- ============ 字体阶梯（Segoe UI Variable；中文微软雅黑 UI + Ideal 平滑渲染） ============ -->
+    <FontFamily x:Key="UiFont">Segoe UI Variable Text, Segoe UI, Microsoft YaHei UI</FontFamily>
     <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI Semibold, Microsoft YaHei UI</FontFamily>
-    <FontFamily x:Key="NumberFont">Cascadia Mono, Consolas</FontFamily>
+    <FontFamily x:Key="NumberFont">Cascadia Mono, Consolas, Microsoft YaHei UI</FontFamily>
 
     <Style x:Key="PageTitle" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource DisplayFont}"/>
@@ -126,7 +128,7 @@
         <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
-    <!-- Chip（热键/标签）：方形小圆角的深色毛玻璃，不再用椭圆药丸 -->
+    <!-- Chip（热键/标签）：方形小圆角的深色毛玻璃 -->
     <Style x:Key="Chip" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource ChipFill}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource ChipStroke}"/>

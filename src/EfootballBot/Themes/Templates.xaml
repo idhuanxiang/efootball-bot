@@ -7,8 +7,8 @@
 
     <!-- 横幅白色按钮 -->
     <Style x:Key="BannerBtn" TargetType="Button">
-        <Setter Property="Background" Value="White"/>
-        <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+        <Setter Property="Background" Value="#FFFFFFFF"/>
+        <Setter Property="Foreground" Value="#FF141418"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="17,7"/>
         <Setter Property="FontSize" Value="12.5"/>
@@ -26,7 +26,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="bd" Property="Background" Value="#FFF0F6FF"/>
+                            <Setter TargetName="bd" Property="Background" Value="#FFEAEAEE"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="bd" Property="RenderTransform"><Setter.Value><ScaleTransform ScaleX="0.97" ScaleY="0.97"/></Setter.Value></Setter>
@@ -36,18 +36,13 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <!-- 主题选择卡片（悬停轻微放大） -->
+    <!-- 主题选择卡片（悬停仅高亮背景与边框，不做 ScaleTransform/Effect 避免文字发糊） -->
     <Style x:Key="ThemePickCard" TargetType="Border">
         <Setter Property="Cursor" Value="Hand"/>
-        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
-        <Setter Property="RenderTransform">
-            <Setter.Value><ScaleTransform ScaleX="1" ScaleY="1"/></Setter.Value>
-        </Setter>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="RenderTransform">
-                    <Setter.Value><ScaleTransform ScaleX="1.03" ScaleY="1.03"/></Setter.Value>
-                </Setter>
+                <Setter Property="Background" Value="{DynamicResource HoverOverlay}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentGlow}"/>
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -111,7 +106,7 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <!-- 上栏一级菜单：选中 = Apple 胶囊浅底 + 主题色文字（与左栏选中语言统一） -->
+    <!-- 上栏一级菜单：选中 = 浅灰毛玻璃胶囊 + 底部主题色微光指示条 -->
     <Style x:Key="TopNavTab" TargetType="RadioButton">
         <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
         <Setter Property="FontSize" Value="13"/>
@@ -124,8 +119,18 @@
             <Setter.Value>
                 <ControlTemplate TargetType="RadioButton">
                     <Border x:Name="bd" CornerRadius="8" Background="Transparent"
-                            BorderBrush="Transparent" BorderThickness="1" Margin="3,8" Padding="12,0">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            BorderBrush="Transparent" BorderThickness="1" Margin="3,8" Padding="12,0"
+                            RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                        </Border.RenderTransform>
+                        <Grid>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Border x:Name="ind" Width="20" Height="2" CornerRadius="1"
+                                    Background="{DynamicResource SelectBar}"
+                                    HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                    Margin="0,0,0,2" Opacity="0"/>
+                        </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -135,7 +140,11 @@
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="bd" Property="Background" Value="{DynamicResource SelectFill}"/>
                             <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource SelectBorder}"/>
+                            <Setter TargetName="ind" Property="Opacity" Value="1"/>
                             <Setter Property="Foreground" Value="{DynamicResource SelectFg}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="bd" Property="RenderTransform"><Setter.Value><ScaleTransform ScaleX="0.97" ScaleY="0.97"/></Setter.Value></Setter>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -217,7 +226,7 @@
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
                 <Setter Property="Background" Value="{DynamicResource Surface2}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource Divider}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource HairlineStrong}"/>
                 <Setter Property="RenderTransform">
                     <Setter.Value><TranslateTransform X="2"/></Setter.Value>
                 </Setter>

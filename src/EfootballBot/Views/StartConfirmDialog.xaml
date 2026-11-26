@@ -4,14 +4,15 @@
         Title="开始挂机前确认" Width="560" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        ShowInTaskbar="False" FontFamily="Microsoft YaHei UI"
+        ShowInTaskbar="False" FontFamily="{StaticResource UiFont}"
+        TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"
         Foreground="{DynamicResource TextPrimary}">
     <!-- 无原生白色标题栏：整窗透明 + 自绘标题栏；背景半透明黑提高通透感（与本体毛玻璃一致） -->
-    <Border x:Name="Shell" CornerRadius="12" BorderBrush="#33FFFFFF" BorderThickness="1"
-            Background="#D8171A20" Padding="0">
+    <Border x:Name="Shell" CornerRadius="12" BorderBrush="{DynamicResource GlassStroke}" BorderThickness="1"
+            Background="{DynamicResource DialogBg}" Padding="0" Effect="{StaticResource FloatShadow}">
         <StackPanel>
             <!-- 自绘标题栏：可拖拽，右侧关闭按钮 -->
-            <Grid Height="38" Margin="14,0,10,0" MouseLeftButtonDown="OnDrag">
+            <Grid Height="38" Margin="14,0,10,0" Background="Transparent" MouseLeftButtonDown="OnDrag">
                 <TextBlock Text="开始挂机前确认" FontSize="12" Foreground="{DynamicResource TextMuted}"
                            VerticalAlignment="Center"/>
                 <Button HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -26,7 +27,7 @@
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="#33FFFFFF"/>
+                                    <Setter TargetName="bd" Property="Background" Value="{DynamicResource HoverOverlay}"/>
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -36,7 +37,7 @@
             <StackPanel Margin="22,0,22,20">
                 <TextBlock Text="开始前请确认两件事：" FontSize="15" FontWeight="SemiBold"
                            Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,12"/>
-                <Border Background="#22FFFFFF" CornerRadius="8" Padding="12,10" Margin="0,0,0,8">
+                <Border Background="{DynamicResource Surface2}" CornerRadius="8" Padding="12,10" Margin="0,0,0,8">
                     <StackPanel>
                         <TextBlock FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Accent}"
                                    Text="① 真实手柄随时可拿去玩" Margin="0,0,0,4"/>
@@ -44,7 +45,7 @@
                                    Text="挂机中检测到你在用真实手柄会自动让路（虚拟手柄暂时断开，你的手柄立刻可用）；停手后自动恢复继续挂机。注意：虚拟手柄占用玩家 1，挂机运行中请勿同时用两只手柄玩同一个游戏。"/>
                     </StackPanel>
                 </Border>
-                <Border Background="#22FFFFFF" CornerRadius="8" Padding="12,10" Margin="0,0,6,14">
+                <Border Background="{DynamicResource Surface2}" CornerRadius="8" Padding="12,10" Margin="0,0,0,14">
                     <StackPanel>
                         <TextBlock FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Accent}"
                                    Text="② 游戏最好以 720p 窗口模式运行" Margin="0,0,0,4"/>

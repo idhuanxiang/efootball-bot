@@ -72,15 +72,21 @@ public partial class StartConfirmDialog : Window
     {
         try
         {
-            // 不再复用主窗口 WindowBg：那是给大窗口材质用的 0x8C/0xF2，弹窗复用会透出
-            // 背后的软件界面文字（用户 2026-11-26 实机反馈）。弹窗用更深的一档保证可读。
             var cfg = EfootballBot.Core.Config.AppConfig.Load();
             bool glass = EfootballBot.Core.UI.ThemeManager.IsGlassWorld(cfg.Appearance.World);
-            // Glass 0xD8 / Fluent 0xF0：都明显加深，Glass 仍比云母稍透一点以保留世界差异
-            var fb = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromArgb(glass ? (byte)0xD8 : (byte)0xF0, 0x17, 0x1A, 0x20));
-            fb.Freeze();
-            Shell.Background = fb;
+            if (TryFindResource("DialogBg") is System.Windows.Media.SolidColorBrush dlgBrush)
+            {
+                var c = dlgBrush.Color;
+                var fb = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromArgb(glass ? (byte)0xD8 : (byte)0xF0, c.R, c.G, c.B));
+                fb.Freeze();
+                Shell.Background = fb;
+                return;
+            }
+            var fallback = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromArgb(glass ? (byte)0xD8 : (byte)0xF0, 0x15, 0x13, 0x1E));
+            fallback.Freeze();
+            Shell.Background = fallback;
         }
         catch
         {

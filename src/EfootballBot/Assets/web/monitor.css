@@ -5,7 +5,7 @@
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--tx);
-  font-family:-apple-system,"PingFang SC","Microsoft YaHei UI",system-ui,sans-serif;
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei UI",system-ui,sans-serif;
   -webkit-font-smoothing:antialiased;letter-spacing:.01em}
 body{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
 

@@ -212,6 +212,8 @@ public partial class MainWindow
         _loadingConfig = true;
         LoadPadBackendUi();
         _loadingConfig = false;
+        if (_currentNav == EfootballBot.Shell.NavMode.Game)
+            SetRightPanelCollapsed(_rightUserCollapsed);
 
         // OCR 性能档（0=默认 / 1=提速：检测长边 640）
         CmbOcrPerf.SelectedIndex = _cfg.OcrPerf.DetLimitSideLength > 0 ? 1 : 0;

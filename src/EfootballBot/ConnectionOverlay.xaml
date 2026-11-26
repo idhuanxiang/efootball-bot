@@ -4,36 +4,49 @@
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" ShowActivated="False"
         ResizeMode="NoResize" SizeToContent="Height" Width="300" MinWidth="300"
-        FontFamily="Microsoft YaHei UI" Foreground="#FFE6E9EF">
-    <Border Background="#E6111720" CornerRadius="12" BorderBrush="#33FFFFFF" BorderThickness="1"
+        FontFamily="{StaticResource UiFont}"
+        TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="ClearType"
+        Foreground="{DynamicResource TextPrimary}">
+    <Border Background="{DynamicResource DialogBg}" CornerRadius="12"
+            BorderBrush="{DynamicResource GlassStroke}" BorderThickness="1"
             Padding="14,11" Cursor="SizeAll"
             MouseLeftButtonDown="OnDrag" MouseRightButtonUp="OnClose"
             MouseDown="OnAnyMouseDown">
         <StackPanel>
-            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                <Ellipse x:Name="Dot" Width="7" Height="7" Fill="#FF7B8696" VerticalAlignment="Center"/>
-                <TextBlock x:Name="TxtState" Text="未启动" FontSize="11" Margin="6,0,0,0"
-                           Foreground="#FF9AA4B2" VerticalAlignment="Center"/>
-                <TextBlock x:Name="TxtHint" Text="拖动移位 · 双击贴回 · 中键穿透 · 右键关闭" FontSize="9.5" Margin="10,0,0,0"
-                           Foreground="#FF6C7686" VerticalAlignment="Center"/>
-            </StackPanel>
+            <Grid Margin="0,0,0,6">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Ellipse x:Name="Dot" Width="7" Height="7" Fill="{DynamicResource EnvDotIdle}" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="TxtState" Text="未启动" FontSize="11.5" FontWeight="SemiBold" Margin="6,0,0,0"
+                               Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Border x:Name="BadgeClickThrough" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Visibility="Collapsed" CornerRadius="8" Padding="6,2"
+                        Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource AccentBorder}" BorderThickness="1">
+                    <TextBlock Text="穿透中" FontSize="9.5" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AccentGlow}"/>
+                </Border>
+            </Grid>
             <StackPanel Orientation="Horizontal">
                 <StackPanel Width="96">
-                    <TextBlock Text="延迟" FontSize="10" Foreground="#FF6C7686"/>
-                    <TextBlock x:Name="TxtDelay" Text="—" FontSize="22" FontWeight="Bold" Foreground="#FF3DDC84"/>
+                    <TextBlock Text="延迟" FontSize="10" Foreground="{DynamicResource TextMuted}"/>
+                    <TextBlock x:Name="TxtDelay" Text="—" FontSize="22" FontWeight="Bold"
+                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Success}"/>
                 </StackPanel>
                 <StackPanel Width="80" Margin="6,0,0,0">
-                    <TextBlock Text="丢包" FontSize="10" Foreground="#FF6C7686"/>
-                    <TextBlock x:Name="TxtLoss" Text="—" FontSize="22" FontWeight="Bold" Foreground="#FFE6E9EF"/>
+                    <TextBlock Text="丢包" FontSize="10" Foreground="{DynamicResource TextMuted}"/>
+                    <TextBlock x:Name="TxtLoss" Text="—" FontSize="22" FontWeight="Bold"
+                               Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource TextPrimary}"/>
                 </StackPanel>
                 <StackPanel Margin="4,0,0,0">
-                    <TextBlock Text="区域" FontSize="10" Foreground="#FF6C7686"/>
+                    <TextBlock Text="区域" FontSize="10" Foreground="{DynamicResource TextMuted}"/>
                     <TextBlock x:Name="TxtRegion" Text="—" FontSize="12" FontWeight="SemiBold"
-                               Foreground="#FFDCE3EC" TextWrapping="Wrap" MaxWidth="90"/>
+                               Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap" MaxWidth="90"/>
                 </StackPanel>
             </StackPanel>
-            <TextBlock x:Name="TxtRemote" Text="远端 —" FontSize="10.5" Foreground="#FF9AA4B2" Margin="0,6,0,0"/>
+            <TextBlock x:Name="TxtRemote" Text="远端 —" FontSize="10.5" Foreground="{DynamicResource TextSecondary}" Margin="0,6,0,0"/>
             <Canvas x:Name="CvSpark" Height="30" Margin="0,6,0,0" ClipToBounds="True"/>
+            <TextBlock x:Name="TxtHint" Text="拖动移位 · 双击贴回 · 中键穿透 · 右键关闭"
+                       FontSize="9.5" Foreground="{DynamicResource TextMuted}" Margin="0,5,0,0"/>
         </StackPanel>
     </Border>
 </Window>
