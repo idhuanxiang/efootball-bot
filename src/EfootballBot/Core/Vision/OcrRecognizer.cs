@@ -723,6 +723,7 @@ internal sealed class RapidV6OcrBackend : IOcrBackend
         static string Grade(string? d, string? r) =>
             d is null && r is null ? "" : $"（{(d is not null ? "det" : "")}{(d is not null && r is not null ? "+" : "")}{(r is not null ? "rec" : "")} int8）";
 
+        string _lastCreateError = "";
         (string det, string rec, string grade)[] ladder =
         [
             (detInt8 ?? fp32Det, recInt8 ?? fp32Rec, Grade(detInt8, recInt8)),
@@ -743,11 +744,21 @@ internal sealed class RapidV6OcrBackend : IOcrBackend
             catch (Exception ex)
             {
                 // 量化模型损坏/不兼容：降级到下一级（放弃 int8 只损失速度，不该损失可用性）
+                _lastCreateError = ex.Message;
                 global::System.Diagnostics.Debug.WriteLine($"[OCR] 模型加载失败（det={Path.GetFileName(det)} rec={Path.GetFileName(rec)}），降级重试：{ex.Message}");
             }
         }
 
-        _ocr = loaded ?? CreateOcr(fp32Det, clsPath, fp32Rec, keysPath);
+        if (loaded is null)
+        {
+            // 所有 ladder 级别都失败：最后一级与 ladder 第3级参数完全相同，
+            // 再试一次必然抛同样的异常且信息模糊（审查修复①）。直接抛清晰错误。
+            throw new InvalidOperationException(
+                "RapidV6 OCR 全部模型组合均加载失败（int8/fp32 det×rec 都已尝试）。" +
+                "请检查 models/v6 下的 det/rec/cls 模型文件是否完整；" +
+                $"最后一次失败：{_lastCreateError}");
+        }
+        _ocr = loaded;
         Label = LabelText + int8Grade;
 
         // PPOCRv6 预处理（短边自适应 736、不加白边）；游戏界面文字不会倒置，跳过 180° 分类
@@ -759,8 +770,17 @@ internal sealed class RapidV6OcrBackend : IOcrBackend
         // RapidOcrNet 4.2.0 自管 InferenceSession（CPU，不接受外部 SessionOptions）；
         // GPU 加速仅覆盖 YOLO 检测（OnnxSessionFactory），OCR 走包内默认 CPU 会话
         var ocr = new RapidOcrNet.RapidOcr();
-        ocr.InitModels(detPath, clsPath, recPath, keysPath);
-        return ocr;
+        try
+        {
+            ocr.InitModels(detPath, clsPath, recPath, keysPath);
+            return ocr;
+        }
+        catch
+        {
+            // InitModels 失败时原生 ONNX session 已分配却无人释放（审查修复②）
+            try { ocr.Dispose(); } catch { }
+            throw;
+        }
     }
 
     private static InvalidOperationException ModelMissing(string rel) => new(

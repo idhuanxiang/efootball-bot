@@ -98,8 +98,19 @@ public sealed class FileLogger : IDisposable
                 //（2026-10-13 logs.rar 全是空白会话，连用户跑的哪个版本都无法确认）
                 _writer.WriteLine(EscapeYamlScalar("version", Updater.FormatVersion(typeof(FileLogger).Assembly.GetName().Version)));
                 _writer.WriteLine(EscapeYamlScalar("os", Environment.OSVersion.VersionString));
-                _writer.WriteLine(EscapeYamlScalar("exe", Environment.ProcessPath ?? ""));
-                _writer.WriteLine(EscapeYamlScalar("cmd", Environment.CommandLine));
+                // 只记 exe 文件名、命令行的脱敏形式（审查修复⑰）：
+                // 完整路径含用户名、命令行含 profile 路径/管道名，日志回传时会泄露本地信息。
+                string exeName = "";
+                try { exeName = Path.GetFileName(Environment.ProcessPath ?? "") ?? ""; } catch { }
+                _writer.WriteLine(EscapeYamlScalar("exe", exeName));
+                string cmd = Environment.CommandLine ?? "";
+                // ①先抹掉第一个 token（exe 完整路径，含用户名）——审查复查修复
+                cmd = global::System.Text.RegularExpressions.Regex.Replace(
+                    cmd, @"^\s*(?:""[^""]*""|[^\s]+)", "EfootballBot.exe");
+                // ②再脱敏敏感参数值：支持带引号的值（含空格路径）
+                cmd = global::System.Text.RegularExpressions.Regex.Replace(
+                    cmd, @"(--(?:pipe|parent|profile)\s+)(?:""[^""]*""|[^\s]+)", "$1***");
+                _writer.WriteLine(EscapeYamlScalar("cmd", cmd));
                 _writer.WriteLine("logs:");
                 WriteYamlLine(LogLevel.Info, $"=== 日志会话开始：{filename} ===");
                 _writer.Flush();

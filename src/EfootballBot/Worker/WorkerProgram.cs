@@ -157,13 +157,21 @@ public static class WorkerProgram
         {
             var p = pipe;
             if (p is null || !p.IsConnected) return;
-            await writeLock.WaitAsync();
+            // 写超时（审查修复⑮）：GUI 假死/管道缓冲区满时，预览帧写会永久独占 writeLock，
+            // 让 EvStopped 永远拿不到锁、GUI 只能靠 Kill 兜底（打断手柄恢复）。
+            // 预览帧用 1.5s 短超时丢弃即可，控制类消息用 10s 保证可靠送达。
+            bool isPreview = msg.Cmd == "preview";
+            int timeoutMs = isPreview ? 1500 : 10000;
+            // ★写入本身不能带取消令牌（复查修复）：PipeStream.WriteAsync 非原子，
+            // 超时取消可能只写了半条 JSON 且没有换行，后续所有消息都会解析错位、整条丢弃，
+            // 连 EvStopped 都收不到——比原问题更严重。只对"等锁"限时，写入要么完整成功、要么管道断开。
+            if (!await writeLock.WaitAsync(timeoutMs)) return;
             try
             {
                 if (p.IsConnected)
                     await PipeProtocol.WriteLineAsync(p, msg);
             }
-            catch { /* 管道断开 */ }
+            catch { /* 管道断开：整条消息未写完，但连接已断无所谓 */ }
             finally
             {
                 writeLock.Release();

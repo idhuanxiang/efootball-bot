@@ -274,6 +274,7 @@ public sealed partial class CnWeeklyScenario : IScenario
             _skipBlockedThisMatch = false; // 新一场：重新给一次跳过机会
             _goMatchAttempts = 0;
             _squadExitAttempts = 0;
+            _cnConfirmAttempts = 0; // 比赛开打才清零确认页计数（审查修复⑪）
             _rewardOpenAttempts = 0;
             _rewardCheckStage = 0;
             _needLeftFromRewardInfo = false;
@@ -314,7 +315,9 @@ public sealed partial class CnWeeklyScenario : IScenario
             _streak = 0;
             _lastScreenName = screenName;
             _attempts = 0; // 换屏即重置当前阶段预算：Flow 各屏幕的失败预算互不侵占
-            _cnConfirmAttempts = 0;
+            // _cnConfirmAttempts 不随换屏清零（审查修复⑪）：确认页分类在 HasConfirm 与
+            // 其它 cw 间抖动时清零会让 attempt 永远是1、卡在第一步 RT 进不到 A/鼠标。
+            // 只在 tick.Started（比赛真正开打）时清零。
             _log($"[国服周活动] 界面：{screenName}", LogLevel.Info);
         }
         // ---- 国服菜单侧状态机：接管国服周活动界面与阶段内无特征界面 ----

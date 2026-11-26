@@ -157,8 +157,8 @@ public static partial class MatchBrain
     public const int ConfirmEscapeStreak = 30;
     /// <summary>无特征界面（比赛/过场）连续该轮数后按 B 逃生。</summary>
     public const int UnknownEscapeStreak = 6;
-    /// <summary>比赛页连续该轮数读不到焦点词（磁贴标签被裁/OCR 漏读）就按 A 试进当前卡，
-    /// 不再无限右移（见 Decide 的 MatchHub 分支，识别走查 2026-11-18）。</summary>
+    /// <summary>历史阈值（v8.2.0 前 MatchHub 读不到焦点词时盲按 A 的轮数）。
+    /// Decide 的 MatchHub 分支已删除该盲按逻辑、改周期 B；常量保留供回归测试标记"旧阈值已不生效"（审查修复⑬）。</summary>
     public const int MatchHubFocusBlindStreak = 6;
     /// <summary>
     /// 高光挪格（上/下×1 + A）连续该轮数画面仍不变 → 判定高光读反，改用「直接 A」。

@@ -701,6 +701,17 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         }
         // 只在真正进入比赛画面后动作（HasConfirm 可能是赛中暂停/回放弹窗，不在此列）
         if (screen != MatchScreen.InMatch) return null;
+        // 熔断检查必须在 _skipRequestedForThisMatch 提前返回之前（审查修复⑦）：
+        // 重启失败会置该标记，若先返回就永远看不到连续3次失败的停用提示。
+        if (_skipFailStreak >= 3)
+        {
+            if (!_skipDisabledLogged)
+            {
+                _skipDisabledLogged = true;
+                _log("[我的联赛] 只打关键比赛：连续 3 次重启失败，本次运行停用跳过功能，改为正常打完", LogLevel.Error);
+            }
+            return null;
+        }
         if (_skipRequestedForThisMatch) return null;   // 已请求，等引擎重启
         if (!IsNormalMatchForSkip(_nextMatchIsKey, obs.Ocr)) return null;
         // 时钟必须真的走起来：刚跳进比赛画面的第一帧服务端可能还没登记这一场，
@@ -716,16 +727,7 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
             }
             return null;
         }
-        // 熔断：连续失败/超出本次运行上限 → 停用，退回正常打完（绝不让一次故障变成重启循环）
-        if (_skipFailStreak >= 3)
-        {
-            if (!_skipDisabledLogged)
-            {
-                _skipDisabledLogged = true;
-                _log("[我的联赛] 只打关键比赛：连续 3 次重启失败，本次运行停用跳过功能，改为正常打完", LogLevel.Error);
-            }
-            return null;
-        }
+        // 连续失败/超出本次运行上限 → 停用，退回正常打完（绝不让一次故障变成重启循环）
         if (_skipCount >= MaxSkipRetriesPerRun)
         {
             if (!_skipDisabledLogged)

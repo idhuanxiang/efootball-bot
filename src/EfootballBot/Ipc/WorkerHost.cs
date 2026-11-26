@@ -412,6 +412,17 @@ public sealed class WorkerHost : IDisposable
             // 上一次启停还卡着（Worker 半死）：不再排队，直接硬杀进程兜底
             try { _process?.Kill(); } catch { }
             _scenarioRunning = false;
+            // 锁超时也必须推进代际并清句柄（审查修复⑯）：否则被 kill 进程的迟到消息
+            // 仍可能匹配旧 sessionId，且 _pipe/_readCts 留到下次启动才清理。
+            Interlocked.Increment(ref _sessionId);
+            try { _readCts?.Cancel(); } catch { }
+            try { _readCts?.Dispose(); } catch { }
+            _readCts = null;
+            try { _pipe?.Dispose(); } catch { }
+            _pipe = null;
+            _process = null;
+            _remotePid = 0;   // 复查修复④：清残留 PID 反查
+            _stopAck = null;  // 清残留停止确认
             return;
         }
         try

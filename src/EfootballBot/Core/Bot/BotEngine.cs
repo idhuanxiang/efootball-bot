@@ -638,7 +638,7 @@ public sealed class BotEngine : IDisposable
                             RestartGameRequested = false;
                             bool restarted = await RestartGameAsync(token);
                             // 无论成败都要复位场景状态：成功=清旧记忆按冷启动续接；
-                            // 失败=清本场的一次性请求标记，否则这一场再也不会尝试（也不会重打）
+                            // 失败=本场保持请求标记（场景侧避免重复杀同一场），连续失败由场景自己熔断
                             // 模块自己复位（引擎只认 IModuleLifecycle 接口，不认识具体场景类型）
                             (Scenario as IModuleLifecycle)?.OnGameRestarted(restarted);
                             if (!restarted)
@@ -1142,6 +1142,23 @@ public sealed class BotEngine : IDisposable
     /// 返回 false = 重启失败（调用方退回正常比赛流程，绝不无限重启）。
     /// </summary>
     /// <returns>true = 新窗口已就绪且捕获/停靠已恢复。</returns>
+    /// <summary>重启失败但游戏仍存活时，恢复被停掉的停靠看门狗（审查修复⑥）。</summary>
+    private void ResumeParkingWatchdogAfterRestartFailure(string procName)
+    {
+        if (!_cfg.BackgroundParking.Enabled || _parker is null) return;
+        var win = GameWindow.FindFirst(procName);
+        if (win is null) return;
+        try
+        {
+            _parker.Start(win.Handle, _parkTarget);
+            LogInternal("[跳过普通比赛] 重启失败但游戏仍在，已恢复后台停靠看门狗", LogLevel.Info);
+        }
+        catch (Exception ex)
+        {
+            LogInternal($"[跳过普通比赛] 恢复后台停靠失败：{ex.Message}", LogLevel.Warn);
+        }
+    }
+
     public async Task<bool> RestartGameAsync(CancellationToken ct)
     {
         string procName = _cnSession ? CnProcessName : GameWindow.GlobalProcessName;
@@ -1174,6 +1191,8 @@ public sealed class BotEngine : IDisposable
         catch (Exception ex)
         {
             LogInternal($"[跳过普通比赛] 结束游戏进程失败：{ex.Message}", LogLevel.Error);
+            // 游戏可能仍存活但看门狗已停（复查修复⑤）：恢复停靠
+            ResumeParkingWatchdogAfterRestartFailure(procName);
             return false;
         }
         // 进程没退干净 → 不拉起新的（会两个实例抢窗口/抢手柄）
@@ -1184,6 +1203,8 @@ public sealed class BotEngine : IDisposable
             LogInternal("[跳过普通比赛] 游戏进程 15s 内未退出，放弃本次跳过" +
                 (elevated ? "。" : "——游戏可能以管理员权限运行，而本程序未提权（UIPI 拒绝结束提权进程），" +
                     "请右键本程序选「以管理员身份运行」"), LogLevel.Error);
+            // 游戏还活着：重启已停的停靠看门狗，否则窗口永久不再停靠（审查修复⑥）
+            ResumeParkingWatchdogAfterRestartFailure(procName);
             return false;
         }
         // ④ 拉起游戏

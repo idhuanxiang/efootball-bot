@@ -358,6 +358,8 @@ public static partial class MatchBrain
                 // 「实况足球在线 | X | 11.1.0.1…」）不吃任何键，按 A/B 只会把还没走完的开赛流程取消掉：
                 // 那一晚在加载页上按了 1 次 A 试探 + 15 次 B 逃生，最后被输入自检判成「手柄已死」停机。
                 // 这类页面一律等它自己走完（WatermarkWaitGraceStreak 轮后仍不动才交回常规逃生）。
+                // 水印页宽限：只等固定轮数就交回常规逃生（不能无限干等——测试与实机都要求有上限）。
+                // 注意 screenStreak 是"连续同界面帧数"，黑帧先行会提前耗尽宽限，属已知取舍。
                 if (screenStreak <= WatermarkWaitGraceStreak && InputLivenessProbe.IsWatermarkPage(ocr))
                     return MatchAction.Wait(screenStreak >= UnknownProbeAStreak ? 6000 : 3000);
                 // 过场回放（带「跳过」提示的加载/回放帧）：快按 A 跳过，别等到 4 秒的逃生节奏
@@ -378,6 +380,9 @@ public static partial class MatchBrain
                     // 用周期换招替代裸 B：非比赛 6 轮起、比赛上下文 30 轮起，每 2 轮计数一次，
                     // 第 3 次（非比赛约 10 轮）升级为「上→A→B」。水印/加载页已在前面 return，不会误触发。
                     return PeriodicBackAction(screenStreak, escapeAt, "B 键逃生", period: 2);
+                // 0 词界面一律 Wait（不盲按 B）：黑屏/捕获退化时按键只会雪上加霜，
+                // 这是有意设计（见测试「完全无感知时绝不盲按B」与 2026-10-10 实机事故），
+                // 真硬件故障由输入自检兜底停机，不需要在这里加超时逃生。
                 return MatchAction.Wait(4000);
             }
         }

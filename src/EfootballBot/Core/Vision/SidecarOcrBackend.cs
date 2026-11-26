@@ -16,6 +16,10 @@ internal sealed class SidecarOcrBackend : IOcrBackend
     private VisionSidecarClient? _client;
     private bool _owned;
     private bool _disposed;
+    // 连续重建失败计数（审查修复③）：sidecar 运行时反复崩溃时不能每帧重启进程，
+    // 超过阈值抛异常让上层 OcrRecognizer 回退到别的引擎。
+    private int _rebuildFailStreak;
+    private const int MaxRebuildFailures = 3;
 
     public SidecarOcrBackend(VisionSidecarConfig cfg)
     {
@@ -35,16 +39,34 @@ internal sealed class SidecarOcrBackend : IOcrBackend
 
         if (_client is { IsDisconnected: true })
         {
+            // 运行时崩溃也计入失败（复查修复②a）：原本只在 StartAsync 抛异常时计数，
+            // 但"启动成功→下一帧断连→重建成功"这条最常见路径 counter 恒为0、熔断永不触发。
+            _rebuildFailStreak++;
+            if (_rebuildFailStreak >= MaxRebuildFailures)
+                throw new InvalidOperationException(
+                    $"vision-svc 连续 {_rebuildFailStreak} 次断连重建，停止重试；请检查模型/D3D 环境");
             if (_owned) { try { await _client.DisposeAsync().ConfigureAwait(false); } catch { } }
             _client = null;
             _owned = false;
         }
         if (_client is null)
         {
-            _client = await VisionSidecarClient
-                .StartAsync(_cfg, hwnd: 0, width: 1920, height: 1080, ct)
-                .ConfigureAwait(false);
-            _owned = true;
+            try
+            {
+                _client = await VisionSidecarClient
+                    .StartAsync(_cfg, hwnd: 0, width: 1920, height: 1080, ct)
+                    .ConfigureAwait(false);
+                _owned = true;
+                _rebuildFailStreak = 0; // 启动成功，清零失败计数
+            }
+            catch
+            {
+                _rebuildFailStreak++;
+                if (_rebuildFailStreak >= MaxRebuildFailures)
+                    throw new InvalidOperationException(
+                        $"vision-svc 连续 {_rebuildFailStreak} 次启动失败，停止重建以避免死循环；请检查模型/D3D 环境");
+                throw; // 让本轮 OCR 失败退避，下一轮再试（但有上限）
+            }
         }
         return _client;
     }

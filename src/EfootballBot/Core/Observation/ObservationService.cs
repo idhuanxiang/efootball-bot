@@ -18,11 +18,11 @@ public sealed class ObservationService : IDisposable
     private readonly OcrRecognizer _ocr;
     private readonly AppConfig _cfg;
 
-    private FrameData? _frame;
-    private FrameData? _lastOcrFrame;
+    private volatile FrameData? _frame;
+    private volatile FrameData? _lastOcrFrame;
     private OcrResult _lastOcr = OcrResult.Empty;
     private ulong? _lastOcrHash;
-    private IReadOnlyList<OcrMaskRect>? _osdMaskRects;
+    private volatile IReadOnlyList<OcrMaskRect>? _osdMaskRects;
     private long _lastOcrTick;
     private readonly List<DateTime> _rebuildTimes = new();
 
@@ -398,6 +398,9 @@ public sealed class ObservationService : IDisposable
         if (_lastOcrHash is { } lastHash && hash == lastHash)
         {
             _lastOcrTick = Environment.TickCount64; // 视同一次 OCR 周期，维持节流节奏
+            // 同步更新帧引用（审查修复④）：否则后续节流命中会返回更旧的 _lastOcrFrame，
+            // 且 BotEngine 靠引用相等判缓存复用，静帧时每次新帧对象都会让 YOLO 白跑。
+            _lastOcrFrame = f;
             return new ObserveResult(f, _lastOcr, frameWaitMs, hashMs, 0);
         }
 

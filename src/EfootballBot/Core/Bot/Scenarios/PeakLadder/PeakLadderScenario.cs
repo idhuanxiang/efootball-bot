@@ -141,7 +141,12 @@ public sealed class PeakLadderScenario : IScenario
         bool isModuleMenu = pl is PlScreen.ActivityHome or PlScreen.HomeMatch
             or PlScreen.HomeRecommended or PlScreen.ModeSelect;
         if (isModuleMenu) _matchPlay.MarkAtMenu();
-        var tick = _matchPlay.Tick(pl is PlScreen.ActivityHome ? MatchScreen.LeaguePage : ml, now,
+        // 赛后网页层结算页（MatchSummary/RankProgress）被本模块抢先判为 pl≠None，
+        // 原本 ml 被强制 Unknown，共享记账看不到 FullTime → 只能 5 分钟超时关场、不计场次（审查修复⑫）。
+        // MatchSummary 是明确的赛后页：有比赛上下文时按 FullTime 喂给共享记账，确保正常计数。
+        MatchScreen tickScreen = pl is PlScreen.ActivityHome ? MatchScreen.LeaguePage : ml;
+        if (pl == PlScreen.MatchSummary && matchContext) tickScreen = MatchScreen.FullTime;
+        var tick = _matchPlay.Tick(tickScreen, now,
             sawKeyMatchHint: false, isHome: pl is PlScreen.ActivityHome or PlScreen.ModeSelect,
             startNote: "教练模式挂机等待比赛结束（按节奏随机点击）");
         if (tick.Started || (tick.Ended && tick.EndedTrusted))

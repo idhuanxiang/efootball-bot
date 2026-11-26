@@ -26,6 +26,9 @@ namespace EfootballBot;
 
 public partial class MainWindow
 {
+    private string? _pendingPreviewFrame;
+    private int _previewDispatchQueued;
+
     private readonly AppConfig _cfg;
     private WorkerHost? _workerHost;
     private readonly Core.Input.SmartHotkey _hotkey = new();
@@ -183,7 +186,18 @@ public partial class MainWindow
             if (!string.IsNullOrEmpty(evidence))
                 TxtScreen.Text += $"  {evidence}";
         });
-        _workerHost.PreviewReceived += pngB64 => Dispatcher.BeginInvoke(() => ShowPreviewPng(pngB64));
+        _workerHost.PreviewReceived += pngB64 =>
+        {
+            // 只保留最新帧（审查修复）：UI 繁忙时不堆积几十帧 base64，恢复后直接显示最新一帧
+            global::System.Threading.Interlocked.Exchange(ref _pendingPreviewFrame, pngB64);
+            if (global::System.Threading.Interlocked.Exchange(ref _previewDispatchQueued, 1) != 0) return;
+            Dispatcher.BeginInvoke(() =>
+            {
+                global::System.Threading.Interlocked.Exchange(ref _previewDispatchQueued, 0);
+                var latest = global::System.Threading.Interlocked.Exchange(ref _pendingPreviewFrame, null);
+                if (latest is not null) ShowPreviewPng(latest);
+            });
+        };
         _workerHost.Exited += reason => Dispatcher.BeginInvoke(() =>
         {
             // 若正在启动/切换/手动停止或新会话已在运行，忽略上一代迟到的退出回调
@@ -443,9 +457,17 @@ public partial class MainWindow
             // 否则上一次操作可能永远占着启停锁，之后每次点开始都石沉大海。
             if (ex is TimeoutException)
             {
-                try { _workerHost?.Dispose(); } catch { }
+                // 启动超时：WaitAsync 只是放弃等待，底层 StartAsync 仍在另一线程跑。
+                // 立即 Dispose 可能在 Process.Start 与 _process 赋值之间错过进程，留下孤儿 Worker（审查修复⑭）。
+                // 改为延迟清理：等宽限期让在途 StartAsync 走完（它会自行赋值 _process），再统一回收。
+                var hostToClean = _workerHost;
                 _workerHost = null;
-                AppendLog("[启动] 启动超时：已重置挂机工作进程，请稍后重新点「开始」。", LogLevel.Warn);
+                _ = Task.Run(async () =>
+                {
+                    try { await global::System.Threading.Tasks.Task.Delay(3000); } catch { }
+                    try { hostToClean?.Dispose(); } catch { }
+                });
+                AppendLog("[启动] 启动超时：已放弃等待并安排延后清理工作进程，请稍后重新点「开始」。", LogLevel.Warn);
             }
             // Worker 秒退/连不上时的高频原因提示（2026-10-13 用户案例：Worker 反复启动即死，
             // 日志只见会话头）。这类环境的日志文件里往往查不到细节，先给用户可自查的动作。
