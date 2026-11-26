@@ -1017,59 +1017,93 @@ public sealed class AppConfig
     {
         if (LoadFailed)
         {
-            // 只读降级：配置加载失败时内存里是默认值，写回等于清空用户设置。
-            // 保留原文件，让用户下次启动仍能加载到自己的配置。
-            try
-            {
-                global::EfootballBot.Core.Logging.FileLogger.Instance.Write(
-                    "配置处于只读降级（启动时读取失败），本次不写回 config.json。",
-                    LogLevel.Warn);
-            }
-            catch { }
+            LogReadOnlySkip("本次不写回 config.json。");
             return;
         }
-        void WriteCore()
-        {
-            string target = string.IsNullOrWhiteSpace(path) ? ConfigPath : path;
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            // 原子替换：进程+GUID 唯一临时文件，防止 GUI 与 Worker 并发 Save 时互踩同一 .tmp
-            var tmp = $"{target}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
-            try
-            {
-                File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOpts));
-                for (int attempt = 0; attempt < 3; attempt++)
-                {
-                    try
-                    {
-                        File.Move(tmp, target, overwrite: true);
-                        break;
-                    }
-                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 2)
-                    {
-                        Thread.Sleep(50 * (attempt + 1));
-                    }
-                }
-            }
-            finally
-            {
-                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
-            }
-        }
+        string target = string.IsNullOrWhiteSpace(path) ? ConfigPath : path;
         if (string.IsNullOrWhiteSpace(path))
         {
-            if (!WithConfigMutex(WriteCore))
+            if (!WithConfigMutex(() => WriteCore(target)))
             {
-                try
-                {
-                    global::EfootballBot.Core.Logging.FileLogger.Instance.Write(
-                        "Save 等待跨进程配置锁超时（3s），本次未写盘。", LogLevel.Warn);
-                }
-                catch { }
+                LogMutexTimeout("Save");
             }
         }
         else
         {
-            WriteCore();
+            WriteCore(target);
         }
+    }
+
+    /// <summary>
+    /// 在跨进程互斥锁内回读磁盘上的跨进程共享字段（DisabledPadDevs / GamePaths）并原子写回，
+    /// 彻底消除锁外 TryLoad 再加锁 Save 导致的 TOCTOU 覆盖竞态。
+    /// </summary>
+    public void SavePreservingCrossProcessFields()
+    {
+        if (LoadFailed)
+        {
+            LogReadOnlySkip("本次不写回 config.json。");
+            return;
+        }
+        if (!WithConfigMutex(() =>
+        {
+            var fresh = LoadFrom(ConfigPath);
+            if (!fresh.LoadFailed)
+            {
+                HidHide.DisabledPadDevs = fresh.HidHide.DisabledPadDevs;
+                GamePaths = fresh.GamePaths;
+            }
+            WriteCore(ConfigPath);
+        }))
+        {
+            LogMutexTimeout("SavePreservingCrossProcessFields");
+        }
+    }
+
+    private void WriteCore(string target)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        // 原子替换：进程+GUID 唯一临时文件，防止 GUI 与 Worker 并发 Save 时互踩同一 .tmp
+        var tmp = $"{target}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOpts));
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    File.Move(tmp, target, overwrite: true);
+                    break;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 2)
+                {
+                    Thread.Sleep(50 * (attempt + 1));
+                }
+            }
+        }
+        finally
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+        }
+    }
+
+    private static void LogReadOnlySkip(string tail)
+    {
+        try
+        {
+            global::EfootballBot.Core.Logging.FileLogger.Instance.Write(
+                $"配置处于只读降级（启动时读取失败），{tail}", LogLevel.Warn);
+        }
+        catch { }
+    }
+
+    private static void LogMutexTimeout(string op)
+    {
+        try
+        {
+            global::EfootballBot.Core.Logging.FileLogger.Instance.Write(
+                $"{op} 等待跨进程配置锁超时（3s），本次未写盘。", LogLevel.Warn);
+        }
+        catch { }
     }
 }

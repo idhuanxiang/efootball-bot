@@ -163,7 +163,7 @@ public sealed partial class CnWeeklyScenario : IScenario
             bool dismissable = obs.Ocr.ContainsJoined("取消") || obs.Ocr.ContainsJoined("关闭");
             _log("[国服周活动] 退场途中弹窗：A 确认（可能是奖励领取）", LogLevel.Info);
             if (dismissable) await _engine.Pad.Dpad(PadDir.Up);
-            await _engine.Pad.Confirm();
+            await EnterAsync(obs, _attempts, "国服进入/确认");
             return 2200;
         }
         if (++_attempts > 8) { _pendingFullCardSig = ""; SetPhase(CwPhase.Flow); }

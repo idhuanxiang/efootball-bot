@@ -18,7 +18,7 @@ public partial class MainWindow
     /// <summary>主热键：运行中第一次按=暂停；暂停中再按=彻底停止。</summary>
     private void Hotkey_PauseStop_Triggered()
     {
-        if (_starting || _stopping || _workerHost is not { ScenarioRunning: true }) return;
+        if (_starting || _stopping || _manualStopBusy || _workerHost is not { ScenarioRunning: true }) return;
         if (_paused)
         {
             // 停止路径也要节流（审查修复⑫）：双击主热键时第一次暂停、第二次原本会
@@ -38,7 +38,7 @@ public partial class MainWindow
     /// <summary>恢复热键：仅在暂停态才恢复，未暂停时忽略（审查修复⑪）。</summary>
     private void Hotkey_Resume_Triggered()
     {
-        if (_starting || _stopping || _workerHost is not { ScenarioRunning: true }) return;
+        if (_starting || _stopping || _manualStopBusy || _workerHost is not { ScenarioRunning: true }) return;
         if (!_paused) return; // 没暂停就不动，避免恢复热键误触发把运行中的挂机暂停
         AppendLog($"[热键] 已通过「恢复热键」请求继续挂机。", LogLevel.Success);
         _ = TogglePauseAsync(skipThrottle: true);
@@ -92,12 +92,25 @@ public partial class MainWindow
         if (host is null) return;
         _stopping = true;
         _hotkey.Unregister();
+
+        // ① 手柄总闸（≤16ms）：直接写共享内存撤 ACTIVE + 清零，不等 Worker 响应
+        if (Core.Input.PadPanicGate.Panic())
+            AppendLog("[停止] 手柄总闸已拉下：游戏侧即刻松手，Worker 随后收尾。", LogLevel.Info);
+
         AppendLog("[停止] 正在停止挂机并释放手柄…", LogLevel.Info);
         RefreshRunButtons(); // _stopping=true 期间禁用所有启动/切换/暂停按钮，防止在 StopAsync 等待期间重入
         try
         {
             await host.StopAsync();
+            // Worker 收尾期间可能又写了一次状态：补一发，别让最后一拍按键留在游戏里
+            Core.Input.PadPanicGate.Panic();
             MuteGameOnScenarioStopped(); // 停挂机即恢复游戏声音（必须在按钮恢复可点之前，防止误取消新会话静音）
+            if (host.ScenarioRunning)
+            {
+                AppendLog("[停止] 停止后 Worker 仍报告「场景运行中」：强制回收工作进程。", LogLevel.Warn);
+                try { host.Dispose(); } catch { }
+                if (ReferenceEquals(_workerHost, host)) _workerHost = null;
+            }
             AppendLog("[停止] 挂机已停止，手柄与窗口状态已恢复。", LogLevel.Info);
         }
         catch (System.Exception ex)

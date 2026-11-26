@@ -31,8 +31,12 @@ public static class ThemeManager
     public const string WorldFluent = "Fluent";
     public static readonly string[] Worlds = [WorldGlass, WorldFluent];
 
+#if DEBUG
     private static bool _validated;
+#endif
+    private static bool _wpfUiDarkApplied;
     private static string _activeTheme = Obsidian;
+    private static readonly Lazy<Brush> _cachedNoiseBrush = new(CreateNoiseBrush);
 
     /// <summary>规范化主题名称；旧配置（Dark / Light / DeepBlue / Amber）及未知值回落到黑曜极夜。</summary>
     public static string NormalizeTheme(string? name)
@@ -78,6 +82,7 @@ public static class ThemeManager
         foreach (var key in new[] { "NavSectionBg", "TrackBg", "TabTrackBg" })
             colors[key] = colors["TrackBg"];
 
+#if DEBUG
         if (!_validated && ThemePalette.Validate() is { Length: > 0 } problems)
         {
             _validated = true;
@@ -90,40 +95,56 @@ public static class ThemeManager
             }
             catch { /* 日志未初始化：忽略 */ }
         }
+#endif
 
         var app = Application.Current.Resources;
         foreach (var (key, hex) in colors)
         {
             var color = ParseColor(hex, key);
-            app[key] = new SolidColorBrush(color);
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            app[key] = brush;
             app[key + "Color"] = color;
         }
 
         // ---- 世界级复合资源（渐变色块 / 投影 / 主题辉光 / 噪点）----
         app["GlassFill"] = BuildGradient(colors, "GlassFillTop", "GlassFillMid", "GlassFillBottom", 0.0, 0.16, 1.0);
         app["PrimaryBtnFill"] = BuildGradient(colors, "PrimaryBtnFrom", "PrimaryBtnMid", "PrimaryBtnTo", 0.0, 0.55, 1.0);
-        app["CardShadowEffect"] = glass
-            ? new DropShadowEffect { Color = Colors.Black, BlurRadius = 16, ShadowDepth = 4, Opacity = 0.36 }
-            : new DropShadowEffect { Color = Colors.Black, BlurRadius = 0, ShadowDepth = 0, Opacity = 0 };
+        if (glass)
+        {
+            var cardShadow = new DropShadowEffect { Color = Colors.Black, BlurRadius = 16, ShadowDepth = 4, Opacity = 0.36 };
+            cardShadow.Freeze();
+            app["CardShadowEffect"] = cardShadow;
+        }
+        else
+        {
+            app["CardShadowEffect"] = null;
+        }
 
         var accentColor = ParseColor(colors.GetValueOrDefault("Accent"), "Accent");
-        app["AccentShadow"] = new DropShadowEffect
+        var accentShadow = new DropShadowEffect
         {
             Color = Color.FromArgb(0x55, accentColor.R, accentColor.G, accentColor.B),
             BlurRadius = 18,
             ShadowDepth = 0,
             Opacity = 0.32,
         };
-        app["DitherNoiseBrush"] = glass ? CreateNoiseBrush() : Brushes.Transparent;
+        accentShadow.Freeze();
+        app["AccentShadow"] = accentShadow;
+        app["DitherNoiseBrush"] = glass ? _cachedNoiseBrush.Value : Brushes.Transparent;
 
-        // 5 套全部为暗黑主题
-        try
+        // 5 套全部为暗黑主题：首次应用即可，避免每次切主题重复触发全库资源重刷
+        if (!_wpfUiDarkApplied)
         {
-            ApplicationThemeManager.Apply(ApplicationTheme.Dark);
-        }
-        catch
-        {
-            // 主题服务尚未初始化时忽略：自定义 Token 仍然生效
+            try
+            {
+                ApplicationThemeManager.Apply(ApplicationTheme.Dark);
+                _wpfUiDarkApplied = true;
+            }
+            catch
+            {
+                // 主题服务尚未初始化时忽略：自定义 Token 仍然生效
+            }
         }
     }
 
@@ -213,6 +234,8 @@ public static class ThemeManager
 
         if (IsGlassWorld(world) && want is WindowBackdropType.Mica or WindowBackdropType.Auto)
             want = WindowBackdropType.Acrylic;
+        else if (!IsGlassWorld(world) && want == WindowBackdropType.Acrylic)
+            want = WindowBackdropType.Mica;
 
         byte shellAlpha = IsGlassWorld(world)
             ? (_activeTheme == Obsidian ? (byte)0x8C : (byte)0x9A)
@@ -251,8 +274,9 @@ public static class ThemeManager
     public static Brush GetBrush(string themeName, string token, string? world = null)
     {
         var colors = ThemePalette.For(themeName, world);
-        return colors.TryGetValue(token, out var hex)
-            ? new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex))
-            : Brushes.Transparent;
+        if (!colors.TryGetValue(token, out var hex)) return Brushes.Transparent;
+        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
+        brush.Freeze();
+        return brush;
     }
 }

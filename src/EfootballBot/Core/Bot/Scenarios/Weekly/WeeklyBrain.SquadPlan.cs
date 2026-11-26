@@ -30,7 +30,11 @@ public static partial class WeeklyBrain
     /// </summary>
     public static bool IsTeamEffortHome(OcrResult ocr)
         => ocr.ContainsJoined("前往比赛") && ocr.ContainsJoined("赛程") &&
-           (ocr.ContainsJoined("下一场比赛") || ocr.ContainsJoined("赛事等级"));
+           (ocr.ContainsJoined("下一场比赛") || ocr.ContainsJoined("赛事等级") ||
+            IsActivityCompleted(ocr));
+
+    public static bool IsActivityCompleted(OcrResult ocr)
+        => ocr.ContainsJoined("活动已完成") || ocr.ContainsJoined("收件箱领取奖励");
 
     /// <summary>
     /// 阵容挑战入场弹窗「球员卡限制 / OK」判定（2026-11-19 用户实机帧）：标题行固定文案

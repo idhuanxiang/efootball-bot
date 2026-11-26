@@ -168,8 +168,42 @@ public static class UpdateApplier
         string patchPath = Path.Combine(tempDir, patchName);
         try
         {
-            // 补丁本体不做哈希校验：即使被篡改，产物 SHA256 也必然对不上，等价于「下载失败」
-            await DownloadAsync(urls, patchPath, 0, progress, expectedSha256: null);
+            // 若主源 R2 存在且明确返回 404（非网络故障），说明本次跨版本跳升未生成差量包，
+            // 直接回退整包下载，避免再遍历 5 个 GitHub 镜像白耗 30+ 秒。
+            var r2Urls = urls.Where(u => u.Contains(".r2.dev", StringComparison.OrdinalIgnoreCase)).ToList();
+            if (r2Urls.Count > 0)
+            {
+                bool r2NotFound = false;
+                try
+                {
+                    await DownloadAsync(r2Urls, patchPath, 0, progress: null, expectedSha256: null);
+                }
+                catch (HttpRequestException hre) when (hre.StatusCode == global::System.Net.HttpStatusCode.NotFound)
+                {
+                    r2NotFound = true;
+                }
+                catch
+                {
+                    // R2 网络异常则继续走其余镜像兜底
+                }
+                if (r2NotFound)
+                {
+                    Log($"主源无此版本差量补丁（{patchName} 404），直接走整包下载");
+                    try { File.Delete(patchPath); } catch { }
+                    return null;
+                }
+                if (!File.Exists(patchPath) || new FileInfo(patchPath).Length == 0)
+                {
+                    var fallbackUrls = urls.Where(u => !u.Contains(".r2.dev", StringComparison.OrdinalIgnoreCase)).ToList();
+                    if (fallbackUrls.Count == 0) return null;
+                    await DownloadAsync(fallbackUrls, patchPath, 0, progress: null, expectedSha256: null);
+                }
+            }
+            else
+            {
+                // 补丁本体不做哈希校验：即使被篡改，产物 SHA256 也必然对不上，等价于「下载失败」
+                await DownloadAsync(urls, patchPath, 0, progress: null, expectedSha256: null);
+            }
         }
         catch (Exception ex)
         {
@@ -324,7 +358,9 @@ public static class UpdateApplier
     internal static void SwapExe(string exePath, string newExePath)
     {
         string oldPath = OldPathFor(exePath);
-        try { File.Delete(oldPath); } catch { /* 无残留或被占用（上轮备份待清）则继续 */ }
+        try { if (File.Exists(oldPath)) File.Delete(oldPath); } catch { /* 无残留或被占用（上轮备份待清）则继续 */ }
+        if (File.Exists(oldPath))
+            oldPath = $"{exePath}.{Environment.TickCount64}{OldSuffix}";
 
         File.Move(exePath, oldPath);
         try { File.SetLastWriteTimeUtc(oldPath, DateTime.UtcNow); } catch { }
@@ -431,6 +467,18 @@ public static class UpdateApplier
                     IsOlderThan(File.GetLastWriteTimeUtc(oldPath), nowUtc, TimeSpan.FromDays(1)))
                 {
                     try { File.Delete(oldPath); } catch { }
+                }
+                string? exeDir = Path.GetDirectoryName(exePath);
+                string exeName = Path.GetFileName(exePath);
+                if (!string.IsNullOrEmpty(exeDir))
+                {
+                    foreach (string staleOld in Directory.EnumerateFiles(exeDir, $"{exeName}.*{OldSuffix}"))
+                    {
+                        if (IsOlderThan(File.GetLastWriteTimeUtc(staleOld), nowUtc, TimeSpan.FromDays(1)))
+                        {
+                            try { File.Delete(staleOld); } catch { }
+                        }
+                    }
                 }
             }
         }

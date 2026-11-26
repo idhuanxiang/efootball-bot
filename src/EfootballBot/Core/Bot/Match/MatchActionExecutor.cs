@@ -27,12 +27,12 @@ public static class MatchActionExecutor
     /// 下×4 到底多按无害（到头停住），是唯一可靠把焦点从任意位置压到底部卡行的方式。
     /// </summary>
     public static async Task EnterMatchFromMainMenuAsync(
-        BotEngine engine, Observation obs, Action<string, LogLevel> log, string module)
+        BotEngine engine, Observation obs, Action<string, LogLevel> log, string module, CancellationToken ct = default)
     {
         await engine.Pad.DpadRepeat(PadDir.Down, 4); // 饱和下按到底部卡行（到底停住，防下少了按错）
         Observation navObs = obs;
-        try { navObs = await engine.ObserveAsync(CancellationToken.None, forceOcr: true); }
-        catch { navObs = obs; } // 观察失败用手头帧，导航配方本身不依赖 OCR
+        try { navObs = await engine.ObserveAsync(ct, forceOcr: true); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { navObs = obs; } // 观察失败用手头帧，导航配方本身不依赖 OCR
         if (HubTileLocator.FindMainMenuMatchOffset(navObs.Ocr) is int matchOff)
         {
             string rightPart = matchOff > 0 ? $"→右×{matchOff}" : "";
@@ -76,7 +76,7 @@ public static class MatchActionExecutor
                     if (await onEnterMatch() is int enterWait) return enterWait;
                     break;
                 }
-                await EnterMatchFromMainMenuAsync(engine, obs, log, module);
+                await EnterMatchFromMainMenuAsync(engine, obs, log, module, ct);
                 break;
 
             case MatchActionKind.PadConfirm:

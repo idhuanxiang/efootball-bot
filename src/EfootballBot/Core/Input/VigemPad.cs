@@ -119,8 +119,14 @@ public sealed class VigemPad : IVirtualPad
         {
             lock (_ioLock)
             {
-                // 等 slot0 宽限期间可能已被 Dispose：这里再查一次，避免在已释放对象上新建 client
+                // 等 slot0 宽限期间可能已被 Dispose 或并发 Connect：锁内二次校验
                 ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_connected) return;
+                if (_pad is not null)
+                {
+                    try { _pad.Disconnect(); } catch { }
+                    _pad = null;
+                }
                 gen = ++_connectGen;
                 _client ??= new ViGEmClient();
                 pad = _client.CreateXbox360Controller();
@@ -143,7 +149,11 @@ public sealed class VigemPad : IVirtualPad
         UserIndex = -1;
         for (int attempt = 0; attempt < 12 && UserIndex < 0; attempt++)
         {
-            if (Volatile.Read(ref _connectGen) != gen) return;
+            if (Volatile.Read(ref _connectGen) != gen)
+            {
+                try { pad.Disconnect(); } catch { }
+                return;
+            }
             Thread.Sleep(attempt == 0 ? 100 : 200);
             for (int i = 0; i < 4; i++)
                 if (!before.Contains(i) && PadBackendProbe.IsSlotOccupied(i)) { UserIndex = i; break; }

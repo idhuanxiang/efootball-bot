@@ -176,14 +176,25 @@ public sealed class Pad
     /// <summary>同时受外部 ct 与暂停令牌约束的延时，确保暂停时能立即打断等待。</summary>
     private async Task DelayWithPauseAsync(int ms, CancellationToken ct)
     {
-        var act = ActionCt;
-        if (!ct.CanBeCanceled || ct == _sessionCt)
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            await Task.Delay(ms, act);
-            return;
+            var act = ActionCt;
+            try
+            {
+                if (!ct.CanBeCanceled || ct == _sessionCt)
+                {
+                    await Task.Delay(ms, act);
+                    return;
+                }
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, act);
+                await Task.Delay(ms, linked.Token);
+                return;
+            }
+            catch (ObjectDisposedException) when (attempt == 0)
+            {
+                // RebuildLinked 并发释放旧 CTS 时重试一次取最新 ActionCt
+            }
         }
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, act);
-        await Task.Delay(ms, linked.Token);
     }
 
     /// <summary>结算 / 奖励页：缓慢连按 A。</summary>

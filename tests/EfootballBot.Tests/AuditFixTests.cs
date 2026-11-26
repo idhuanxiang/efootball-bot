@@ -7,7 +7,9 @@ using EfootballBot.Core.Input;
 using EfootballBot.Core.Logging;
 using EfootballBot.Core.System;
 using EfootballBot.Core.Tools;
+using EfootballBot.Core.Vision;
 using EfootballBot.Core.Vision.Sidecar;
+using EfootballBot.Core.Vision.Yolo;
 using Xunit;
 
 namespace EfootballBot.Tests;
@@ -222,5 +224,131 @@ public class AuditFixTests
         Assert.Throws<ArgumentException>(() => ring.Publish(new FrameData(new byte[8], 4, 4, 0)));
         long seq = ring.Publish(new FrameData(new byte[64], 4, 4, 0));
         Assert.Equal(2L, seq);
+    }
+
+    [Fact]
+    public void YoloDetector_NonMaxSuppression_GreedyDescendingAndSuppressesOverlap()
+    {
+        Assert.Empty(YoloDetector.NonMaxSuppression(Array.Empty<(float, float, float, float, float, int)>(), 0.45f));
+
+        var boxes = new List<(float, float, float, float, float, int)>
+        {
+            (0, 0, 10, 10, 0.50f, 0),    // overlaps high-score box
+            (1, 1, 10, 10, 0.90f, 0),    // highest
+            (50, 50, 60, 60, 0.70f, 1),  // disjoint
+        };
+
+        var kept = YoloDetector.NonMaxSuppression(boxes, 0.45f);
+        Assert.Equal(2, kept.Count);
+        Assert.Equal(0.90f, kept[0].Score);
+        Assert.Equal(0.70f, kept[1].Score);
+    }
+
+    [Fact]
+    public unsafe void ImageScaling_ResizeBilinearBgraToRgbLetterbox_ProducesExpectedRgbAndPadding()
+    {
+        const int srcW = 4, srcH = 2, dstW = 8, dstH = 8;
+        byte[] src = new byte[srcW * srcH * 4];
+        for (int i = 0; i < src.Length; i += 4)
+        {
+            src[i + 0] = 10; // B
+            src[i + 1] = 20; // G
+            src[i + 2] = 30; // R
+            src[i + 3] = 255;
+        }
+
+        byte[] dst = new byte[dstW * dstH * 3];
+        int newW, newH, padX, padY;
+        fixed (byte* pSrc = src)
+        fixed (byte* pDst = dst)
+        {
+            ImageScaling.ResizeBilinearBgraToRgbLetterbox(
+                pSrc, srcW, srcH, pDst, dstW, dstH, dstW * 3, 114,
+                out newW, out newH, out padX, out padY);
+        }
+
+        Assert.Equal(8, newW);
+        Assert.Equal(4, newH);
+        Assert.Equal(0, padX);
+        Assert.Equal(2, padY);
+
+        // Top border row is 114
+        Assert.Equal(114, dst[0]);
+        Assert.Equal(114, dst[dstW * 3 - 1]);
+
+        // Content row (y = 2) is RGB (30, 20, 10)
+        int row2 = 2 * dstW * 3;
+        Assert.Equal(30, dst[row2 + 0]);
+        Assert.Equal(20, dst[row2 + 1]);
+        Assert.Equal(10, dst[row2 + 2]);
+    }
+
+    [Fact]
+    public void DiagReporter_RedactSecrets_MasksAdditionalWebhooksQueryParamsAndUserPaths()
+    {
+        string raw = "bark=https://api.day.app/mySecretKey/title "
+                   + "tg=https://api.telegram.org/bot123456:ABC/sendMessage "
+                   + "sc=https://sctapi.ftqq.com/SCT999.send "
+                   + "pp=http://www.pushplus.plus/send?token=abc123&msg=hi "
+                   + "mon=http://192.168.1.2:8080/api/stream?t=myMonToken "
+                   + "path=C:\\Users\\Alice\\Desktop\\test.txt";
+        string redacted = DiagReporter.RedactSecrets(raw);
+
+        Assert.DoesNotContain("mySecretKey", redacted);
+        Assert.DoesNotContain("123456:ABC", redacted);
+        Assert.DoesNotContain("SCT999", redacted);
+        Assert.DoesNotContain("abc123", redacted);
+        Assert.DoesNotContain("myMonToken", redacted);
+        Assert.DoesNotContain("Alice", redacted);
+        Assert.Contains(@"C:\Users\***\Desktop\test.txt", redacted);
+    }
+
+    [Fact]
+    public void PadProxyAssets_IsOwnProxyDll_DetectsMarkerAndIgnoresOthers()
+    {
+        string tmpDir = Path.Combine(Path.GetTempPath(), $"efootball_proxy_test_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        try
+        {
+            string own = Path.Combine(tmpDir, "own.dll");
+            string other = Path.Combine(tmpDir, "other.dll");
+            File.WriteAllBytes(own, System.Text.Encoding.ASCII.GetBytes("MZ...xinput_proxy.ini..."));
+            File.WriteAllBytes(other, System.Text.Encoding.ASCII.GetBytes("MZ...genuine_xinput1_3..."));
+
+            Assert.True(PadProxyAssets.IsOwnProxyDll(own));
+            Assert.False(PadProxyAssets.IsOwnProxyDll(other));
+            Assert.False(PadProxyAssets.IsOwnProxyDll(Path.Combine(tmpDir, "missing.dll")));
+        }
+        finally
+        {
+            try { Directory.Delete(tmpDir, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void UpdateApplier_SwapExe_FallsBackWhenDefaultOldLocked()
+    {
+        string tmpDir = Path.Combine(Path.GetTempPath(), $"efootball_swap_test_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tmpDir);
+        try
+        {
+            string exe = Path.Combine(tmpDir, "EfootballBot.exe");
+            string next = Path.Combine(tmpDir, "EfootballBot.new.exe");
+            string lockedOld = UpdateApplier.OldPathFor(exe);
+            File.WriteAllText(exe, "old-v1");
+            File.WriteAllText(next, "new-v2");
+            File.WriteAllText(lockedOld, "locked-old");
+
+            using var lockStream = new FileStream(lockedOld, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            UpdateApplier.SwapExe(exe, next);
+
+            Assert.Equal("new-v2", File.ReadAllText(exe));
+            Assert.False(File.Exists(next));
+            Assert.Single(Directory.GetFiles(tmpDir, "EfootballBot.exe.*.old"));
+        }
+        finally
+        {
+            try { Directory.Delete(tmpDir, recursive: true); } catch { }
+        }
     }
 }

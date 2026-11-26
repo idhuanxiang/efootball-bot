@@ -17,7 +17,43 @@ namespace EfootballBot.Core.Bot.Scenarios.Weekly;
 
 public sealed partial class WeeklyEventScenario : IScenario
 {
-    // 本文件小活动：阵容挑战 —— 「比赛计划失效」修复（PlanStep 状态机与 _plan* 字段）。
+    // 本文件小活动：阵容挑战 —— 「活动已完成」退出 + 「比赛计划失效」修复（PlanStep 状态机与
+    // _plan* / _completed* 字段）。
+
+    // ---------------- 完成态「活动已完成」→ 退出不再开赛（2026-11-27 用户国际服实机） ----------------
+
+    /// <summary>完成态主页连续 B 退不出去的上限；超了就直接收尾（接力/停止），绝不在主页上按 A。</summary>
+    private const int MaxCompletedRetreats = 5;
+    /// <summary>完成态主页累计 B 次数（重新从活动列表进活动时清零）。</summary>
+    private int _completedRetreats;
+
+    /// <summary>
+    /// 阵容挑战「活动已完成」退出（2026-11-27 用户国际服实机规则：**判定已完成就退出即可**）。
+    /// 实机帧：赛程三场全部打完（1-0 / 2-0 / 1-0）、三段奖励全勾，主页中部写着
+    /// 「活动已完成 / 不要忘记从收件箱领取奖励哦。」——此时游戏不再接受开赛（该版主页已没有
+    /// 「下一场比赛」行）。旧逻辑把这一页漏成 WkScreen.None + HasConfirm（底栏 B 返回的蓝框），
+    /// 走「弹窗推进」盲按 A（= 前往比赛），或按底栏红点去修比赛计划，两种都在完成态上原地空转。
+    /// 处理：拉黑当前槽位 → B 回活动列表换下一个活动（列表上全部绿勾/已拉黑时由
+    /// <see cref="FinishAllEventsAsync"/> 按配置接力或停止挂机，即用户说的「退出」）。
+    /// B 连续 <see cref="MaxCompletedRetreats"/> 次仍停在完成态 = 退不出去，直接收尾；
+    /// ★绝不对这一页按 A——活动主页上的 A 就是「前往比赛」。
+    /// </summary>
+    private async Task<int> RetireCompletedEventAsync()
+    {
+        if (_completedRetreats >= MaxCompletedRetreats)
+        {
+            _log($"[周活动·阵容挑战] 完成态主页连续 B {MaxCompletedRetreats} 次未退出，按用户规则直接结束本周活动（接力/停止）", LogLevel.Warn);
+            return await FinishAllEventsAsync();
+        }
+        _completedRetreats++;
+        if (_doneSlots.Add(_slotIndex))
+            _log($"[周活动·阵容挑战] 主页「活动已完成」（赛程已全部打完），退出该活动不再开赛：拉黑槽位 {_slotIndex} → B 回活动列表", LogLevel.Success);
+        else
+            _log($"[周活动·阵容挑战] 完成态主页（槽位 {_slotIndex} 已拉黑），B 退出活动（第 {_completedRetreats} 次）", LogLevel.Debug);
+        SetPhase(WkPhase.Retreating);
+        await _engine.Pad.Back();
+        return 2200;
+    }
 
     /// <summary>比赛计划失效修复的子步骤（<see cref="WkPhase.MatchPlanSetup"/> 内部，屏幕驱动）。</summary>
     private enum PlanStep
@@ -30,6 +66,8 @@ public sealed partial class WeeklyEventScenario : IScenario
         Lineup,
         /// <summary>选项弹窗：下×1 选中「重视能力值」→ A 下一步；确认后 B 完成退出。</summary>
         Options,
+        /// <summary>自动配置完成后已按 B：等退出比赛计划编辑页并回到活动主页核验红点。</summary>
+        Exiting,
     }
 
     /// <summary>
@@ -69,6 +107,7 @@ public sealed partial class WeeklyEventScenario : IScenario
             return 0;
         }
         _planFixAttempts++;
+        _planExitAttempts = 0;
         _log($"[周活动·阵容挑战] 底栏「比赛计划」有红色叹号（第 {_planFixAttempts} 次修复）：Y 打开比赛计划", LogLevel.Info);
         SetPhase(WkPhase.MatchPlanSetup);
         _planStep = PlanStep.Waiting; // Y 已按：等比赛计划页/弹窗
@@ -83,14 +122,20 @@ public sealed partial class WeeklyEventScenario : IScenario
     private async Task<int> HandleMatchPlanSetupAsync(WkScreen wk, MatchScreen ml, Observation obs)
     {
         if (wk == WkScreen.EntryPopup || ml == MatchScreen.HasConfirm)
+        {
+            if (++_attempts > 8) return await AbandonPlanFixAsync("比赛计划弹窗多次未关闭");
             return await HandlePopupAsync(obs, "比赛计划弹窗");
+        }
         return _planStep switch
         {
             PlanStep.Lineup => await HandlePlanLineupAsync(wk, obs),
             PlanStep.Options => await HandlePlanOptionsAsync(wk, obs),
+            PlanStep.Exiting => await HandlePlanExitingAsync(wk, ml, obs),
             _ => await HandlePlanWaitingAsync(wk, ml, obs),
         };
     }
+
+    private int _planExitAttempts;
 
     /// <summary>按完 Y（或关掉弹窗）之后：等比赛计划页出现；已回到主页则用红点探针验收。</summary>
     private async Task<int> HandlePlanWaitingAsync(WkScreen wk, MatchScreen ml, Observation obs)
@@ -99,6 +144,7 @@ public sealed partial class WeeklyEventScenario : IScenario
         {
             _planStep = PlanStep.Lineup;
             _attempts = 0;
+            _planBlindStep = 0;
             return 900;
         }
         if (wk == WkScreen.AutoConfigOptions)
@@ -235,21 +281,67 @@ public sealed partial class WeeklyEventScenario : IScenario
         if (wk == WkScreen.SquadLineupEdit)
         {
             _log("[周活动·阵容挑战] 自动配置已执行（阵容已重排）：B 完成退出比赛计划", LogLevel.Success);
-            _planStep = PlanStep.Waiting;
+            _planStep = PlanStep.Exiting;
+            _planExitAttempts = 0;
             _attempts = 0;
             await _engine.Pad.Back();
             return 2800;
         }
-        if (wk == WkScreen.TeamEffortHome) { _planStep = PlanStep.Waiting; _attempts = 0; return 900; }
+        if (wk == WkScreen.TeamEffortHome) { _planStep = PlanStep.Exiting; _planExitAttempts = 0; _attempts = 0; return 900; }
         if (++_attempts > 8) return await AbandonPlanFixAsync($"选项确认后未回到编辑页（{wk}）");
         return 1000;
+    }
+
+    /// <summary>自动配置完成后已按 B：重试退出比赛计划页，回到主页用红点探针验收。</summary>
+    private async Task<int> HandlePlanExitingAsync(WkScreen wk, MatchScreen ml, Observation obs)
+    {
+        if (wk == WkScreen.SquadLineupEdit)
+        {
+            if (++_planExitAttempts <= 3)
+            {
+                _log($"[周活动·阵容挑战] 仍在比赛计划页，重试 B 退回主页（{_planExitAttempts}/3）", LogLevel.Info);
+                await _engine.Pad.Back();
+                return 2000;
+            }
+            _planExitAttempts = 0;
+            return await AbandonPlanFixAsync("自动配置后 B 退不出比赛计划页");
+        }
+        if (wk == WkScreen.TeamEffortHome)
+        {
+            _planExitAttempts = 0;
+            if (WeeklyBrain.DetectPlanBadge(obs.Frame, obs.Ocr))
+            {
+                _log("[周活动·阵容挑战] 返回后比赛计划仍有红色叹号，走总尝试计数复修", LogLevel.Warn);
+                return await BeginMatchPlanFixAsync();
+            }
+            _log("[周活动·阵容挑战] 比赛计划红色叹号已消失：回主页开下一场", LogLevel.Success);
+            _planFixAttempts = 0;
+            _planStep = PlanStep.Open;
+            SetPhase(WkPhase.LaunchReady);
+            return 900;
+        }
+        if (wk == WkScreen.None && ml == MatchScreen.LeagueSquadPage)
+        {
+            if (++_attempts > 4) return await AbandonPlanFixAsync("B 退不回活动主页");
+            _log("[周活动·阵容挑战] 停在比赛计划周边页面：B 退回活动主页", LogLevel.Info);
+            await _engine.Pad.Back();
+            return 2200;
+        }
+        if (++_attempts > 8) return await AbandonPlanFixAsync($"退出比赛计划后停在未识别界面（{wk}）");
+        return 1200;
     }
 
     /// <summary>修复子流程中断：B 退回活动主页，交回 LaunchReady——红点还在会再走一轮
     /// （总量由 <see cref="MaxPlanFixAttempts"/> 兜住，不会无限重试）。</summary>
     private async Task<int> AbandonPlanFixAsync(string why)
     {
-        _log($"[周活动·阵容挑战] 比赛计划修复中断（{why}），B 退回活动主页后重试", LogLevel.Warn);
+        if (++_planFixAttempts >= MaxPlanFixAttempts)
+        {
+            _log($"[周活动·阵容挑战] 比赛计划修复已达上限 {MaxPlanFixAttempts} 次（{why}），停止挂机请手动检查比赛计划", LogLevel.Error);
+            _engine.StopWithError($"阵容挑战比赛计划自动修复失败（{why}）");
+            return 0;
+        }
+        _log($"[周活动·阵容挑战] 比赛计划修复中断（{why}，第 {_planFixAttempts}/{MaxPlanFixAttempts} 次），B 退回活动主页后重试", LogLevel.Warn);
         _planStep = PlanStep.Open;
         _planOptionPicked = false;
         SetPhase(WkPhase.LaunchReady);

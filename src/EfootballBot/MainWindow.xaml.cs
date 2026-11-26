@@ -60,10 +60,10 @@ public partial class MainWindow
     /// 应用窗口材质。切换主题/外观世界后必须重新调用：<see cref="ThemeManager.ApplyTheme"/> 会把
     /// WindowBg 复原成纯色，材质就不透了。
     /// </summary>
-    private void ApplyWindowAppearance()
+    private void ApplyWindowAppearance(string? worldOverride = null)
     {
         if (!IsInitialized) return;
-        ThemeManager.ApplyWindowBackdrop(this, _cfg.Appearance.Backdrop, _cfg.Appearance.World);
+        ThemeManager.ApplyWindowBackdrop(this, _cfg.Appearance.Backdrop, worldOverride ?? _cfg.Appearance.World);
     }
 
     public MainWindow()
@@ -115,11 +115,23 @@ public partial class MainWindow
         // 首次启动尚未挂机：四格默认全隐藏（XAML 默认可见会摆着一组无意义的 0）
         ApplyStatsLayoutForMode();
 
-        // 挂机最小化时暂停预览重采样（300ms 逐帧缩放纯属浪费）；恢复窗口时若预览开着则重启
+        // 挂机最小化时暂停预览重采样与 DWM 巡检；恢复窗口时若预览开着则重启
         StateChanged += (_, _) =>
         {
-            if (WindowState == WindowState.Minimized) _previewTimer.Stop();
-            else if (_previewOn) _previewTimer.Start();
+            if (WindowState == WindowState.Minimized)
+            {
+                _previewTimer.Stop();
+                _dwmLayoutTimer?.Stop();
+            }
+            else
+            {
+                if (_previewOn) _previewTimer.Start();
+                if (_dwmPreview is not null)
+                {
+                    _dwmLayoutTimer?.Start();
+                    UpdateDwmPlacement(fromTimer: false);
+                }
+            }
         };
 
         Loaded += (_, _) =>
@@ -783,6 +795,8 @@ public partial class MainWindow
         // 先杀 Worker（虚拟手柄随引擎停止断开），再走停靠还原——
         // ★必须先于停靠还原：Worker 里的停靠看门狗存活期间会把刚还原的窗口再移出屏幕，
         //   而还原记录已被删除，游戏就永远留在屏幕外（挂机中直接关主窗口的实测路径）
+        // 先拉下手柄急停门控再杀 Worker（避免 XInputProxy 等 1.5s 心跳超时才松手），再走停靠还原
+        try { Core.Input.PadPanicGate.Panic(); } catch { }
         _workerHost?.Dispose();
         // 停靠中的游戏窗口还原兜底：Worker 已死，看门狗不会再对抗还原
         EfootballBot.Core.System.BackgroundParker.TryRestoreFromRecord();

@@ -484,8 +484,10 @@ public sealed class InGameConnectionMonitor : IDisposable
     {
         if (!_knownServerIps.Contains(ip)) return;
         _probeSent[ip] = now;
-        var st = _speed.GetOrAdd(ip, _ => (0, 0, int.MaxValue, 0, 0));
-        _speed[ip] = (st.Req + 1, st.Resp, st.Best, st.Sum, st.N);
+        _speed.AddOrUpdate(
+            ip,
+            _ => (1, 0, int.MaxValue, 0, 0),
+            (_, st) => (st.Req + 1, st.Resp, st.Best, st.Sum, st.N));
     }
 
     private void TrackProbeReply(string ip, long now)
@@ -494,10 +496,12 @@ public sealed class InGameConnectionMonitor : IDisposable
         if (!_probeSent.TryRemove(ip, out long sent)) return;
         int rtt = (int)(now - sent);
         if (rtt < 1 || rtt > 1500) return;
-        var st = _speed.GetOrAdd(ip, _ => (0, 0, int.MaxValue, 0, 0));
-        _speed[ip] = (st.Req, st.Resp + 1,
-                      Math.Min(st.Best == 0 ? int.MaxValue : st.Best, rtt),
-                      st.Sum + rtt, st.N + 1);
+        _speed.AddOrUpdate(
+            ip,
+            _ => (0, 1, rtt, rtt, 1),
+            (_, st) => (st.Req, st.Resp + 1,
+                        Math.Min(st.Best == 0 ? int.MaxValue : st.Best, rtt),
+                        st.Sum + rtt, st.N + 1));
     }
 
     /// <summary>刷新已知服务器 IP 集合（被动测速与直连基准都用它判「这是不是游戏服的包」）。</summary>

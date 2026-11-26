@@ -34,8 +34,21 @@ internal sealed class SidecarOcrBackend : IOcrBackend
 
     private async Task<VisionSidecarClient> EnsureClientAsync(CancellationToken ct)
     {
+        if (_rebuildFailStreak >= MaxRebuildFailures)
+            throw new InvalidOperationException(
+                $"vision-svc 连续 {_rebuildFailStreak} 次失败/无响应，停止重试；请检查模型/D3D 环境");
+
         var shared = VisionSidecarRuntime.SharedClient;
-        if (shared is { IsDisconnected: false }) return shared;
+        if (shared is { IsDisconnected: false })
+        {
+            if (_client is not null && _owned)
+            {
+                try { await _client.DisposeAsync().ConfigureAwait(false); } catch { }
+                _client = null;
+                _owned = false;
+            }
+            return shared;
+        }
 
         if (_client is { IsDisconnected: true })
         {
@@ -82,7 +95,22 @@ internal sealed class SidecarOcrBackend : IOcrBackend
             var client = await EnsureClientAsync(ct).ConfigureAwait(false);
             var fromCapture = ReferenceEquals(client, VisionSidecarRuntime.SharedClient)
                               && VisionSidecarRuntime.MatchesCapturedFrame(frame);
-            var result = await client.RecognizeAsync(frame, fromCapture, ct).ConfigureAwait(false);
+            OcrResult result;
+            try
+            {
+                result = await client.RecognizeAsync(frame, fromCapture, ct).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("无响应", StringComparison.Ordinal))
+            {
+                _rebuildFailStreak++;
+                if (_owned && _client is not null)
+                {
+                    try { await _client.DisposeAsync().ConfigureAwait(false); } catch { }
+                    _client = null;
+                    _owned = false;
+                }
+                throw;
+            }
             // 真正跑通一次识别才清零熔断计数（崩溃循环无法靠"启动成功"洗白）
             _rebuildFailStreak = 0;
             return result;

@@ -332,7 +332,7 @@ public partial class MainWindow
     private void ApplyThemePreview()
     {
         ThemeManager.ApplyTheme(_pendingTheme, _pendingWorld);
-        ApplyWindowAppearance();
+        ApplyWindowAppearance(_pendingWorld);
         HighlightThemeCard(_pendingTheme);
         HighlightWorldCard(_pendingWorld);
     }
@@ -341,7 +341,7 @@ public partial class MainWindow
     {
         if (ThemeOverlay.Visibility != Visibility.Visible) return;
         ThemeManager.ApplyTheme(_origTheme, _origWorld);
-        ApplyWindowAppearance();
+        ApplyWindowAppearance(_origWorld);
         HideThemeOverlay();
     }
 

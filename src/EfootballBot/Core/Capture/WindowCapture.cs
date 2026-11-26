@@ -330,6 +330,7 @@ public sealed class WindowCapture : ICaptureProvider
                 !IsBorderOnlyContent(curSize.Width, curSize.Height, content.Width, content.Height))
             {
                 Exception? recreateError = null;
+                bool notifyClosed = false;
                 lock (_gate)
                 {
                     if (_running && Volatile.Read(ref _sessionGen) == myGen && _pool is not null && _winrtDevice is not null &&
@@ -346,11 +347,13 @@ public sealed class WindowCapture : ICaptureProvider
                         catch (Exception ex)
                         {
                             recreateError = ex;
+                            notifyClosed = Volatile.Read(ref _sessionGen) == myGen;
                             CleanupLocked(); // 帧池已坏：立即释放资源并停定时器，等 WaitForFreshFrameAsync 整套重建
                         }
+                        if (recreateError is null) return;
                     }
                 }
-                if (recreateError is not null && Volatile.Read(ref _sessionGen) == myGen)
+                if (recreateError is not null && notifyClosed)
                     CaptureClosed?.Invoke(this, $"重建帧池失败：{recreateError.Message}");
                 return; // 尺寸过渡帧不产出画面
             }

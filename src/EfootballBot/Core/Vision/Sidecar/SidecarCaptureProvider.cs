@@ -74,11 +74,16 @@ public sealed class SidecarCaptureProvider : ICaptureProvider
 
             while (!ct.IsCancellationRequested && !client.IsDisconnected)
             {
-                if (client.Ring.TryReadLatest(out var frame))
+                bool got = client.Ring.TryReadLatest(out var frame);
+                if (got)
                 {
                     Publish(frame);
                 }
-                await Task.Delay(8, ct).ConfigureAwait(false);
+                int minMs = _minIntervalMs;
+                int waitMs = minMs > 0 && got
+                    ? Math.Clamp(minMs - (int)(Environment.TickCount64 - _lastPublishTick), 8, 50)
+                    : 16;
+                await Task.Delay(waitMs, ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) { }

@@ -318,6 +318,8 @@ public sealed class WorkerHost : IDisposable
                 await process.WaitForExitAsync();
             }
             catch { }
+            // 给管道读循环短暂窗口消费进程退出前写入的尾包（EvExited / 末行日志），避免误判为意外崩溃
+            try { await Task.WhenAny(readTask, Task.Delay(300)); } catch { }
             try { readCts.Cancel(); } catch { }
             await HandleProcessExitAsync(process, sessionId);
         });
@@ -463,7 +465,9 @@ public sealed class WorkerHost : IDisposable
         }
         try
         {
-            await TeardownAsync();
+            bool confirmed = await TeardownAsync();
+            if (!confirmed && _process is not null)
+                EmitLog("Warn", "Worker 停止确认超时，已强杀工作进程（PadPanicGate 已确保游戏侧提前松手）。");
         }
         finally
         {
@@ -472,9 +476,13 @@ public sealed class WorkerHost : IDisposable
         }
     }
 
-    /// <summary>回收当前会话：发 stop → 等 stopped 确认（≤5s，覆盖引擎等主循环 + 手柄恢复）→ Kill 兜底 → 取消读循环 → 释放句柄。幂等。</summary>
-    private async Task TeardownAsync()
+    private static readonly TimeSpan StopAckTimeout = TimeSpan.FromSeconds(6);
+
+    /// <summary>回收当前会话：发 stop → 等 stopped 确认（≤6s，覆盖引擎等主循环 + 手柄恢复）→ Kill 兜底 → 取消读循环 → 释放句柄。幂等。
+    /// 返回 true = Worker 亲口确认「已停」；false = 未确认。</summary>
+    private async Task<bool> TeardownAsync()
     {
+        bool confirmed = false;
         _scenarioRunning = false;
         if (_pipe is { IsConnected: true })
         {
@@ -483,7 +491,7 @@ public sealed class WorkerHost : IDisposable
                 var ack = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 _stopAck = ack;
                 await SendAsync(PipeProtocol.CmdStop(), CommandWriteTimeout);
-                await ack.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                confirmed = await ack.Task.WaitAsync(StopAckTimeout);
             }
             catch { }
         }
@@ -494,7 +502,7 @@ public sealed class WorkerHost : IDisposable
         var process = _process ?? ResolveRemoteProcess();
         if (process is not null && !process.HasExited)
         {
-            try { process.Kill(); } catch { }
+            try { process.Kill(entireProcessTree: true); } catch { try { process.Kill(); } catch { } }
             // Kill 后短暂等退出，避免僵尸进程残留句柄（引擎已在 stop 时清理，无需宽限）
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
             try { await process.WaitForExitAsync(cts.Token); } catch { }
@@ -509,6 +517,7 @@ public sealed class WorkerHost : IDisposable
         _remotePid = 0;
         try { _readCts?.Dispose(); } catch { }
         _readCts = null;
+        return confirmed;
     }
 
     private static DateTime? TryParseTimestamp(string? raw)
@@ -676,7 +685,9 @@ public sealed class WorkerHost : IDisposable
             // 硬回收路径也要 Dispose（正常 TeardownAsync 已 Dispose，这里只补关闭时的泄漏）
             try { _readCts?.Dispose(); } catch { }
             _readCts = null;
-            try { _process?.Kill(); } catch { }
+            try { _process?.Kill(entireProcessTree: true); }
+            catch { try { _process?.Kill(); } catch { } }
+            try { _process?.WaitForExit(1500); } catch { }
             try { _pipe?.Dispose(); } catch { }
             try { _process?.Dispose(); } catch { }
             _pipe = null;

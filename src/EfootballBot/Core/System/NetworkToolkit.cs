@@ -53,14 +53,17 @@ public sealed class NetworkProbe
     private List<ProbeTarget> _targets = new();
     private int _nextId = 1;
 
-    public IReadOnlyList<ProbeTarget> Targets => _targets;
+    public IReadOnlyList<ProbeTarget> Targets
+    {
+        get { lock (_targetsLock) return _targets.ToList(); }
+    }
 
     public NetworkProbe()
     {
-        Load();
+        bool needReseed = Load();
         Migrate();
         // 旧存档升级：把内嵌 eFootball 服务器表（中文名）重新灌进来（按 IP+端口去重）
-        if (_targets.Count < 10) Seed();
+        if (needReseed || _targets.Count < 10) Seed();
         Save();
     }
 
@@ -261,23 +264,25 @@ public sealed class NetworkProbe
         }
     }
 
-    private void Load()
+    private bool Load()
     {
         try
         {
-            if (!File.Exists(StorePath)) return;
+            if (!File.Exists(StorePath)) return false;
             var doc = JsonSerializer.Deserialize<Store>(File.ReadAllBytes(StorePath).AsSpan(), JsonOpts);
-            if (doc?.Targets is null) return;
+            if (doc?.Targets is null) return false;
             _targets = doc.Targets;
             // v1 存档（只有域名种子、缺 Kind/Port/ICMP 字段）：丢旧域名种子、保留用户手填 IP
             if (doc.Version < 2)
                 _targets = _targets.Where(t => !string.IsNullOrEmpty(t.Ip)).ToList();
             // v2 → v3：种子表改为中文名，旧种子行丢弃后由 Seed() 重灌（手填目标保留）
-            if (doc.Version < 3)
+            bool needReseed = doc.Version < 3;
+            if (needReseed)
                 DropOldSeedRows();
             _nextId = _targets.Count == 0 ? 1 : _targets.Max(t => t.Id) + 1;
+            return needReseed;
         }
-        catch { _targets = new(); }
+        catch { _targets = new(); return false; }
     }
 
     public void Save()
@@ -295,14 +300,17 @@ public sealed class NetworkProbe
     /// <summary>按 IP 反查中文地区：先精确匹配种子表，再退到同 /16 段的种子（AWS 同区域大段相邻）。</summary>
     public string? RegionFor(string ip)
     {
-        var exact = _targets.FirstOrDefault(t => t.Ip == ip && t.Kind != "domain");
-        if (exact is not null) return exact.Label;
-        int dot = ip.LastIndexOf('.');
-        if (dot <= 0) return null;
-        string prefix = ip[..dot];
-        var near = _targets.FirstOrDefault(t => t.Kind != "domain"
-            && t.Ip.Length > prefix.Length && t.Ip.StartsWith(prefix + ".", StringComparison.Ordinal));
-        return near is null ? null : near.Label + "（附近）";
+        lock (_targetsLock)
+        {
+            var exact = _targets.FirstOrDefault(t => t.Ip == ip && t.Kind != "domain");
+            if (exact is not null) return exact.Label;
+            int dot = ip.LastIndexOf('.');
+            if (dot <= 0) return null;
+            string prefix = ip[..dot];
+            var near = _targets.FirstOrDefault(t => t.Kind != "domain"
+                && t.Ip.Length > prefix.Length && t.Ip.StartsWith(prefix + ".", StringComparison.Ordinal));
+            return near is null ? null : near.Label + "（附近）";
+        }
     }
 
     // ---------------- TCP 测速 ----------------

@@ -253,7 +253,7 @@ if ($steam) {
 
         report.AppendLine();
         report.AppendLine("End of report.");
-        await File.WriteAllTextAsync(Path.Combine(dir, "report.txt"), report.ToString(), Utf8Bom, ct);
+        await File.WriteAllTextAsync(Path.Combine(dir, "report.txt"), RedactSecrets(report.ToString()), Utf8Bom, ct);
 
         progress?.Invoke("创建 zip 压缩包…");
         try
@@ -387,19 +387,9 @@ if ($steam) {
 
             string dst = Path.Combine(dir, "app_crash");
             Directory.CreateDirectory(dst);
-            int copied = 0;
             var notes = new List<string>();
-            foreach (var d in dumps)
-            {
-                if (d.Length > 100 * 1024 * 1024)
-                {
-                    notes.Add($"{d.Name} skipped (over 100MB)");
-                    continue;
-                }
-                try { File.Copy(d.FullName, Path.Combine(dst, d.Name), true); copied++; }
-                catch (Exception ex) { notes.Add($"{d.Name} copy failed: {ex.Message}"); }
-            }
-            report.AppendLine($"crash dumps on disk: newest {dumps[0].Name} ({dumps[0].Length / 1024 / 1024} MB, {dumps[0].LastWriteTime:yyyy-MM-dd HH:mm})");
+            // 隐私保护：原始 .dmp 含进程内存（可能包含明文 Webhook/Token），不打入反馈包，仅生成脱敏后的 ClrMD 分析摘要
+            report.AppendLine($"crash dumps on disk: newest {dumps[0].Name} ({dumps[0].Length / 1024 / 1024} MB, {dumps[0].LastWriteTime:yyyy-MM-dd HH:mm}) [raw .dmp omitted for privacy]");
             foreach (var n in notes) report.AppendLine(n);
 
             // 归因：直接把 dump 解析成结论写进包（ClrMD），省掉「拿回 dump 还要找工具打开」
@@ -408,7 +398,7 @@ if ($steam) {
                 var newest = dumps[0];
                 if (newest.Length <= 100 * 1024 * 1024)
                 {
-                    var analysis = DumpAnalyzer.Analyze(newest.FullName);
+                    var analysis = RedactSecrets(DumpAnalyzer.Analyze(newest.FullName));
                     File.WriteAllText(Path.Combine(dst, newest.Name + ".analysis.txt"), analysis, Encoding.UTF8);
                     report.AppendLine("--- crash analysis (ClrMD) ---");
                     foreach (var line in analysis.Split('\n').Take(14)) report.AppendLine(line.TrimEnd());
@@ -420,7 +410,7 @@ if ($steam) {
                 report.AppendLine($"(crash analysis failed: {ex.Message})");
             }
 
-            return $"crash dumps copied: {copied} -> app_crash\\";
+            return $"crash analysis generated -> app_crash\\ (raw .dmp omitted)";
         }
         catch (Exception ex)
         {
@@ -555,8 +545,18 @@ if ($steam) {
             global::System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         s = global::System.Text.RegularExpressions.Regex.Replace(
             s,
-            @"https://(?:qyapi\.weixin\.qq\.com|oapi\.dingtalk\.com|open\.feishu\.cn|hooks\.slack\.com|discord\.com/api/webhooks)/[^\s""'\\]+",
+            @"https?://(?:qyapi\.weixin\.qq\.com|oapi\.dingtalk\.com|open\.feishu\.cn|hooks\.slack\.com|discord\.com/api/webhooks|sctapi\.ftqq\.com|(?:www\.)?pushplus\.plus|api\.day\.app|api\.telegram\.org/bot[^/\s""'\\]+)/[^\s""'\\]*",
             "https://***REDACTED_WEBHOOK***",
+            global::System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        s = global::System.Text.RegularExpressions.Regex.Replace(
+            s,
+            @"([?&](?:t|token|key|secret|access_token)=)[^&\s""'\\]+",
+            "$1***REDACTED***",
+            global::System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        s = global::System.Text.RegularExpressions.Regex.Replace(
+            s,
+            @"([A-Za-z]:\\Users\\)[^\\/\s""']+",
+            "$1***",
             global::System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         return s;
     }

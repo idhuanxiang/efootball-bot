@@ -22,7 +22,7 @@ public sealed class YoloDetector : IDisposable
     private readonly float _scoreThreshold;
     private readonly float _nmsIouThreshold;
     private readonly string[] _inputNames;
-    private readonly string _outputName;
+    private readonly string[] _outputNames;
 
     // 预处理复用缓冲（Detect 单线程串行调用）：此前每次检测新建 bgr/resized/letterbox 三个
     // Mat + ~4.9MB DenseTensor，约 8MB/次的 LOH churn；形状固定后全部预分配复用
@@ -46,7 +46,7 @@ public sealed class YoloDetector : IDisposable
 
         // 输入尺寸：优先从模型元数据读取，动态维或读不到时回退 640
         (_inputW, _inputH) = ResolveInputSize();
-        _outputName = ResolveOutputName();
+        _outputNames = new[] { ResolveOutputName() };
         _letterboxRgb = new byte[_inputH * _inputW * 3];
         _inputTensor = new DenseTensor<float>(new[] { 1, 3, _inputH, _inputW });
 
@@ -102,7 +102,7 @@ public sealed class YoloDetector : IDisposable
             {
                 NamedOnnxValue.CreateFromTensor(_inputNames[0], tensor),
             };
-            using var results = _session.Run(inputs, new[] { _outputName });
+            using var results = _session.Run(inputs, _outputNames);
             var output = results.First().AsTensor<float>();
 
             var boxes = ParseOutput(output, _classes.Length);
@@ -263,18 +263,28 @@ public sealed class YoloDetector : IDisposable
     public static List<(float x0, float y0, float x1, float y1, float Score, int ClassId)> NonMaxSuppression(
         IReadOnlyList<(float x0, float y0, float x1, float y1, float Score, int ClassId)> boxes, float iouThreshold)
     {
-        var order = boxes.Select((b, i) => (b, i)).OrderByDescending(t => t.b.Score).ToList();
+        int n = boxes.Count;
         var kept = new List<(float, float, float, float, float, int)>();
-        var suppressed = new HashSet<int>();
-        foreach (var (b, i) in order)
+        if (n == 0) return kept;
+
+        var order = new int[n];
+        for (int i = 0; i < n; i++) order[i] = i;
+        Array.Sort(order, (a, b) => boxes[b].Score.CompareTo(boxes[a].Score));
+
+        var suppressed = new bool[n];
+        for (int a = 0; a < n; a++)
         {
-            if (suppressed.Contains(i)) continue;
+            int i = order[a];
+            if (suppressed[i]) continue;
+            var b = boxes[i];
             kept.Add(b);
-            foreach (var (_, j) in order)
+            for (int c = a + 1; c < n; c++)
             {
-                if (j == i || suppressed.Contains(j)) continue;
-                if (IoU(b.x0, b.y0, b.x1, b.y1, boxes[j].x0, boxes[j].y0, boxes[j].x1, boxes[j].y1) > iouThreshold)
-                    suppressed.Add(j);
+                int j = order[c];
+                if (suppressed[j]) continue;
+                var bj = boxes[j];
+                if (IoU(b.x0, b.y0, b.x1, b.y1, bj.x0, bj.y0, bj.x1, bj.y1) > iouThreshold)
+                    suppressed[j] = true;
             }
         }
         return kept;

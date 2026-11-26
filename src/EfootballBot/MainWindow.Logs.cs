@@ -94,18 +94,8 @@ public partial class MainWindow
         if (_cfg is null) return false;
         try
         {
-            // 跨进程字段保护：保存前从磁盘回读 DisabledPadDevs 与 GamePaths，
-            // 防止 UI 单项保存（静音/热键/过滤等）用陈旧内存快照覆盖 Worker 或 ToolPaths 的写入。
-            try
-            {
-                if (AppConfig.TryLoad(out var latest) && latest is not null)
-                {
-                    _cfg.HidHide.DisabledPadDevs = latest.HidHide.DisabledPadDevs;
-                    _cfg.GamePaths = latest.GamePaths;
-                }
-            }
-            catch { }
-            _cfg.Save();
+            // 跨进程字段保护：在互斥锁内回读 DisabledPadDevs 与 GamePaths 并写盘，消除 TOCTOU 竞态。
+            _cfg.SavePreservingCrossProcessFields();
             return true;
         }
         catch (Exception ex)
@@ -448,69 +438,77 @@ public partial class MainWindow
             // P2-19：旧实现"先数总行数 → 再回读尾部"= 两遍全文件扫描；这里改成单遍流式读取，
             // 用一个定长环形队列只保留最后 N 行（内存恒定，大文件也只扫一次）。
             const int MaxLoadedLines = 5000;
+            string filterVal = _historyLogFilter;
             LogFileStatus.Text = $"{path} | 正在读取…";
-            // 扫描放后台（审查修复）：Debug 级日志可达数十万行/上百 MB，以前整份扫 + 建 5000 个
-            // TextBlock 全在 UI 线程，打开历史日志那一瞬界面卡死数秒——恰是远程排障要用的时刻。
-            (long totalLines, string[] lines) = await Task.Run(() =>
+            // 文件扫描 + 正则解析放后台：避免 5000 行 ~10000 次正则匹配阻塞 UI 线程
+            var parsed = await Task.Run(() =>
             {
-                var tail = ReadLogTail(path, MaxLoadedLines, out long total);
-                return (total, tail);
+                var tail = ReadLogTail(path, MaxLoadedLines, out long totalLines);
+                var items = new List<(string? Time, string? Tag, string Body, LogLevel Level, bool Plain)>(tail.Length);
+                int total = 0;
+                foreach (var raw in tail)
+                {
+                    var m = YamlLogLineRegex.Match(raw);
+                    string msg;
+                    LogLevel lv;
+                    string? yamlTime = null;
+                    if (m.Success)
+                    {
+                        yamlTime = m.Groups["t"].Value;
+                        lv = ParseFileLevel(m.Groups["l"].Value);
+                        msg = m.Groups["m"].Value.Replace("\\\"", "\"").Replace("\\\\", "\\");
+                    }
+                    else
+                    {
+                        msg = raw;
+                        lv = GuessLegacyLevel(raw);
+                    }
+                    total++;
+                    if (!PassesLogFilter(lv, filterVal)) continue;
+
+                    var pm = LogPrefixRegex.Match(msg);
+                    if (pm.Success)
+                    {
+                        string t = yamlTime is not null && yamlTime.Length >= 19
+                            ? yamlTime.Substring(11, 8)
+                            : pm.Groups["t"].Value;
+                        items.Add((t, pm.Groups["tag"].Value, pm.Groups["rest"].Value, lv, false));
+                    }
+                    else if (yamlTime is not null)
+                    {
+                        string t = yamlTime.Length >= 19 ? yamlTime.Substring(11, 8) : yamlTime;
+                        items.Add((t, null, msg, lv, false));
+                    }
+                    else
+                    {
+                        items.Add((null, null, msg, lv, true));
+                    }
+                }
+                return (totalLines, total, items);
             });
             if (gen != _logLoadGen) return;   // 期间用户已切到别的文件
-            long skip = Math.Max(0, totalLines - MaxLoadedLines);
+            long skip = Math.Max(0, parsed.totalLines - MaxLoadedLines);
 
-            int total = 0, shown = 0;
-            foreach (var raw in lines)
+            foreach (var it in parsed.items)
             {
-                var m = YamlLogLineRegex.Match(raw);
-                string msg;
-                LogLevel lv;
-                string? yamlTime = null;
-                if (m.Success)
-                {
-                    // YAML 日志行：- {time: "...", level: "INFO", msg: "..."}
-                    // msg 已被 FileLogger 剥掉 [HH:mm:ss] 前缀，但保留 [模块tag]，与运行日志同构
-                    yamlTime = m.Groups["t"].Value;
-                    lv = ParseFileLevel(m.Groups["l"].Value);
-                    msg = m.Groups["m"].Value.Replace("\\\"", "\"").Replace("\\\\", "\\");
-                }
-                else
-                {
-                    msg = raw;
-                    lv = GuessLegacyLevel(raw);
-                }
-                total++;
-
-                if (!PassesLogFilter(lv, _historyLogFilter)) continue;
-
-                // 与运行日志完全同款的三段分色渲染；YAML 行显示时间取自文件时间戳（HH:mm:ss）
                 TextBlock tb;
-                var pm = LogPrefixRegex.Match(msg);
-                if (pm.Success)
+                if (!it.Plain)
                 {
-                    string t = yamlTime is not null && yamlTime.Length >= 19
-                        ? yamlTime.Substring(11, 8)
-                        : pm.Groups["t"].Value;
-                    tb = BuildLogLine(t, pm.Groups["tag"].Value, pm.Groups["rest"].Value, lv);
-                }
-                else if (yamlTime is not null)
-                {
-                    string t = yamlTime.Length >= 19 ? yamlTime.Substring(11, 8) : yamlTime;
-                    tb = BuildLogLine(t, null, msg, lv);
+                    tb = BuildLogLine(it.Time!, it.Tag, it.Body, it.Level);
                 }
                 else
                 {
                     tb = new TextBlock { TextWrapping = TextWrapping.Wrap, LineHeight = 18 };
-                    tb.Inlines.Add(new Run(msg) { Foreground = LevelBrush(lv) });
+                    tb.Inlines.Add(new Run(it.Body) { Foreground = LevelBrush(it.Level) });
                 }
-
                 LogFileContent.Items.Add(tb);
-                shown++;
             }
 
+            int totalCount = parsed.total;
+            int shown = parsed.items.Count;
             LogFileStatus.Text = skip > 0
-                ? $"{path} | 末尾 {total}/{totalLines} 条日志（大文件仅载入末尾 {MaxLoadedLines} 行）"
-                : $"{path} | {shown}/{total} 条日志";
+                ? $"{path} | 末尾 {totalCount}/{parsed.totalLines} 条日志（大文件仅载入末尾 {MaxLoadedLines} 行）"
+                : $"{path} | {shown}/{totalCount} 条日志";
         }
         catch (Exception ex)
         {

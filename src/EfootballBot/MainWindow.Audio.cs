@@ -48,14 +48,17 @@ public partial class MainWindow
         {
             bool running = _workerHost is { ScenarioRunning: true };
             if (running && _cfg.Audio.MuteGame)
-                SetGameMute(true, userAction: false);   // 幂等重放：游戏重启后的新会话也会被静音
+                SetGameMuteAsync(true, userAction: false);   // 幂等重放：游戏重启后的新会话也会被静音
             else if (!running && _muteApplied)
-                SetGameMute(false, userAction: false);  // 场景自行结束（跑完/异常）也要恢复声音
+                SetGameMuteAsync(false, userAction: false);  // 场景自行结束（跑完/异常）也要恢复声音
+            else if (!running && !_muteApplied)
+                _muteTimer.Stop();
         };
-        _muteTimer.Start();
     }
 
     private bool _muteFailLogged;
+    private readonly SemaphoreSlim _muteGate = new(1, 1);
+    private long _muteOpGen;
 
     /// <summary>任一模块页的开关变动：写配置 + 同步其余 5 个复选框 + 立刻生效。</summary>
     private void ChkMuteGame_Toggled(object sender, RoutedEventArgs e)
@@ -76,31 +79,57 @@ public partial class MainWindow
             AppendLog("[设置] 挂机时静音游戏：已开启（开始挂机后自动生效）", LogLevel.Info);
             return;
         }
-        SetGameMute(on, userAction: true);
+        if (on && running && !_muteTimer.IsEnabled) _muteTimer.Start();
+        SetGameMuteAsync(on, userAction: true);
     }
 
-    /// <summary>挂机启动成功后调用（配置开着就立刻静音）。</summary>
+    /// <summary>挂机启动成功后调用（配置开着就立刻静音并启动巡检）。</summary>
     private void MuteGameOnScenarioStarted()
     {
         _muteFailLogged = false;
-        if (_cfg.Audio.MuteGame) SetGameMute(true, userAction: false);
+        if (_cfg.Audio.MuteGame)
+        {
+            if (!_muteTimer.IsEnabled) _muteTimer.Start();
+            SetGameMuteAsync(true, userAction: false);
+        }
     }
 
-    /// <summary>挂机停止时调用：恢复游戏声音（用户关掉开关时已经恢复过，这里幂等）。</summary>
+    /// <summary>挂机停止时调用：恢复游戏声音并停掉巡检。</summary>
     private void MuteGameOnScenarioStopped()
     {
         _muteFailLogged = false;
-        if (_muteApplied) SetGameMute(false, userAction: false);
+        _muteTimer.Stop();
+        // 即使 _muteApplied 尚未置位，也可能有在途的 Mute(true) 正在执行，强制排队一次 Mute(false) 串行兜底
+        SetGameMuteAsync(false, userAction: false, force: true);
     }
 
     /// <summary>
-    /// 设置游戏静音。<paramref name="userAction"/>=true 表示用户手动点开关，
-    /// 失败/无会话时给出可读日志；自动调用失败仅首次记录一次告警，避免刷屏。
+    /// 后台线程串行执行 COM 音频会话静音，避免阻塞 UI 线程与并发竞态。
     /// </summary>
-    private void SetGameMute(bool mute, bool userAction)
+    private void SetGameMuteAsync(bool mute, bool userAction, bool force = false)
     {
-        if (!mute && !_muteApplied && !userAction) return;
-        int sessions = GameAudioMute.Apply(mute, out string error);
+        if (!mute && !_muteApplied && !userAction && !force) return;
+        long opGen = Interlocked.Increment(ref _muteOpGen);
+
+        _ = Task.Run(async () =>
+        {
+            await _muteGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                // 若已有更新的静音/恢复请求排队，跳过过时的非强制旧请求
+                if (!force && opGen != Volatile.Read(ref _muteOpGen)) return;
+                int sessions = GameAudioMute.Apply(mute, out string error);
+                _ = Dispatcher.BeginInvoke(() => ApplyMuteResult(mute, userAction, sessions, error, opGen));
+            }
+            finally
+            {
+                _muteGate.Release();
+            }
+        });
+    }
+
+    private void ApplyMuteResult(bool mute, bool userAction, int sessions, string error, long opGen)
+    {
         if (!string.IsNullOrEmpty(error))
         {
             if (userAction || !_muteFailLogged)
@@ -112,12 +141,15 @@ public partial class MainWindow
         }
         if (mute)
         {
+            if (opGen != Volatile.Read(ref _muteOpGen)) return;
             if (sessions > 0)
             {
                 _muteFailLogged = false;
                 if (!_muteApplied)
                     AppendLog($"[音频] 已静音游戏（{sessions} 个音频会话），系统音量与其他软件不受影响", LogLevel.Success);
                 _muteApplied = true;
+                if (!userAction && _workerHost is not { ScenarioRunning: true })
+                    SetGameMuteAsync(false, userAction: false, force: true);
             }
             else if (userAction)
             {

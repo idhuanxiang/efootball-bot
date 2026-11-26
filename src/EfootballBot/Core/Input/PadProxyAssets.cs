@@ -34,6 +34,21 @@ public static class PadProxyAssets
     /// <summary>嵌入资源名，如 <c>EfootballBot.Proxy.xinput1_3.dll</c>。</summary>
     public static string ResourceName(string fileName) => ResourcePrefix + fileName;
 
+    private static readonly byte[] OwnDllMarker = global::System.Text.Encoding.ASCII.GetBytes(IniName);
+
+    /// <summary>判断磁盘上的 DLL 是否为本程序投放的 XInput 代理（含 xinput_proxy.ini 字面量），防止二次投放时把自己备份成 .bak。</summary>
+    public static bool IsOwnProxyDll(string path)
+    {
+        try
+        {
+            var fi = new FileInfo(path);
+            if (!fi.Exists || fi.Length == 0 || fi.Length > 512 * 1024) return false;
+            byte[] bytes = File.ReadAllBytes(path);
+            return bytes.AsSpan().IndexOf(OwnDllMarker) >= 0;
+        }
+        catch { return false; }
+    }
+
     /// <summary>exe 里是否带了这个 DLL 的副本（tools\xinput-proxy 未构建时构建产物里没有）。</summary>
     public static bool IsEmbedded(string fileName)
     {

@@ -584,15 +584,6 @@ public partial class MainWindow
         _cfg.Update.IncludePrerelease = ChkIncludePrerelease.IsChecked == true;
         _cfg.Update.AutoDownloadInstall = ChkAutoDownloadInstall.IsChecked == true;
 
-        // 手柄接管：DisabledPadDevs 恢复清单保存前从磁盘回读，避免 GUI 陈旧快照把
-        // 尚未消费的遗留记录清掉（LegacyPadRestore 靠它恢复旧版本卡禁用的手柄）；仅读取成功时覆盖
-        try
-        {
-            if (AppConfig.TryLoad(out var latest) && latest is not null)
-                _cfg.HidHide.DisabledPadDevs = latest.HidHide.DisabledPadDevs;
-        }
-        catch { }
-
         PersistConfigSafe("保存UI配置");
     }
 
@@ -722,7 +713,7 @@ public partial class MainWindow
         foreach (var kind in PadBackendInfo.UiOrder)
             CmbPadBackend.Items.Add(PadBackendInfo.DisplayName(kind));
         CmbPadBackend.SelectedIndex = PadBackendInfo.UiIndexOf(_cfg.Pad.Backend);
-        RefreshPadBackendState();
+        // 启动期不做同步多盘扫描；切换到设置页时按需调用 RefreshPadBackendState()
     }
 
     private void CmbPadBackend_Changed(object sender, SelectionChangedEventArgs e)
@@ -774,6 +765,7 @@ public partial class MainWindow
         }
 
         var report = new System.Text.StringBuilder();
+        _manualProxyDirs.Add(dir);
         foreach (var exe in exes)
         {
             string name = Path.GetFileName(exe);
@@ -783,6 +775,8 @@ public partial class MainWindow
         RefreshPadBackendState();
         TxtPadBackendState.Text = report.ToString().TrimEnd() + Environment.NewLine + TxtPadBackendState.Text;
     }
+
+    private readonly HashSet<string> _manualProxyDirs = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>把程序目录的代理 DLL + ini 写到指定目录。</summary>
     private void DeployProxyTo(string dir, string exeName, int targetId, System.Text.StringBuilder report)
@@ -799,15 +793,23 @@ public partial class MainWindow
         {
             Directory.CreateDirectory(dir);
             string dst = Path.Combine(dir, "xinput1_3.dll");
-            if (File.Exists(dst)) File.Copy(dst, dst + ".bak", overwrite: true);
+            string bak13 = dst + ".bak";
+            if (File.Exists(dst) && !File.Exists(bak13) && !PadProxyAssets.IsOwnProxyDll(dst))
+                File.Copy(dst, bak13, overwrite: false);
             try
             {
                 File.Copy(src, dst, overwrite: true);
             }
             catch (IOException)
             {
-                // 游戏正在运行 → DLL 被映射，直接覆盖会失败；改名让位再写（游戏进程继续用旧映像）。
-                if (File.Exists(dst)) File.Move(dst, dst + ".bak", overwrite: true);
+                // 游戏正在运行 → DLL 被映射，直接覆盖会失败；改名让位再写（保留已有 .bak 原件，绝不把自身备份成 .bak）。
+                if (File.Exists(dst))
+                {
+                    string moveTo = File.Exists(bak13) || PadProxyAssets.IsOwnProxyDll(dst)
+                        ? $"{dst}.old.{Environment.TickCount64}"
+                        : bak13;
+                    File.Move(dst, moveTo, overwrite: true);
+                }
                 File.Copy(src, dst, overwrite: true);
             }
 
@@ -817,10 +819,19 @@ public partial class MainWindow
             if (src14 is not null)
             {
                 string dst14 = Path.Combine(dir, "xinput1_4.dll");
+                string bak14 = dst14 + ".bak";
+                if (File.Exists(dst14) && !File.Exists(bak14) && !PadProxyAssets.IsOwnProxyDll(dst14))
+                    File.Copy(dst14, bak14, overwrite: false);
                 try { File.Copy(src14, dst14, overwrite: true); }
                 catch (IOException)
                 {
-                    if (File.Exists(dst14)) File.Move(dst14, dst14 + ".bak", overwrite: true);
+                    if (File.Exists(dst14))
+                    {
+                        string moveTo = File.Exists(bak14) || PadProxyAssets.IsOwnProxyDll(dst14)
+                            ? $"{dst14}.old.{Environment.TickCount64}"
+                            : bak14;
+                        File.Move(dst14, moveTo, overwrite: true);
+                    }
                     File.Copy(src14, dst14, overwrite: true);
                 }
             }
@@ -853,26 +864,54 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>撤回：删掉两个文件（有 .bak 就还原）。</summary>
+    /// <summary>撤回：删掉代理文件与日志/旧备份（仅还原非本程序代理的原始 .bak）。</summary>
     private void BtnProxyRemove_Click(object sender, RoutedEventArgs e)
     {
         var report = new System.Text.StringBuilder();
-        foreach (var (dir, _, _) in ResolvePadTargets())
+        var dirs = new HashSet<string>(ResolvePadTargets().Select(t => t.Dir), StringComparer.OrdinalIgnoreCase);
+        foreach (var d in _manualProxyDirs) dirs.Add(d);
+
+        foreach (var dir in dirs)
         {
+            if (!Directory.Exists(dir)) continue;
             // 1_4 也要撤：投放时一起写的，只删 1_3 会留下一个"半个代理"的目录
-            foreach (var name in new[] { PadProxyAssets.Dll13, PadProxyAssets.Dll14, PadProxyAssets.IniName })
+            foreach (var name in new[] { PadProxyAssets.Dll13, PadProxyAssets.Dll14, PadProxyAssets.IniName, "xinput_proxy.log" })
             {
                 string path = Path.Combine(dir, name);
                 try
                 {
                     if (File.Exists(path)) { File.Delete(path); report.AppendLine("已删除：" + path); }
                     string bak = path + ".bak";
-                    if (File.Exists(bak)) { File.Move(bak, path, overwrite: true); report.AppendLine("已还原：" + path); }
+                    if (File.Exists(bak))
+                    {
+                        if ((name == PadProxyAssets.Dll13 || name == PadProxyAssets.Dll14) && PadProxyAssets.IsOwnProxyDll(bak))
+                        {
+                            File.Delete(bak);
+                            report.AppendLine("已清理误备份的旧代理：" + bak);
+                        }
+                        else
+                        {
+                            File.Move(bak, path, overwrite: true);
+                            report.AppendLine("已还原：" + path);
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
                     report.AppendLine("删除失败：" + path + " → " + ex.Message);
                 }
+            }
+            foreach (var pattern in new[] { $"{PadProxyAssets.Dll13}.old.*", $"{PadProxyAssets.Dll14}.old.*" })
+            {
+                try
+                {
+                    foreach (var oldFile in Directory.GetFiles(dir, pattern))
+                    {
+                        try { File.Delete(oldFile); report.AppendLine("已清理热替换残留：" + oldFile); }
+                        catch { }
+                    }
+                }
+                catch { }
             }
         }
         RefreshPadBackendState();
@@ -1207,6 +1246,12 @@ public partial class MainWindow
             if (result.Applied)
             {
                 AppendLog("新版本已启动，本窗口即将退出（旧版本已自动备份，可回退）。", LogLevel.Success);
+                if (_workerHost is { ScenarioRunning: true })
+                {
+                    AppendLog("正在优雅停止当前挂机任务以保存会话记录…", LogLevel.Info);
+                    try { Core.Input.PadPanicGate.Panic(); } catch { }
+                    try { await Task.WhenAny(_workerHost.StopAsync(), Task.Delay(3000)); } catch { }
+                }
                 // 给用户 2 秒看到状态，然后优雅退出（存配置→停 Worker→释放单实例锁），
                 // 已启动的新实例等锁接管
                 await Task.Delay(2000);

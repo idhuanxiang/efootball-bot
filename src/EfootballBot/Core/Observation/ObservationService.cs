@@ -58,6 +58,8 @@ public sealed class ObservationService : IDisposable
         _provider.FrameUpdated += OnFrame;
     }
 
+    private readonly SemaphoreSlim _frameSignal = new(0, 1);
+
     private void OnFrame(object? sender, EventArgs e)
     {
         var p = _provider;
@@ -67,6 +69,13 @@ public sealed class ObservationService : IDisposable
         // 否则新后端刚启动就会拿到一张过期画面。
         if (!ReferenceEquals(p, _provider)) return;
         _frame = f;
+        try
+        {
+            if (_frameSignal.CurrentCount == 0)
+                _frameSignal.Release();
+        }
+        catch (SemaphoreFullException) { }
+        catch (ObjectDisposedException) { }
         FrameUpdated?.Invoke(this, EventArgs.Empty);
     }
 
@@ -134,10 +143,13 @@ public sealed class ObservationService : IDisposable
                 return f;
             }
 
-            // 宽限 2s：启动首帧 / 切屏过渡 / 重建后第一帧
-            for (int i = 0; i < 20; i++)
+            // 宽限 2s：启动首帧 / 切屏过渡 / 重建后第一帧（事件驱动唤醒，避免 100ms 轮询延迟）
+            long deadlineMs = Environment.TickCount64 + 2000;
+            while (true)
             {
-                await Task.Delay(100, ct);
+                long remain = deadlineMs - Environment.TickCount64;
+                if (remain <= 0) break;
+                await _frameSignal.WaitAsync((int)Math.Min(remain, 200), ct);
                 f = _frame;
                 if (f is not null && (DateTime.Now - _provider.LastFrameAt).TotalMilliseconds < StaleFrameMs)
                 {
@@ -149,7 +161,7 @@ public sealed class ObservationService : IDisposable
             // 窗口仍在（独占全屏/最小化也能查到）→ 同步最新 HWND 并重建捕获；窗口没了才是真终止
             var found = Window is null ? null : GameWindow.FindFirst(Window.ProcessName);
             if (found is null)
-                throw new InvalidOperationException("游戏窗口已关闭，停止挂机。");
+                throw new GameWindowClosedException("游戏窗口已关闭，停止挂机。");
             if (found.Handle != Window!.Handle) Window = found;
 
             await RestartCaptureAsync(ct, DescribeFrameGap());
@@ -526,9 +538,13 @@ public sealed class ObservationService : IDisposable
     {
         _provider.FrameUpdated -= OnFrame;
         try { _provider.Dispose(); } catch { }
+        try { _frameSignal.Dispose(); } catch { }
         GC.SuppressFinalize(this);
     }
 }
+
+/// <summary>游戏窗口已关闭/进程退出，外层引擎应直接停机而非指数退避重试。</summary>
+public sealed class GameWindowClosedException(string message) : InvalidOperationException(message);
 
 
 /// <summary>

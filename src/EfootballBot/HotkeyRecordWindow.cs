@@ -210,6 +210,12 @@ public sealed class HotkeyRecordWindow : Window
         if ((Keyboard.Modifiers & ModifierKeys.Alt) != 0) mods |= 1;
         if ((Keyboard.Modifiers & ModifierKeys.Windows) != 0) mods |= 8;
 
+        if (Code == 1 && mods == 0)
+        {
+            _badgeText.Text = "禁止单独使用鼠标左键（请搭配 Ctrl/Alt/Shift 或改用侧键/键盘）";
+            return;
+        }
+
         Modifiers = mods;
         IsMouse = true;
         Recorded = true;

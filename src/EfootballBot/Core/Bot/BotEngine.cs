@@ -728,6 +728,11 @@ public sealed class BotEngine : IDisposable
                         else
                             await Task.Delay(1000, token);
                     }
+                    catch (GameWindowClosedException ex)
+                    {
+                        StopWithError(ex.Message);
+                        break;
+                    }
                     catch (Exception ex)
                     {
                         // 系统级瞬时故障（如 DWM 崩溃重启导致捕获会话失效、设备丢失）：
@@ -1669,9 +1674,10 @@ public sealed class BotEngine : IDisposable
         Interlocked.CompareExchange(ref _stopReason, summaryReason, null);
         try { _cts?.Cancel(); } catch { }
         if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
-        try { Pad360.ResetAll(); } catch { }        // 停止即拔掉虚拟手柄：其他应用立即看不到任何手柄（旧实现保持在线到引擎销毁，
-        // 用户停了挂机别的游戏里还挂着一只“幽灵手柄”）。下次开始重新连接。
+        // 先断开再清零（顺序不能反）：Disconnect 会把 IsConnected 置 false + 撤代理 ACTIVE/PANIC，
+        // 之后即使还有一拍场景线程在跑，SetButton 也已经进不去。
         try { Pad360.Disconnect(); } catch { }
+        try { Pad360.ResetAll(); } catch { }
         // 全权接管收尾：恢复被禁用的真实手柄
         try
         {

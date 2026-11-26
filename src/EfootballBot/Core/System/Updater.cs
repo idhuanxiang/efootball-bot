@@ -218,6 +218,7 @@ public static class Updater
         string direct = $"{RawManifestBaseUrl}/{name}";
         var urls = new List<string>();
         urls.AddRange(FastGithubKernel.WithMirrors(direct)); // 镜像 → 直连（WithMirrors 内部去重、直连恒在最后）
+        bool sawSameVersionFromMirror = false;
         foreach (string url in urls)
         {
             try
@@ -226,10 +227,15 @@ public static class Updater
                 http.DefaultRequestHeaders.UserAgent.ParseAdd("EfootballBot");
                 var m = await http.GetFromJsonAsync<R2Manifest>(url, JsonOpts);
                 if (m?.Version is null || !TryParseVersion(m.Version, out var remoteVer)) continue;
-                // 版本相等=可信终态；版本落后=清单可能是旧桶/缓存/漏传，不能当"已是最新"
-                // 否则会屏蔽掉后面所有兜底源（审查修复①）
+                // 第三方反代镜像可能缓存旧版 latest.json：只有直连确认版本相等才立即判「已是最新」，
+                // 镜像返回同版本时记下标记并继续校验直连源，避免漏报新版本。
                 if (CompareVersion(remoteVer, CurrentVersion) == 0)
-                    return UpdateResult.AlreadyLatest($"已是最新版本 v{FormatVersion(CurrentVersion)}");
+                {
+                    if (string.Equals(url, direct, StringComparison.Ordinal))
+                        return UpdateResult.AlreadyLatest($"已是最新版本 v{FormatVersion(CurrentVersion)}");
+                    sawSameVersionFromMirror = true;
+                    continue;
+                }
                 if (CompareVersion(remoteVer, CurrentVersion) < 0) continue;
                 return UpdateResult.Available(remoteVer, $"v{remoteVer}",
                     BuildDownloadUrls(remoteVer, ResolveManifestFileName(m.File), githubFileName: "EfootballBot.exe"),
@@ -241,6 +247,8 @@ public static class Updater
                 continue; // 该通道不通，试下一个
             }
         }
+        if (sawSameVersionFromMirror)
+            return UpdateResult.AlreadyLatest($"已是最新版本 v{FormatVersion(CurrentVersion)}");
         return null;
     }
 

@@ -23,12 +23,6 @@ public partial class AppDialog : Window
                 DialogResult = false;
                 Close();
             }
-            else if (e.Key == Key.Enter)
-            {
-                e.Handled = true;
-                DialogResult = true;
-                Close();
-            }
         };
     }
 
@@ -68,6 +62,7 @@ public partial class AppDialog : Window
         dlg.TxtTitle.Text = title;
         dlg.TxtMessage.Text = message;
         dlg.OkBtn.Content = okText;
+        dlg.OkBtn.IsDefault = !danger;
 
         if (!string.IsNullOrEmpty(cancelText))
         {

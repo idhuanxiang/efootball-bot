@@ -190,19 +190,26 @@ public partial class MainWindow
 
         _dwmPreview = pv;
         _dwmUnhealthyTicks = 0;
+        _dwmHidden = false;
         Preview.Source = null; // 让位：占位提示被缩略图覆盖，不必留旧帧
+        PreviewFrame.SizeChanged += OnDwmPreviewLayoutEvent;
+        LocationChanged += OnDwmPreviewLayoutEvent;
         UpdateDwmPlacement();
 
-        _dwmLayoutTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(80) };
-        _dwmLayoutTimer.Tick += (_, _) => UpdateDwmPlacement();
+        _dwmLayoutTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _dwmLayoutTimer.Tick += (_, _) => UpdateDwmPlacement(fromTimer: true);
         _dwmLayoutTimer.Start();
 
         AppendLog($"实时画面已开启（DWM 零拷贝缩略图，源窗口 {srcName} #0x{src:X}）", LogLevel.Success);
         return true;
     }
 
+    private bool _dwmHidden;
+    private Int32Rect _lastDwmRect;
+    private void OnDwmPreviewLayoutEvent(object? sender, EventArgs e) => UpdateDwmPlacement(fromTimer: false);
+
     /// <summary>摆放缩略图矩形 + 可用性自检（源窗口销毁 / DWM 无表面即回退帧流）。</summary>
-    private void UpdateDwmPlacement()
+    private void UpdateDwmPlacement(bool fromTimer = false)
     {
         if (_dwmPreview is null) return;
 
@@ -219,7 +226,11 @@ public partial class MainWindow
         // 浮在原位置挡住界面——这就是"折叠右栏后画面还在、关不掉"的原因。
         if (!ShouldShowDwmPreview(out var rectPx))
         {
-            _dwmPreview.SetVisible(false);
+            if (!_dwmHidden)
+            {
+                _dwmPreview.SetVisible(false);
+                _dwmHidden = true;
+            }
             return;
         }
 
@@ -228,17 +239,21 @@ public partial class MainWindow
         if (rectPx.Width > inset * 2 && rectPx.Height > inset * 2)
             rectPx = new Int32Rect(rectPx.X + inset, rectPx.Y + inset,
                 rectPx.Width - inset * 2, rectPx.Height - inset * 2);
-        _dwmPreview.UpdatePlacement(rectPx); // 该调用自带 Visible=1，折叠恢复后自动显示
+        if (_dwmHidden || rectPx != _lastDwmRect)
+        {
+            _dwmPreview.UpdatePlacement(rectPx); // 该调用自带 Visible=1，折叠恢复后自动显示
+            _lastDwmRect = rectPx;
+            _dwmHidden = false;
+        }
 
         // 自检：DWM 没为源窗口维持合成表面时 DwmQueryThumbnailSourceSize 返回 0 分量。
-        // 典型场景=游戏窗口被后台停靠到所有显示器之外（此时 DWM 不再合成它），
-        // 连续约 0.6 秒仍为 0 就回退到帧流预览，避免用户盯着一块空白。
+        // 仅定时器巡检累加异常计数，避免窗口拖动触发高频 LocationChanged 误判。
         if (_dwmPreview.TryGetSourceSize(out _, out _))
         {
             _dwmUnhealthyTicks = 0;
             return;
         }
-        if (++_dwmUnhealthyTicks < 8) return;
+        if (!fromTimer || ++_dwmUnhealthyTicks < 3) return;
 
         AppendLog("DWM 缩略图不可用（游戏窗口可能已停靠到屏幕外），实时画面回退为帧流预览", LogLevel.Warn);
         StopDwmPreview();
@@ -272,6 +287,9 @@ public partial class MainWindow
     /// <summary>注销缩略图并停掉布局定时器（幂等）。</summary>
     private void StopDwmPreview()
     {
+        PreviewFrame.SizeChanged -= OnDwmPreviewLayoutEvent;
+        LocationChanged -= OnDwmPreviewLayoutEvent;
+        _dwmHidden = false;
         if (_dwmLayoutTimer is not null)
         {
             _dwmLayoutTimer.Stop();

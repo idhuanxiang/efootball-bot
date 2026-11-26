@@ -333,12 +333,12 @@ public static class WorkerProgram
 
             // 首条消息握手标记：客户端冷启动期超时残留的 CreateFile 可能被幽灵授予本实例，
             // 表现为双方"已连接"但收不到任何字节。5s 内无首条消息 → 回收本实例重新监听。
-            bool gotFirstMessage = false;
+            var firstMsgTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
             // 读循环：处理 GUI 命令
-            _ = PipeProtocol.ReadLoopAsync(pipe, async msg =>
+            var readTask = PipeProtocol.ReadLoopAsync(pipe, async msg =>
             {
-                gotFirstMessage = true;
+                firstMsgTcs.TrySetResult();
                 if (console) Console.WriteLine($"[Worker] 收到命令: {PipeProtocol.Serialize(msg)}");
 
                 if (msg.Cmd == "ping")
@@ -396,21 +396,28 @@ public static class WorkerProgram
                     var finishingEngine = Interlocked.Exchange(ref engine, null);
                     if (finishingEngine is not null)
                     {
+                        // ① 硬松手先行（毫秒级）：先断连撤代理 ACTIVE / 拆 ViGEm + 全键释放，再停循环并立即回确认
+                        try { finishingEngine.Pad360.Disconnect(); } catch { }
+                        try { finishingEngine.Pad360.ResetAll(); } catch { }
                         try
                         {
                             if (finishingEngine.IsRunning)
                                 await finishingEngine.StopAsync(1500);
-                            finishingEngine.Dispose();
                         }
                         catch (Exception ex)
                         {
-                            FileLogger.Instance.Write($"Worker stop 回收引擎异常：{ex.Message}", LogLevel.Warn);
+                            FileLogger.Instance.Write($"Worker stop 停止引擎异常：{ex.Message}", LogLevel.Warn);
                         }
+                        // ② 慢清理放确认之前：确保进程内物理手柄恢复与 DisabledPadDevs 落盘完成，再发 EvStopped 通知 GUI 回收进程
+                        try { finishingEngine.Dispose(); } catch { }
                         try { await finishingEngine.WaitPendingRestoreAsync(1200); } catch { }
+                        try { await SendAsync(PipeProtocol.EvLog("Info", "已停止")); } catch { }
+                        await SendAsync(PipeProtocol.EvStopped());
                     }
-                    // 确认事件：GUI 收到后立即回收进程。先释放 ViGEmClient 并等进程内手柄恢复落盘再回 Stopped，
-                    // 避免遗留内核槽位延迟或计划任务与下一轮「开始」竞争。
-                    await SendAsync(PipeProtocol.EvStopped());
+                    else
+                    {
+                        await SendAsync(PipeProtocol.EvStopped());
+                    }
                 }
                 else if (msg.Cmd == "pause")
                 {
@@ -444,11 +451,9 @@ public static class WorkerProgram
             }, readCts.Token);
 
             // 握手窗口：5s 内必须收到首条字节，否则判定为幽灵连接，丢弃重建实例
-            long deadlineMs = Environment.TickCount64 + 5000;
-            while (!gotFirstMessage && pipe.IsConnected && Environment.TickCount64 < deadlineMs)
-                await Task.Delay(100);
+            await Task.WhenAny(firstMsgTcs.Task, readTask, Task.Delay(5000));
 
-            if (!gotFirstMessage)
+            if (!firstMsgTcs.Task.IsCompleted)
             {
                 if (console) Console.WriteLine("[Worker] 5s 内无首条消息，判定幽灵连接，回收实例");
                 FileLogger.Instance.Write("连接建立后 5s 内无首条消息（幽灵连接），回收管道实例重新监听", LogLevel.Warn);
@@ -458,11 +463,10 @@ public static class WorkerProgram
                 continue;
             }
 
-            // 等待管道断开（GUI 关闭/崩溃）
+            // 等待读循环退出（GUI 关闭/崩溃）
             try
             {
-                while (pipe.IsConnected)
-                    await Task.Delay(500);
+                await readTask;
             }
             catch { }
 
@@ -503,6 +507,9 @@ public static class WorkerProgram
     ///      省掉每帧一次 Application.Dispatcher.Invoke 跨线程往返。
     /// 返回的 base64 由 GUI 侧 BitmapImage 解码（自动识别 JPEG，无需改协议）。
     /// </summary>
+    private static byte[]? s_previewBuf;
+    private static readonly object s_previewLock = new();
+
     private static string EncodePreviewJpeg(byte[] bgra, int sw, int sh)
     {
         const int pw = 640, ph = 360;
@@ -510,35 +517,38 @@ public static class WorkerProgram
         if (ch > ph) { ch = ph; cw = (int)Math.Round((double)ph * sw / sh); }
         int offX = (pw - cw) / 2, offY = (ph - ch) / 2;
 
-        // 先铺满 UI 背景色（#0B0F14，BGRA），信箱边不会像 PNG 那样透出透明色
-        var buf = new byte[pw * ph * 4];
-        for (int i = 0; i < buf.Length; i += 4)
+        lock (s_previewLock)
         {
-            buf[i] = 0x14; buf[i + 1] = 0x0F; buf[i + 2] = 0x0B; buf[i + 3] = 0xFF;
-        }
-
-        for (int y = 0; y < ch; y++)
-        {
-            int srow = (y * sh / ch) * sw * 4;
-            int drow = ((y + offY) * pw + offX) * 4;
-            for (int x = 0; x < cw; x++)
+            // 复用 900KB 预览缓冲，避免每 100~300ms 分配一次进 LOH 引发长期挂机 Gen2 GC
+            var buf = s_previewBuf ??= new byte[pw * ph * 4];
+            for (int i = 0; i < buf.Length; i += 4)
             {
-                int si = srow + (x * sw / cw) * 4;
-                int di = drow + x * 4;
-                buf[di] = bgra[si];
-                buf[di + 1] = bgra[si + 1];
-                buf[di + 2] = bgra[si + 2];
-                buf[di + 3] = 0xFF;
+                buf[i] = 0x14; buf[i + 1] = 0x0F; buf[i + 2] = 0x0B; buf[i + 3] = 0xFF;
             }
-        }
 
-        var source = BitmapSource.Create(pw, ph, 96, 96, PixelFormats.Bgra32, null, buf, pw * 4);
-        source.Freeze();
-        var enc = new JpegBitmapEncoder { QualityLevel = 70 };
-        enc.Frames.Add(BitmapFrame.Create(source));
-        using var ms = new MemoryStream();
-        enc.Save(ms);
-        return Convert.ToBase64String(ms.ToArray());
+            for (int y = 0; y < ch; y++)
+            {
+                int srow = (y * sh / ch) * sw * 4;
+                int drow = ((y + offY) * pw + offX) * 4;
+                for (int x = 0; x < cw; x++)
+                {
+                    int si = srow + (x * sw / cw) * 4;
+                    int di = drow + x * 4;
+                    buf[di] = bgra[si];
+                    buf[di + 1] = bgra[si + 1];
+                    buf[di + 2] = bgra[si + 2];
+                    buf[di + 3] = 0xFF;
+                }
+            }
+
+            var source = BitmapSource.Create(pw, ph, 96, 96, PixelFormats.Bgra32, null, buf, pw * 4);
+            source.Freeze();
+            var enc = new JpegBitmapEncoder { QualityLevel = 70 };
+            enc.Frames.Add(BitmapFrame.Create(source));
+            using var ms = new MemoryStream();
+            enc.Save(ms);
+            return Convert.ToBase64String(ms.ToArray());
+        }
     }
 }
 

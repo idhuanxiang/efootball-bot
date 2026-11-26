@@ -17,8 +17,13 @@ public sealed class ForegroundMouse
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hWnd);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] private static extern int GetSystemMetrics(int nIndex);
 
     private const int SW_RESTORE = 9;
+    private const int SM_XVIRTUALSCREEN = 76;
+    private const int SM_YVIRTUALSCREEN = 77;
+    private const int SM_CXVIRTUALSCREEN = 78;
+    private const int SM_CYVIRTUALSCREEN = 79;
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
 
@@ -118,6 +123,10 @@ public sealed class ForegroundMouse
             throw new InvalidOperationException($"客户区坐标转换屏幕坐标失败（句柄 0x{hWnd:X}），已跳过真实鼠标点击");
         if (GetForegroundWindow() != hWnd)
             throw new InvalidOperationException("目标窗口不在前台，已跳过真实鼠标点击（避免误点其他窗口）");
+        int vx = GetSystemMetrics(SM_XVIRTUALSCREEN), vy = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        int vw = GetSystemMetrics(SM_CXVIRTUALSCREEN), vh = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        if (vw > 0 && vh > 0 && (p.X < vx || p.X >= vx + vw || p.Y < vy || p.Y >= vy + vh))
+            throw new InvalidOperationException($"目标点击坐标 ({p.X},{p.Y}) 位于可见屏幕之外（可能启用了后台停靠），已跳过真实鼠标点击");
         return ClickScreenAsync(p.X, p.Y, downHoldMs, ct);
     }
 }

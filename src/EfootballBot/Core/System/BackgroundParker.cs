@@ -81,7 +81,17 @@ public sealed class BackgroundParker
             if (hwnd == nint.Zero) return;
             _hwnd = hwnd;
             _target = target;
-            _hadOriginal = GetWindowRect(hwnd, out _original);
+            // 若上次 Worker 崩溃未还原（parked-window.json 仍在且属于同一游戏窗口），复用已存原始矩形，
+            // 防止崩溃重启后把已经在屏外的坐标当成“原始位置”覆盖写入导致永久回不来。
+            if (TryLoadExistingOriginal(hwnd, out var savedOriginal))
+            {
+                _original = savedOriginal;
+                _hadOriginal = true;
+            }
+            else
+            {
+                _hadOriginal = GetWindowRect(hwnd, out _original);
+            }
             Corrections = 0;
             _parkApiError = 0;
 
@@ -354,6 +364,29 @@ public sealed class BackgroundParker
     /// </summary>
     /// <summary>是否存在未还原的停靠记录（供引擎检测"GDI+停靠=黑屏"场景）。</summary>
     public static bool HasParkRecord() => File.Exists(ParkRecordPath);
+
+    private static bool TryLoadExistingOriginal(nint hwnd, out RECT rect)
+    {
+        rect = default;
+        try
+        {
+            if (!File.Exists(ParkRecordPath)) return false;
+            var rec = JsonSerializer.Deserialize<ParkRecord>(File.ReadAllText(ParkRecordPath));
+            if (rec is null || rec.Width <= 0 || rec.Height <= 0) return false;
+            bool sameHwnd = unchecked((nint)rec.Hwnd) == hwnd;
+            bool sameProc = !string.IsNullOrEmpty(rec.ProcessName) && IsWindowOwnedBy(hwnd, rec.ProcessName);
+            if (!sameHwnd && !sameProc) return false;
+            rect = new RECT
+            {
+                Left = rec.Left,
+                Top = rec.Top,
+                Right = rec.Left + rec.Width,
+                Bottom = rec.Top + rec.Height,
+            };
+            return true;
+        }
+        catch { return false; }
+    }
 
     /// <summary>立即还原停靠的窗口（带日志）。用于 GDI 兜底捕获在停靠状态下取到黑帧时，
     /// 放弃隐藏保挂机功能（驱动异常导致 WGC/DXGI 均不可用时唯一可行的捕获方式）。</summary>

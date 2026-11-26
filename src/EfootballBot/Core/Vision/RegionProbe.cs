@@ -101,6 +101,22 @@ public static class RegionProbe
         return count;
     }
 
+    /// <summary>蓝色像素计数（CN 推进/确定按钮及强调色检测）。</summary>
+    public static int CountBlue(FrameData f, double x0, double x1, double y0, double y1)
+    {
+        if (!Valid(f, out int w, out int h)) return 0;
+        var bgra = f.Bgra;
+        int count = 0;
+        for (int y = Math.Max(0, (int)(h * y0)); y < Math.Min(h, (int)(h * y1)); y += 2)
+            for (int x = Math.Max(0, (int)(w * x0)); x < Math.Min(w, (int)(w * x1)); x += 2)
+            {
+                int i = (y * w + x) * 4;
+                int b = bgra[i], g = bgra[i + 1], r = bgra[i + 2];
+                if (b > 110 && b > r + 55 && b > g + 55) count++;
+            }
+        return count;
+    }
+
     /// <summary>
     /// 区域内亮度中位数（3px 步进采样）。用中位数抗文字/图标干扰，
     /// 用于「聚焦白卡 vs 未聚焦深灰卡」这类整体明暗判别。
@@ -146,4 +162,8 @@ public static class RegionProbe
     /// <summary>红色像素计数（换算到 1280×720 基准；720p 下与原值完全一致）。</summary>
     public static int CountRedRef(FrameData f, double x0, double x1, double y0, double y1)
         => ToReference(CountRed(f, x0, x1, y0, y1), f);
+
+    /// <summary>蓝色像素计数（换算到 1280×720 基准；720p 下与原值完全一致）。</summary>
+    public static int CountBlueRef(FrameData f, double x0, double x1, double y0, double y1)
+        => ToReference(CountBlue(f, x0, x1, y0, y1), f);
 }

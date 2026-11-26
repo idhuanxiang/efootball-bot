@@ -448,8 +448,15 @@ public static class PopupBrain
     /// </summary>
     private static bool IsDialogPanelOnBlack(FrameData frame)
     {
-        if (frame.Width < 320 || frame.Height < 240) return false;
-        if (RegionProbe.MedianLuma(frame, 0.05, 0.95, 0.02, 0.10) > 30) return false;
+        if (frame.Width < 320 || frame.Height < 240 ||
+            frame.Bgra.Length < (long)frame.Width * frame.Height * 4) return false;
+        // ★顶带从 0.02~0.10 收到 0.055~0.13（2026-11-25）：实机 FrameData 是 WGC 整窗帧
+        // （客户区 + 标题栏/边框，见 MatchBrain.SkipBannerHasCheck 的说明），顶部 4~5% 帧高
+        // 是**窗口标题栏**而不是画面。标题栏一旦是浅色（Win11 浅色主题/白标题栏），
+        // 旧带的中位亮度直接 > 30 → 这条闸恒 false → 整套「黑底居中面板」弹窗识别失效，
+        // 重连/断线弹窗永远认不出来。收到 0.055 之后既避开标题栏，又仍落在面板上方那条
+        // 黑遮罩带里（标定值不变：cn_reconnect_popup / keymatch_dialog 两带都是 0）。
+        if (RegionProbe.MedianLuma(frame, 0.05, 0.95, 0.055, 0.13) > 30) return false;
         if (RegionProbe.MedianLuma(frame, 0.05, 0.95, 0.90, 0.98) > 30) return false;
         if (RegionProbe.MedianLuma(frame, 0.02, 0.10, 0.30, 0.70) > 30) return false;
         if (RegionProbe.MedianLuma(frame, 0.90, 0.98, 0.30, 0.70) > 30) return false;
@@ -630,7 +637,8 @@ public static class PopupBrain
     /// </summary>
     private static double AccentShare(FrameData frame, OcrWord w)
     {
-        if (frame.Width <= 0 || frame.Height <= 0) return 0;
+        if (frame.Width <= 0 || frame.Height <= 0 ||
+            frame.Bgra.Length < (long)frame.Width * frame.Height * 4) return 0;
         double padX = 0.06, padY = w.H * 0.6;
         int x0 = (int)Math.Clamp((w.X - padX) * frame.Width, 0, frame.Width - 1);
         int x1 = (int)Math.Clamp((w.X + w.W + padX) * frame.Width, 0, frame.Width);

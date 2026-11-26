@@ -58,8 +58,21 @@ internal sealed class SidecarDetector : IDetector
 
     private async Task<VisionSidecarClient> EnsureClientAsync(CancellationToken ct)
     {
+        if (_rebuildFailStreak >= MaxRebuildFailures)
+            throw new InvalidOperationException(
+                $"vision-svc 检测连续 {_rebuildFailStreak} 次失败/无响应，停止重试；请检查模型/D3D 环境");
+
         var shared = VisionSidecarRuntime.SharedClient;
-        if (shared is { IsDisconnected: false }) return shared;
+        if (shared is { IsDisconnected: false })
+        {
+            if (_client is not null && _owned)
+            {
+                try { await _client.DisposeAsync().ConfigureAwait(false); } catch { }
+                _client = null;
+                _owned = false;
+            }
+            return shared;
+        }
 
         if (_client is { IsDisconnected: true })
         {
@@ -102,11 +115,25 @@ internal sealed class SidecarDetector : IDetector
             var client = await EnsureClientAsync(ct).ConfigureAwait(false);
             var fromCapture = ReferenceEquals(client, VisionSidecarRuntime.SharedClient)
                               && VisionSidecarRuntime.MatchesCapturedFrame(frame);
-            var raw = await client.DetectAsync(frame, fromCapture, ct).ConfigureAwait(false);
-            _rebuildFailStreak = 0; // 真正跑通一次检测才清零（与 OCR 侧同一规则）
-            return raw
-                .Select(b => new YoloDetection(NameOf(b.C), b.C, b.S, b.X, b.Y, b.W, b.H))
-                .ToList();
+            try
+            {
+                var raw = await client.DetectAsync(frame, fromCapture, ct).ConfigureAwait(false);
+                _rebuildFailStreak = 0; // 真正跑通一次检测才清零（与 OCR 侧同一规则）
+                return raw
+                    .Select(b => new YoloDetection(NameOf(b.C), b.C, b.S, b.X, b.Y, b.W, b.H))
+                    .ToList();
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("无响应", StringComparison.Ordinal))
+            {
+                _rebuildFailStreak++;
+                if (_owned && _client is not null)
+                {
+                    try { await _client.DisposeAsync().ConfigureAwait(false); } catch { }
+                    _client = null;
+                    _owned = false;
+                }
+                throw;
+            }
         }
         finally
         {
