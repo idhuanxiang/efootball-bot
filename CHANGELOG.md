@@ -3,6 +3,30 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v9.1.0
+
+### 核心引擎 / 输入 / 调度 / 更新
+- `Pad` 新增暂停专用取消令牌与 `PauseActions()` / `ResumeActions()`，`Wait()` / `HumanWait()` / 动作间歇在暂停时立即中断，恢复后无需重建引擎即可继续；`Pad.RT()` 补齐前置取消检查与 `PadRelease.Safe` 安全释放，避免右扳机卡住或异常覆盖取消信号。
+- `BotEngine` 透传启动阶段的外部取消令牌、捕获启动失败并写入明确诊断日志；`MonitorServer` 修复无 token 时的只读/本机监听边界；`UpdateApplier` 补齐缺失校验与异常兜底。
+- `SmartHotkey` 修复鼠标侧键按住连发触发与零虚拟键误匹配；`SessionScheduler` 修正跨午夜与同起止时间（`00:00-00:00`）的全天运行及休息调度计算。
+
+### 场景状态机
+- `WeeklyEventScenario` 与 `CnWeeklyScenario` 移除 `is > 0` 截断分支，使子状态机返回的 `0` 停止信号不再被吞成 `1500ms` 重试延迟。
+- `CnWeeklyScenario` 为 `ChallengeCardHome` 引入独立重试计数 `_chGoMatchAttempts`，避免跨屏乒乓重置 `_attempts` 导致无法触发 `Back()` 退回重走。
+- `MyLeagueScenario`、`CnMyLeagueScenario` 与 `CnWeeklyScenario.Coach` 将 `CancellationToken ct` 完整透传至 `InterceptAsync`、`CnAdvance`、`HandleCnKeyMatchPopupAsync`、`HandleCoachSelectAsync` 及 `ClickAtAsync`。
+- `StudFlowController` 清理不可达的 `int.MaxValue` 分支并修正培训列表进度分母日志。
+
+### IPC / 手柄 / 配置 / 捕获 / 系统 / 界面
+- `WorkerProgram.SendAsync` 修正 `isPreview` 判断为 `msg.Ev == "preview"`，消除预览帧背压时误判为控制消息阻塞 20 秒并强行断开整条 Worker 管道的问题；`WorkerHost` 读循环看门狗加 `_lifecycle` 互斥锁，热复用时重置 `_lastStats`。
+- `HidDeviceEnumerator.QueryDevNodeIsConnected` 修正 `DEVPKEY_Device_IsConnected` 的 GUID（`{83DA6326-97A6-4088-9453-A1923F573B29}`）与 PID（`15`），恢复离线蓝牙手柄过滤；`VigemPad.Connect` 在 `ResetReport`/`SubmitReport` 成功后再置 `_connected = true`；`SharedPadWriter` 初始化清零旧代理遥测，避免 3 秒内重启误判代理在线。
+- `AppConfig` 为 `Save`/`UpdateOnDisk` 统一加装跨进程互斥锁并在反序列化后兜底空子节；`PhysicalPadControl` 与 `MainWindow.Logs.PersistConfigSafe` 写盘前合并磁盘上的 `DisabledPadDevs` 与 `GamePaths`，避免跨进程互相覆盖。
+- `FastGithubKernel` 取消时不吞 `OperationCanceledException`（防止 `VerifyAndRepairAsync` 误删 `hosts` 加速段），并为看门狗补全世代校验；`NetworkToolkit` 为 `_targets` 与 `_csv` 加锁并改为并发异步探测；`ModelPack` 改为临时目录分阶段解压并在 `finally` 清理临时压缩包；`DriverInstaller` 兜底非 1223 启动异常；`WeChatFeed` 隔离 Error 与 Warn 合并状态；`ShellTool.OpenUrl` 限制仅允许 `http://`/`https://`。
+- `WindowCapture` 与 `GdiWindowCapture` 补全会话代际守卫、锁内 `_size` 快照与 `SoftwareBitmap` 超时取消；`SharedFrameRing` / `UploadFrameRing` 补齐 64 位偏移计算、`Thread.MemoryBarrier()` 与入参先校验后写奇序；`ObservationService` 重建失败路径不再吞掉外部取消。
+- `ConnectionOverlay` 在 `_autoHidden` 最小化隐藏时不停止 `_followTimer`，确保游戏还原后自动重显；`StartConfirmDialog.OnDrag` 捕获 `DragMove()` 异常；`MainWindow` 补齐 `ResetPreviewOnStop()`、关闭窗体调用 `StopDwmPreview()`、局域网监控 `_starting`/`_stopping` 互斥、`BtnPreview_Click`/`TogglePauseAsync` 防重入及 `async void` 异常兜底。
+
+### 验证
+- 架构锁 11 条规则（187 个源文件）通过；针对性测试 141 项通过（含 `AuditFixTests` 9 项新增测试，失败 0、跳过 0）。
+
 ## v9.0.10
 
 ### 引擎 / 捕获 / 进程生命周期（两轮审查 P0 集中修复）

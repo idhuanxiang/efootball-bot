@@ -56,8 +56,8 @@ public static class ModelPack
         }
 
         string url = baseUrl.TrimEnd('/') + "/models/ppocr-v6.zip";
-        string target = Path.Combine(AppPaths.DataDir, "models");
-        string tmpZip = Path.Combine(AppPaths.TempDir, "ppocr-v6.zip");
+        string tmpZip = Path.Combine(AppPaths.TempDir, $"ppocr-v6-{Guid.NewGuid():N}.zip");
+        string stageDir = Path.Combine(AppPaths.TempDir, $"ppocr-stage-{Guid.NewGuid():N}");
         try
         {
             Directory.CreateDirectory(AppPaths.TempDir);
@@ -75,10 +75,20 @@ public static class ModelPack
                 await resp.Content.CopyToAsync(fs, ct);
             }
 
-            // 解压到 data\models（覆盖旧文件）。zip 结构约定为 models/v6/*、models/v5/*
+            // 先解压到临时目录并校验完整性，再覆盖写入 data\models（防半包损坏现有模型）
+            Directory.CreateDirectory(stageDir);
+            ZipFile.ExtractToDirectory(tmpZip, stageDir, overwriteFiles: true);
+            string stageModels = Path.Combine(stageDir, "models");
+            string srcDir = Directory.Exists(stageModels) ? stageModels : stageDir;
+            string target = Path.Combine(AppPaths.DataDir, "models");
             Directory.CreateDirectory(target);
-            ZipFile.ExtractToDirectory(tmpZip, AppPaths.DataDir, overwriteFiles: true);
-            try { File.Delete(tmpZip); } catch { }
+            foreach (var srcFile in Directory.EnumerateFiles(srcDir, "*", SearchOption.AllDirectories))
+            {
+                string rel = Path.GetRelativePath(srcDir, srcFile);
+                string dstFile = Path.Combine(target, rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(dstFile)!);
+                File.Move(srcFile, dstFile, overwrite: true);
+            }
 
             if (IsPresent(out string missing))
             {
@@ -88,10 +98,20 @@ public static class ModelPack
             log($"模型包解压后仍缺少{missing}，包结构可能不对。请重新下载完整版程序。", LogLevel.Error);
             return false;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            log("模型下载已取消。", LogLevel.Warn);
+            return false;
+        }
         catch (Exception ex)
         {
             log($"模型下载/解压失败：{ex.Message}。可手动把 models 目录放到 exe 旁边。", LogLevel.Error);
             return false;
+        }
+        finally
+        {
+            try { if (File.Exists(tmpZip)) File.Delete(tmpZip); } catch { }
+            try { if (Directory.Exists(stageDir)) Directory.Delete(stageDir, recursive: true); } catch { }
         }
     }
 }

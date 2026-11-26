@@ -106,6 +106,7 @@ public sealed class SmartHotkey : IDisposable
         if (_msHook != IntPtr.Zero) { try { UnhookWindowsHookEx(_msHook); } catch { } _msHook = IntPtr.Zero; }
         _cfg = null;
         _heldMainVk = 0;
+        _heldMouseBtn = 0;
         IsRegistered = false;
     }
 
@@ -125,9 +126,9 @@ public sealed class SmartHotkey : IDisposable
     internal static HotkeyAction MatchHotkey(Config.HotkeyConfig? cfg, int code, int mods, bool isMouse)
     {
         if (cfg is null || !cfg.Enabled) return HotkeyAction.None;
-        if (cfg.IsMouse == isMouse && code == cfg.VirtualKey && mods == cfg.Modifiers)
+        if (cfg.VirtualKey != 0 && cfg.IsMouse == isMouse && code == cfg.VirtualKey && mods == cfg.Modifiers)
             return HotkeyAction.PauseStop;
-        if (cfg.ResumeIsMouse == isMouse && code == cfg.ResumeVirtualKey && mods == cfg.ResumeModifiers)
+        if (cfg.ResumeVirtualKey != 0 && cfg.ResumeIsMouse == isMouse && code == cfg.ResumeVirtualKey && mods == cfg.ResumeModifiers)
             return HotkeyAction.Resume;
         return HotkeyAction.None;
     }
@@ -158,11 +159,28 @@ public sealed class SmartHotkey : IDisposable
 
     /// <summary>鼠标按下是否应触发：同一键未抬起前不重复触发（纯函数便于单测）。</summary>
     internal static bool ShouldAcceptMouseDown(int button, ref int heldButton)
+        => ShouldAcceptMouseDown(button, ref heldButton, static _ => true);
+
+    /// <summary>鼠标按下是否应触发（带物理按键状态自愈，防止丢失 UP 消息后卡死）。</summary>
+    internal static bool ShouldAcceptMouseDown(int button, ref int heldButton, Func<int, bool> isButtonPhysicallyDown)
     {
-        if (button == 0 || button == heldButton) return false;
+        if (button == 0) return false;
+        if (heldButton != 0 && !isButtonPhysicallyDown(heldButton))
+            heldButton = 0;
+        if (button == heldButton) return false;
         heldButton = button;
         return true;
     }
+
+    internal static int MouseButtonToVk(int btn) => btn switch
+    {
+        1 => 0x01, // VK_LBUTTON
+        2 => 0x02, // VK_RBUTTON
+        4 => 0x04, // VK_MBUTTON
+        5 => 0x05, // VK_XBUTTON1
+        6 => 0x06, // VK_XBUTTON2
+        _ => 0,
+    };
 
     private IntPtr KeyboardProc(int nCode, IntPtr wParam, IntPtr lParam)
     {
@@ -187,7 +205,8 @@ public sealed class SmartHotkey : IDisposable
     {
         if (nCode >= 0)
         {
-            int btn = wParam.ToInt64() switch
+            long msg = wParam.ToInt64();
+            int btn = msg switch
             {
                 WM_LBUTTONDOWN => 1,
                 WM_RBUTTONDOWN => 2,
@@ -197,12 +216,25 @@ public sealed class SmartHotkey : IDisposable
             };
             if (btn != 0)
             {
-                if (ShouldAcceptMouseDown(btn, ref _heldMouseBtn))
+                if (ShouldAcceptMouseDown(btn, ref _heldMouseBtn, static b =>
+                    {
+                        int vk = MouseButtonToVk(b);
+                        return vk == 0 || (GetAsyncKeyState(vk) & 0x8000) != 0;
+                    }))
                     Fire(btn, CurrentMods(), isMouse: true);
             }
-            else if (wParam.ToInt64() is WM_LBUTTONUP or WM_RBUTTONUP or WM_MBUTTONUP or WM_XBUTTONUP)
+            else
             {
-                _heldMouseBtn = 0;
+                int upBtn = msg switch
+                {
+                    WM_LBUTTONUP => 1,
+                    WM_RBUTTONUP => 2,
+                    WM_MBUTTONUP => 4,
+                    WM_XBUTTONUP => ((uint)Marshal.ReadInt32(lParam, 8) >> 16) == 1 ? 5 : 6,
+                    _ => 0,
+                };
+                if (upBtn != 0 && upBtn == _heldMouseBtn)
+                    _heldMouseBtn = 0;
             }
         }
         return CallNextHookEx(_msHook, nCode, wParam, lParam);

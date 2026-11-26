@@ -96,7 +96,7 @@ public static class UpdateApplier
             {
                 long downloaded = await DownloadAsync(info.DownloadUrls, downloadPath, info.TotalBytes, progress,
                     info.ExpectedSha256);
-                if (downloaded != info.TotalBytes)
+                if (info.TotalBytes > 0 && downloaded != info.TotalBytes)
                     throw new IOException($"下载不完整：收到 {downloaded} 字节，应为 {info.TotalBytes}");
                 Log($"下载完成：{downloaded} 字节");
 

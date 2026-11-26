@@ -235,8 +235,7 @@ public sealed partial class WeeklyEventScenario : IScenario
         else { _streak = 0; _lastScreenName = screenName; _log($"[周活动] 界面：{screenName}", LogLevel.Info); }
         // ---- 周活动菜单侧状态机：接管周活动界面与阶段内无特征界面 ----
         int? weeklyWait = await HandleWeeklyAsync(wk, ml, obs);
-        if (weeklyWait is > 0) return weeklyWait.Value;
-        if (weeklyWait is not null) return 1500;
+        if (weeklyWait is not null) return weeklyWait.Value;
         // wk==None 且阶段已交回共享流程：走共用决策（比赛中/终场/弹窗/逃生）
         var action = MatchBrain.Decide(ml, obs.Ocr, _streak, matchContext, obs.Frame);
         MatchShared.DecisionSnapshot(_log, "周活动", ml, _streak, action, obs.Ocr);

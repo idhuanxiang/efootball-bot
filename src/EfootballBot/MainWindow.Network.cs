@@ -722,54 +722,62 @@ public partial class MainWindow
 
     private async void BtnInGameMonitor_Click(object sender, RoutedEventArgs e)
     {
-        if (_inGame is { Running: true })
+        try
         {
-            _inGame.Updated -= OnInGameUpdated;
-            // 异步停：采样循环等待 + 关 pcap 设备不再占用 UI 线程（旧实现点停止会冻结 2-3 秒）
-            BtnInGameMonitor.IsEnabled = false;
-            try { await _inGame.StopAsync(); }
-            finally { BtnInGameMonitor.IsEnabled = true; }
-            DotInGame.Fill = BrushIdle;
-            TxtInGameState.Text = "未启动";
-            BtnInGameMonitor.Content = "启动监控";
-            TxtIgDetail.Text = "已停止。";
-            if (_overlay is { IsVisible: true }) _overlay.Hide();
-            return;
-        }
-
-        if (_inGame is null)
-        {
-            _inGame = new InGameConnectionMonitor
+            if (_inGame is { Running: true })
             {
-                RegionLookup = ip => Probe.RegionFor(ip),
-                // 真延迟测的候选：页面上标成「游戏服」的目标（种子表里就是 Konami 各地域服务器）
-                ServerTargetsProvider = () => Probe.Targets
-                    .Where(t => t.Kind == "game" && t.Ip.Length > 0)
-                    .Select(t => (t.Ip, t.Label))
-                    .ToList(),
-            };
-            // 事件只挂一次：停止监控不清订阅，否则第二次启动会重复出行
-            _inGame.MatchEnded += OnMatchEnded;
-            RenderRecentMatches();
+                _inGame.Updated -= OnInGameUpdated;
+                // 异步停：采样循环等待 + 关 pcap 设备不再占用 UI 线程（旧实现点停止会冻结 2-3 秒）
+                BtnInGameMonitor.IsEnabled = false;
+                try { await _inGame.StopAsync(); }
+                finally { BtnInGameMonitor.IsEnabled = true; }
+                DotInGame.Fill = BrushIdle;
+                TxtInGameState.Text = "未启动";
+                BtnInGameMonitor.Content = "启动监控";
+                TxtIgDetail.Text = "已停止。";
+                if (_overlay is { IsVisible: true }) _overlay.Hide();
+                return;
+            }
+
+            if (_inGame is null)
+            {
+                _inGame = new InGameConnectionMonitor
+                {
+                    RegionLookup = ip => Probe.RegionFor(ip),
+                    // 真延迟测的候选：页面上标成「游戏服」的目标（种子表里就是 Konami 各地域服务器）
+                    ServerTargetsProvider = () => Probe.Targets
+                        .Where(t => t.Kind == "game" && t.Ip.Length > 0)
+                        .Select(t => (t.Ip, t.Label))
+                        .ToList(),
+                };
+                // 事件只挂一次：停止监控不清订阅，否则第二次启动会重复出行
+                _inGame.MatchEnded += OnMatchEnded;
+                RenderRecentMatches();
+            }
+            if (!_inGame.Start(out var err))
+            {
+                DotInGame.Fill = (Brush)Application.Current.Resources["Danger"];
+                TxtInGameState.Text = "启动失败";
+                TxtIgDetail.Text = err;
+                AppendLog(err, LogLevel.Warn);
+                return;
+            }
+            _inGame.Updated += OnInGameUpdated;
+            DotInGame.Fill = BrushOk;
+            TxtInGameState.Text = "监控中（等比赛开始）";
+            BtnInGameMonitor.Content = "停止监控";
+            TxtIgDetail.Text = "正在抓包：进比赛后会自动认出服务器连接。";
+            AppendLog("游戏内连接监控已启动（Npcap 抓包）。", LogLevel.Info);
+            // 起监控就把 HUD 摆出来：以前要点「显示悬浮窗」，而那个窗口被 SizeToContent 压成 2px，
+            // 用户以为按钮坏了（2026-11-12 反馈）
+            try { EnsureFullscreenCompatible(log: false); ShowOverlay(); }
+            catch (Exception ex) { AppendLog($"悬浮窗自动显示失败：{ex.Message}", LogLevel.Warn); }
         }
-        if (!_inGame.Start(out var err))
+        catch (Exception ex)
         {
-            DotInGame.Fill = (Brush)Application.Current.Resources["Danger"];
-            TxtInGameState.Text = "启动失败";
-            TxtIgDetail.Text = err;
-            AppendLog(err, LogLevel.Warn);
-            return;
+            AppendLogError($"[连接监控] 操作异常：{ex.Message}", ex);
+            TxtIgDetail.Text = $"操作异常：{ex.Message}";
         }
-        _inGame.Updated += OnInGameUpdated;
-        DotInGame.Fill = BrushOk;
-        TxtInGameState.Text = "监控中（等比赛开始）";
-        BtnInGameMonitor.Content = "停止监控";
-        TxtIgDetail.Text = "正在抓包：进比赛后会自动认出服务器连接。";
-        AppendLog("游戏内连接监控已启动（Npcap 抓包）。", LogLevel.Info);
-        // 起监控就把 HUD 摆出来：以前要点「显示悬浮窗」，而那个窗口被 SizeToContent 压成 2px，
-        // 用户以为按钮坏了（2026-11-12 反馈）
-        try { EnsureFullscreenCompatible(log: false); ShowOverlay(); }
-        catch (Exception ex) { AppendLog($"悬浮窗自动显示失败：{ex.Message}", LogLevel.Warn); }
     }
 
     private void BtnInGameOverlay_Click(object sender, RoutedEventArgs e)

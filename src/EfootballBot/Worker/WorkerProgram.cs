@@ -165,7 +165,7 @@ public static class WorkerProgram
             // 写超时（审查修复⑮）：GUI 假死/管道缓冲区满时，预览帧写会永久独占 writeLock，
             // 让 EvStopped 永远拿不到锁、GUI 只能靠 Kill 兜底（打断手柄恢复）。
             // 预览帧用 1.5s 短超时丢弃即可，控制类消息用 10s 保证可靠送达。
-            bool isPreview = msg.Cmd == "preview";
+            bool isPreview = msg.Ev == "preview";
             int timeoutMs = isPreview ? 1500 : 10000;
             // ★写入本身不能带取消令牌（复查修复）：PipeStream.WriteAsync 非原子，
             // 超时取消可能只写了半条 JSON 且没有换行，后续所有消息都会解析错位、整条丢弃，

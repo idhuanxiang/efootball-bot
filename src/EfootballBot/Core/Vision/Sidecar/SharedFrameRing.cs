@@ -41,11 +41,13 @@ public sealed class SharedFrameRing : IDisposable
         Exception? last = null;
         while (Environment.TickCount64 < deadline)
         {
+            MemoryMappedFile? mmf = null;
             try
             {
-                var mmf = MemoryMappedFile.OpenExisting(name, MemoryMappedFileRights.Read);
+                mmf = MemoryMappedFile.OpenExisting(name, MemoryMappedFileRights.Read);
                 var view = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
                 var ring = new SharedFrameRing(name, mmf, view);
+                mmf = null;
                 if (ring.SlotCount < 1 || ring.SlotBytes < 16)
                 {
                     ring.Dispose();
@@ -55,6 +57,7 @@ public sealed class SharedFrameRing : IDisposable
             }
             catch (Exception ex)
             {
+                mmf?.Dispose();
                 last = ex;
                 Thread.Sleep(20);
             }
@@ -69,22 +72,25 @@ public sealed class SharedFrameRing : IDisposable
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var seq = _view.ReadUInt64(OffSeq);
+            Thread.MemoryBarrier();
             if (seq == 0 || (seq & 1) != 0) { Misses++; return false; }
             if (seq == _lastSeq) return false;
 
             var w = (int)_view.ReadUInt32(OffWidth);
             var h = (int)_view.ReadUInt32(OffHeight);
             var stride = (int)_view.ReadUInt32(OffStride);
-            if (w <= 0 || h <= 0 || stride < w * 4) { Misses++; return false; }
+            if (w <= 0 || h <= 0 || stride < (long)w * 4) { Misses++; return false; }
 
-            var need = stride * h;
-            if (need <= 0 || stride < w * 4 || need > SlotBytes) { Misses++; return false; }
+            long needLong = (long)stride * h;
+            if (needLong <= 0 || needLong > SlotBytes || needLong > int.MaxValue) { Misses++; return false; }
+            var need = (int)needLong;
             if (_buf.Length != need) _buf = new byte[need];
 
             var ts = (long)_view.ReadUInt64(OffTs);
-            var slot = (int)((seq / 2) % (ulong)SlotCount);
+            var slot = (long)((seq / 2) % (ulong)SlotCount);
             _view.ReadArray(HeaderBytes + slot * SlotBytes, _buf, 0, need);
 
+            Thread.MemoryBarrier();
             if (_view.ReadUInt64(OffSeq) != seq) continue; // 写者翻页了，重读
 
             _lastSeq = seq;

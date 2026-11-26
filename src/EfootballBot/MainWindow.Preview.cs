@@ -25,8 +25,11 @@ public partial class MainWindow
 {
     // ---------------- 预览 ----------------
 
+    private bool _previewBusy;
+
     private async void BtnPreview_Click(object sender, RoutedEventArgs e)
     {
+        if (_previewBusy) return;
         if (!_previewOn)
         {
             // 首选 DWM 零拷贝缩略图（任务栏悬停预览同一机制）：不经过 Worker 抓帧/PNG/管道，
@@ -44,9 +47,12 @@ public partial class MainWindow
                 AppendLog("预览需要先开始挂机（Worker 未运行）。", LogLevel.Warn);
                 return;
             }
+            _previewBusy = true;
+            BtnPreview.IsEnabled = false;
             try
             {
                 await host.SendPreviewAsync(true);
+                if (!ReferenceEquals(host, _workerHost) || !host.ScenarioRunning) return;
                 _previewTimer.Start();
                 _previewOn = true;
                 BtnPreview.Content = "关闭预览";
@@ -55,25 +61,41 @@ public partial class MainWindow
             {
                 AppendLog($"预览启动失败：{ex.Message}", LogLevel.Error);
             }
+            finally
+            {
+                _previewBusy = false;
+                BtnPreview.IsEnabled = true;
+            }
         }
         else
         {
             // 先落 UI 状态再发 OFF（审查修复）：Worker 忙时 SendPreviewAsync 要等十几秒，
             // 这段 await 期间 _previewOn 仍为 true、计时器仍在跑，帧看门狗会判定"4 秒没帧"
             // 并重发 ON，把排在后面的 OFF 撤销 → 预览关不掉、按钮与 Worker 状态脱节。
-            StopDwmPreview();
-            _previewTimer.Stop();
-            _previewOn = false;
-            // 清空画面，否则最后一帧会一直留在控件里，看起来像"关不掉"
-            Preview.Source = null;
-            BtnPreview.Content = "开启预览";
+            ResetPreviewOnStop();
+            _previewBusy = true;
+            BtnPreview.IsEnabled = false;
             try
             {
                 if (_workerHost is { ScenarioRunning: true })
                     await _workerHost.SendPreviewAsync(false);
             }
             catch { }
+            finally
+            {
+                _previewBusy = false;
+                BtnPreview.IsEnabled = true;
+            }
         }
+    }
+
+    private void ResetPreviewOnStop()
+    {
+        StopDwmPreview();
+        _previewTimer.Stop();
+        _previewOn = false;
+        Preview.Source = null;
+        BtnPreview.Content = "开启预览";
     }
 
     /// <summary>

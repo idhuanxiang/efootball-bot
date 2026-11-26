@@ -496,6 +496,10 @@ public static class FastGithubKernel
                 .ConfigureAwait(false);
             return new HostCheck(host, ip, (int)resp.StatusCode, (int)sw.ElapsedMilliseconds);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch
         {
             return new HostCheck(host, ip, 0, -1);
@@ -785,13 +789,16 @@ public static class FastGithubKernel
     }
 
     private static Timer? _watchdog;
+    private static int _watchdogGen;
 
     /// <summary>每 60 秒检查一次 hosts：加速段丢了就按缓存补回（与内核面板的自愈行为一致）。</summary>
     public static void StartWatchdog()
     {
         lock (WatchdogLock)
         {
-            _watchdog ??= new Timer(_ => TickWatchdog(), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+            if (_watchdog is not null) return;
+            int gen = Interlocked.Increment(ref _watchdogGen);
+            _watchdog = new Timer(_ => TickWatchdog(gen), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
         }
     }
 
@@ -800,19 +807,31 @@ public static class FastGithubKernel
         Timer? t;
         lock (WatchdogLock)
         {
+            Interlocked.Increment(ref _watchdogGen);
             t = _watchdog;
             _watchdog = null;
         }
         t?.Dispose();
     }
 
-    private static void TickWatchdog()
+    private static void TickWatchdog(int gen)
     {
         try
         {
+            if (Volatile.Read(ref _watchdogGen) != gen) return;
             if (HasBlock(ReadHosts())) return;
-            if (!ReapplyFromCache(out int count) || count == 0) return;
-            Notice?.Invoke($"hosts 加速段被其它软件清除，已按缓存自动补回 {count} 个域名");
+            if (Volatile.Read(ref _watchdogGen) != gen) return;
+            var cache = LoadCache();
+            if (cache.Count == 0) return;
+            lock (HostsFileLock)
+            {
+                if (Volatile.Read(ref _watchdogGen) != gen) return;
+                if (HasBlock(ReadHosts())) return;
+                string merged = StripBlock(ReadHosts()).TrimEnd('\r', '\n') + "\r\n\r\n" + BuildBlock(cache);
+                if (!WriteHosts(merged)) return;
+            }
+            FlushDns();
+            Notice?.Invoke($"hosts 加速段被其它软件清除，已按缓存自动补回 {cache.Count} 个域名");
         }
         catch { }
     }
@@ -857,6 +876,7 @@ public static class FastGithubKernel
         catch (OperationCanceledException)
         {
             try { process.Kill(true); } catch { }
+            if (ct.IsCancellationRequested) throw;
             return (-1, "内核进程超时未返回");
         }
         string tail = ((await stdout.ConfigureAwait(false)) + (await stderr.ConfigureAwait(false))).Trim();

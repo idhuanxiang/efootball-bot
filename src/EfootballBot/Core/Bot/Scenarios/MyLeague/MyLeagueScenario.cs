@@ -515,7 +515,7 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         int? swapWait = await HandleMaxLevelSwapAsync(screen, obs, ct);
         if (swapWait is not null) return swapWait.Value;
         // 模块自有界面拦截（国服子类在此接管主页导航与 RT 确认键）：返回非 null = 本轮已处理
-        int? customWait = await InterceptAsync(obs, screen, _streak, inMatchRecently);
+        int? customWait = await InterceptAsync(obs, screen, _streak, inMatchRecently, ct);
         if (customWait is not null) return customWait.Value;
         if (screen != MatchScreen.MatchHub && _hubScanMoves != 0)
             _hubScanMoves = 0; // 离开比赛页，重置卡排滚动扫描
@@ -871,7 +871,7 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
     /// 模块自有界面拦截：在共享决策（Decide/购买状态机/难度页）之前接管。
     /// 返回非 null = 本轮已处理（值为下一轮延时）；null = 交给共享流程。国际服无自有界面，恒 null。
     /// </summary>
-    protected virtual Task<int?> InterceptAsync(Observation obs, MatchScreen screen, int streak, bool inMatchRecently)
+    protected virtual Task<int?> InterceptAsync(Observation obs, MatchScreen screen, int streak, bool inMatchRecently, CancellationToken ct)
         => Task.FromResult<int?>(null);
     /// <summary>
     /// 共享决策里「下一步 / 确认」（PadConfirm）的实际按键动作与下一轮延时。

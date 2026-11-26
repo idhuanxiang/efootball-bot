@@ -353,6 +353,7 @@ public sealed partial class CnWeeklyScenario : IScenario
         _chBlocked.Clear();
         _chCurrentCard = 0;
         _chCurPlays = 0;
+        _chGoMatchAttempts = 0;
         _chStaleA = 0;
         _chRefreshs = 0;
         _chRetreatReenter = false;

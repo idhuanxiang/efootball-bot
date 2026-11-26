@@ -128,7 +128,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     /// 国服自有界面接管（先于共享决策）：主页导航 / 其他模块残留页 B 逃生 /
     /// 起始页 RT 开赛 / 疑似国服 RT 确认页的 A 无进展保险。
     /// </summary>
-    protected override async Task<int?> InterceptAsync(Observation obs, MatchScreen screen, int streak, bool inMatchRecently)
+    protected override async Task<int?> InterceptAsync(Observation obs, MatchScreen screen, int streak, bool inMatchRecently, CancellationToken ct)
     {
         if (screen != _lastConfirmScreen || screen == MatchScreen.InMatch || IsCnHome)
         {
@@ -145,7 +145,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
             IsCnKeyMatchPopup(obs.Ocr))
         {
             _nextMatchIsKey = true;
-            return await HandleCnKeyMatchPopupAsync(obs);
+            return await HandleCnKeyMatchPopupAsync(obs, ct);
         }
         // 已进入比赛流程（起始页/比赛/终场）或回主页：清零关键比赛梯次与新式难度轮次；
         // 注意：不在 Round 4 B 退回 LeaguePage 后清零 _diffRound，否则 5~9 轮与 StopWithError 不可达
@@ -157,7 +157,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         // ---- 国服主页：饱和归位导航进「我的联赛」（任意焦点/页签状态皆可达，到头多按无害）----
         if (IsCnHome || screen == MatchScreen.MainMenu)
         {
-            if (await CnAdvance.TryDismissHomePopupAsync(_engine, _mouse, obs.Ocr, "我的联赛", _log, CancellationToken.None))
+            if (await CnAdvance.TryDismissHomePopupAsync(_engine, _mouse, obs.Ocr, "我的联赛", _log, ct))
                 return 2400;
             if (++_homeAttempts > 4)
             {
@@ -198,7 +198,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         {
             if (streak < 1) return 800; // 过渡帧防抖
             return await CnAdvance.AdvanceAsync(_engine, _mouse, streak, "起始页", "我的联赛",
-                _log, obs.Ocr, obs.Detections, (0.850, 0.920), CancellationToken.None);
+                _log, obs.Ocr, obs.Detections, (0.850, 0.920), ct);
         }
         // ---- 国服「选择赛事等级」难度页接管。旧版页面（2026-10-18 实机）无「底行 取消/确认」
         //      结构、A=勾选、RT=确定；2026-11-04 实机改版为国际服同款 UI（底行 取消/确认，
@@ -281,7 +281,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     /// ⑤下×1+A（反向布局兜底）⑥上×2+A（三键布局饱和到最上）⑦B 关弹窗
     /// ⑧B×2 退出联赛由主页重进 ⑨九轮全败 → 停止并提示手动开赛，绝不无限空按。
     /// </summary>
-    private async Task<int> HandleCnKeyMatchPopupAsync(Observation obs)
+    private async Task<int> HandleCnKeyMatchPopupAsync(Observation obs, CancellationToken ct)
     {
         int round = ++_keyMatchRounds;
         _lastKeyMatchPopupAt = DateTime.Now;
@@ -311,7 +311,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
                 double ny = word?.CenterY ?? 0.59;
                 _log($"[我的联赛] 关键比赛弹窗 ④：RT 未推进，改鼠标点{(word is null ? "兜底坐标" : $"「{word.NormText}」")}" +
                      $"（{nx:F3},{ny:F3}）；鼠标点击需本程序以管理员运行才被国服接收", LogLevel.Warn);
-                await ClickAtAsync(nx, ny);
+                await ClickAtAsync(nx, ny, ct);
                 return 2600;
             }
             case 5:
@@ -342,7 +342,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     }
 
     /// <summary>后台鼠标点击（国服游戏为提权进程，须本程序以管理员运行 PostMessage 才被处理）。</summary>
-    private async Task ClickAtAsync(double nx, double ny)
+    private async Task ClickAtAsync(double nx, double ny, CancellationToken ct)
     {
         var win = _engine.Window;
         if (win is null)
@@ -352,8 +352,8 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         }
         var (w, h) = EfootballBot.Core.System.GameWindow.GetClientSize(win.Handle);
         if (w <= 0 || h <= 0) (w, h) = (1280, 720);
-        await _engine.Pad.HumanWait(150, 320, CancellationToken.None); // 拟人预停顿
-        await _mouse.ClickNormalizedAsync(win.Handle, nx, ny, w, h, downHoldMs: 70);
+        await _engine.Pad.HumanWait(150, 320, ct); // 拟人预停顿
+        await _mouse.ClickNormalizedAsync(win.Handle, nx, ny, w, h, downHoldMs: 70, ct: ct);
     }
 
     /// <summary>

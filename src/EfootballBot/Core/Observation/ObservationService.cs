@@ -366,6 +366,10 @@ public sealed class ObservationService : IDisposable
             await Task.Run(() => _provider.Start(Window.Handle, w, h), ct);
             LogInternal($"捕获会话已重建（{w}×{h}），等待画面恢复…", LogLevel.Info);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             LogInternal($"捕获重建失败：{ex.Message}；稍后自动重试", LogLevel.Warn);

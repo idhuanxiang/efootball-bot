@@ -84,10 +84,16 @@ public sealed class ShellTool : ITool
     {
         string? url = ctx.TargetPath;
         if (string.IsNullOrWhiteSpace(url)) return ToolResult.Fail("没有指定要打开的地址");
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            ctx.Log($"拒绝打开非 HTTP/HTTPS 地址：{url}", LogLevel.Warn);
+            return ToolResult.Fail("仅支持打开 http:// 或 https:// 网址", url);
+        }
         try
         {
-            using var _ = Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
-            return ToolResult.Success(url, url);
+            using var _ = Process.Start(new ProcessStartInfo { FileName = uri.AbsoluteUri, UseShellExecute = true });
+            return ToolResult.Success(uri.AbsoluteUri, uri.AbsoluteUri);
         }
         catch (Exception ex)
         {

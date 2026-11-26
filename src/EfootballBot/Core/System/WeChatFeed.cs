@@ -113,10 +113,11 @@ public static class WeChatFeed
 
     /// <summary>定时器/单测入口：把到期的合并积压推出去，并检查运行摘要是否到期。</summary>
     internal static void FlushDue(AppConfig cfg, Func<string>? summaryBody,
-        Action<string, LogLevel>? log, DateTime now)
+        Action<string, LogLevel>? log, DateTime now, bool requireActiveSession = false)
     {
         lock (Lock)
         {
+            if (requireActiveSession && !ReferenceEquals(_cfg, cfg)) return;
             foreach (var (kind, st) in States)
             {
                 if (st.Pending <= 0) continue;
@@ -131,7 +132,7 @@ public static class WeChatFeed
                 (_lastSummaryAt == DateTime.MinValue || (now - _lastSummaryAt).TotalMinutes >= interval))
             {
                 _lastSummaryAt = now;
-                SendLocked(cfg, NotifyKind.Summary, "📊 挂机运行摘要", summaryBody(), log, now);
+                SendLocked(cfg, NotifyKind.Summary, "📊 挂机运行摘要", summaryBody(), log, now, updateState: false);
             }
         }
     }
@@ -142,7 +143,8 @@ public static class WeChatFeed
         {
             var cfg = _cfg;
             if (cfg is null || !PrecheckLocked(cfg, kind, log)) return;
-            SendLocked(cfg, kind, title, body, log, Clock());
+            // 错误即时推送不改写 States[Warn] 的标题与 LastSent，避免吞掉待合并的警告计数与标题
+            SendLocked(cfg, kind, title, body, log, Clock(), updateState: false);
         }
     }
 
@@ -154,11 +156,14 @@ public static class WeChatFeed
     }
 
     private static void SendLocked(AppConfig cfg, NotifyKind kind, string title, string body,
-        Action<string, LogLevel>? log, DateTime now)
+        Action<string, LogLevel>? log, DateTime now, bool updateState = true)
     {
         if (!TryConsumeQuotaLocked(cfg, now, log)) return;
-        var st = State(kind, title);
-        st.LastSent = now;
+        if (updateState)
+        {
+            var st = State(kind, title);
+            st.LastSent = now;
+        }
         var hook = SendHook;
         if (hook is not null)
         {
@@ -225,7 +230,7 @@ public static class WeChatFeed
             log = _log;
         }
         if (cfg is null) return;
-        try { FlushDue(cfg, summary, log, Clock()); }
+        try { FlushDue(cfg, summary, log, Clock(), requireActiveSession: true); }
         catch { /* 推送层任何异常都不影响挂机 */ }
     }
 

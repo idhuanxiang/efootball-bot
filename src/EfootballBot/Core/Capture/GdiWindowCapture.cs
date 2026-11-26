@@ -249,9 +249,17 @@ public sealed class GdiWindowCapture : ICaptureProvider
         UpdateFrameSignature(full);
 
         var data = WindowCapture.DownscaleIfNeeded(full, w, h, out int ow, out int oh);
-        _latest = new FrameData(data, ow, oh, Environment.TickCount64);
-        FrameUpdated?.Invoke(this, EventArgs.Empty);
-        return true;
+        bool published = false;
+        lock (_gate)
+        {
+            if (!_stopRequested && Volatile.Read(ref _sessionGen) == myGen)
+            {
+                _latest = new FrameData(data, ow, oh, Environment.TickCount64);
+                published = true;
+            }
+        }
+        if (published) FrameUpdated?.Invoke(this, EventArgs.Empty);
+        return published;
     }
 
     /// <summary>像素指纹（FNV-1a，质数步长采样）：只为回答「这一帧和上一帧是不是同一张图」。
@@ -304,6 +312,7 @@ public sealed class GdiWindowCapture : ICaptureProvider
         lock (_gate)
         {
             if (!_running && _thread is null) return;
+            Interlocked.Increment(ref _sessionGen);
             _stopRequested = true;
             _running = false;
             t = _thread;

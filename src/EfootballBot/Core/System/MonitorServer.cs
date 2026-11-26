@@ -106,9 +106,9 @@ public sealed class MonitorServer : IDisposable
                 _cts = new CancellationTokenSource();
                 _ = Task.Run(() => LoopAsync(_cts.Token));
                 string scope = _allInterfaces
-                    ? "局域网同网段可访问；需配置 token 才能操作"
+                    ? "局域网同网段可访问；需配置 token 才能查看与操作"
                     : hasToken
-                        ? "仅本机可访问（配置 token 后可改为局域网访问）"
+                        ? "仅本机可访问（缺少 URL 权限或未提权，无法监听全网卡）"
                         : "仅本机可访问（未配置 token，避免日志/状态暴露给同网段）";
                 _log?.Invoke($"监控页已启动：{Url}（{scope}）", LogLevel.Success);
                 return;
@@ -167,6 +167,8 @@ public sealed class MonitorServer : IDisposable
             string path = ctx.Request.Url?.AbsolutePath ?? "/";
             string token = ctx.Request.QueryString["t"] ?? ctx.Request.Headers["X-Token"] ?? "";
             bool canOperate = IsTokenValid(_cfg.Token, token);
+            // 监听全网卡时，对非本机请求的数据/SSE 接口同样要求 token，防止同网段未授权读取日志与状态
+            bool allowRead = !_allInterfaces || ctx.Request.IsLocal || canOperate;
 
             switch (path)
             {
@@ -180,10 +182,12 @@ public sealed class MonitorServer : IDisposable
                     await AssetAsync(ctx, "monitor.js", "application/javascript; charset=utf-8");
                     return;
                 case "/api/stream":
+                    if (!allowRead) { await WriteAsync(ctx, 403, "text/plain; charset=utf-8", "需要 token"); return; }
                     await StreamAsync(ctx, canOperate);
                     return;
                 case "/api/status":
                 {
+                    if (!allowRead) { await WriteAsync(ctx, 403, "text/plain; charset=utf-8", "需要 token"); return; }
                     var s0 = _status();
                     await WriteAsync(ctx, 200, "application/json; charset=utf-8",
                         JsonSerializer.Serialize(new
@@ -205,6 +209,7 @@ public sealed class MonitorServer : IDisposable
                 }
                 case "/api/log":
                 {
+                    if (!allowRead) { await WriteAsync(ctx, 403, "text/plain; charset=utf-8", "需要 token"); return; }
                     int n = int.TryParse(ctx.Request.QueryString["n"], out var reqN)
                         ? Math.Clamp(reqN, 1, 300) : 100;
                     var rows = _logProvider?.Invoke(n) ?? Array.Empty<MonitorLogRow>();
@@ -216,6 +221,7 @@ public sealed class MonitorServer : IDisposable
                 }
                 case "/api/events":
                 {
+                    if (!allowRead) { await WriteAsync(ctx, 403, "text/plain; charset=utf-8", "需要 token"); return; }
                     var rows = _eventsProvider?.Invoke() ?? Array.Empty<MonitorEventRow>();
                     await WriteAsync(ctx, 200, "application/json; charset=utf-8", JsonSerializer.Serialize(new
                     {

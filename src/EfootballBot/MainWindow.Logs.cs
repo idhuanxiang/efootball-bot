@@ -94,6 +94,17 @@ public partial class MainWindow
         if (_cfg is null) return false;
         try
         {
+            // 跨进程字段保护：保存前从磁盘回读 DisabledPadDevs 与 GamePaths，
+            // 防止 UI 单项保存（静音/热键/过滤等）用陈旧内存快照覆盖 Worker 或 ToolPaths 的写入。
+            try
+            {
+                if (AppConfig.TryLoad(out var latest) && latest is not null)
+                {
+                    _cfg.HidHide.DisabledPadDevs = latest.HidHide.DisabledPadDevs;
+                    _cfg.GamePaths = latest.GamePaths;
+                }
+            }
+            catch { }
             _cfg.Save();
             return true;
         }

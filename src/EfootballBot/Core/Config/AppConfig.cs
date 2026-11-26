@@ -848,6 +848,7 @@ public sealed class AppConfig
                 }
                 string text = File.ReadAllText(path);
                 var cfg = JsonSerializer.Deserialize<AppConfig>(text, JsonOpts) ?? new AppConfig();
+                cfg.EnsureSectionsNonNull();
                 // 老配置没有 SchemaVersion 字段：反序列化会保留属性默认值（=当前版本），
                 // 单看属性无法区分「新配置」与「老配置」。以原始文本为准判定。
                 if (!text.Contains("\"SchemaVersion\"", StringComparison.Ordinal))
@@ -918,6 +919,60 @@ public sealed class AppConfig
         SchemaVersion = CurrentSchemaVersion;
     }
 
+    private void EnsureSectionsNonNull()
+    {
+        UnlimitedOcr ??= new();
+        Timing ??= new();
+        Inference ??= new();
+        VisionSidecar ??= new();
+        Yolo ??= new();
+        OcrPerf ??= new();
+        FrameDump ??= new();
+        Learning ??= new();
+        Appearance ??= new();
+        Hotkey ??= new();
+        Update ??= new();
+        HidHide ??= new();
+        Pad ??= new();
+        MyLeague ??= new();
+        PostMatchActivity ??= new();
+        Weekly ??= new();
+        AiLadder ??= new();
+        StudTraining ??= new();
+        CnWeekly ??= new();
+        CnMyLeague ??= new();
+        GamePaths ??= new();
+        BackgroundParking ??= new();
+        VirtualDisplayPark ??= new();
+        Schedule ??= new();
+        Notify ??= new();
+        Monitor ??= new();
+        Audio ??= new();
+    }
+
+    private static bool WithConfigMutex(Action action, int timeoutMs = 3000)
+    {
+        string mutexName = @"Local\EfootballBot-Config-Save"
+            + (AppPaths.Profile.Length == 0 ? "" : "-" + AppPaths.Profile);
+        using var mutex = new Mutex(false, mutexName);
+        bool owned = false;
+        try
+        {
+            try { owned = mutex.WaitOne(timeoutMs); }
+            catch (AbandonedMutexException) { owned = true; }   // 上个持有者崩溃：锁已归我们
+            if (!owned) return false;
+            action();
+            return true;
+        }
+        finally
+        {
+            if (owned)
+            {
+                try { mutex.ReleaseMutex(); } catch { /* 已释放/句柄失效 */ }
+            }
+        }
+    }
+
     /// <summary>
     /// 「只改一小块配置」的安全写法：跨进程加锁 → 重新读磁盘上的最新配置 → 改 → 写回。
     ///
@@ -927,24 +982,30 @@ public sealed class AppConfig
     /// </summary>
     internal static void UpdateOnDisk(Action<AppConfig> mutate)
     {
-        string mutexName = @"Local\EfootballBot-Config-Save"
-            + (AppPaths.Profile.Length == 0 ? "" : "-" + AppPaths.Profile);
-        using var mutex = new Mutex(false, mutexName);
-        bool owned = false;
-        try
+        bool ok = WithConfigMutex(() =>
         {
-            try { owned = mutex.WaitOne(3000); }
-            catch (AbandonedMutexException) { owned = true; }   // 上个持有者崩溃：锁已归我们
             var fresh = LoadFrom(ConfigPath);
+            if (fresh.LoadFailed)
+            {
+                try
+                {
+                    global::EfootballBot.Core.Logging.FileLogger.Instance.Write(
+                        "UpdateOnDisk 跳过：config.json 读取失败（只读降级）。", LogLevel.Warn);
+                }
+                catch { }
+                return;
+            }
             mutate(fresh);
             fresh.Save();
-        }
-        finally
+        });
+        if (!ok)
         {
-            if (owned)
+            try
             {
-                try { mutex.ReleaseMutex(); } catch { /* 已释放/句柄失效 */ }
+                global::EfootballBot.Core.Logging.FileLogger.Instance.Write(
+                    "UpdateOnDisk 等待跨进程配置锁超时（3s），本次未写盘。", LogLevel.Warn);
             }
+            catch { }
         }
     }
 
@@ -964,29 +1025,48 @@ public sealed class AppConfig
             catch { }
             return;
         }
-        string target = string.IsNullOrWhiteSpace(path) ? ConfigPath : path;
-        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        // 原子替换：进程+GUID 唯一临时文件，防止 GUI 与 Worker 并发 Save 时互踩同一 .tmp
-        var tmp = $"{target}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
-        try
+        void WriteCore()
         {
-            File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOpts));
-            for (int attempt = 0; attempt < 3; attempt++)
+            string target = string.IsNullOrWhiteSpace(path) ? ConfigPath : path;
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            // 原子替换：进程+GUID 唯一临时文件，防止 GUI 与 Worker 并发 Save 时互踩同一 .tmp
+            var tmp = $"{target}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOpts));
+                for (int attempt = 0; attempt < 3; attempt++)
+                {
+                    try
+                    {
+                        File.Move(tmp, target, overwrite: true);
+                        break;
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 2)
+                    {
+                        Thread.Sleep(50 * (attempt + 1));
+                    }
+                }
+            }
+            finally
+            {
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            }
+        }
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            if (!WithConfigMutex(WriteCore))
             {
                 try
                 {
-                    File.Move(tmp, target, overwrite: true);
-                    break;
+                    global::EfootballBot.Core.Logging.FileLogger.Instance.Write(
+                        "Save 等待跨进程配置锁超时（3s），本次未写盘。", LogLevel.Warn);
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 2)
-                {
-                    Thread.Sleep(50 * (attempt + 1));
-                }
+                catch { }
             }
         }
-        finally
+        else
         {
-            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            WriteCore();
         }
     }
 }

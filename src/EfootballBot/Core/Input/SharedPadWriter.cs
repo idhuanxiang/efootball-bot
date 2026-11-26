@@ -50,6 +50,11 @@ public sealed unsafe class SharedPadWriter : IDisposable
         *(int*)(_p + OffWriterPid) = Environment.ProcessId;
         *(uint*)(_p + OffFlags) = 0;
         *(uint*)(_p + OffTargetMask) = 0;
+        // 清空上一轮遗留的代理遥测，避免 3s 内重启时 ProxyPad.WaitForProxy 误判代理仍在线
+        Volatile.Write(ref *(long*)(_p + OffProxySeen), 0L);
+        *(int*)(_p + OffProxyPid) = 0;
+        *(uint*)(_p + OffProxyCalls) = 0;
+        *(uint*)(_p + OffProxyFlags) = 0;
         var existingSeq = Volatile.Read(ref *(long*)(_p + OffSeq));
         _seq = (existingSeq & 1) == 0 ? existingSeq : existingSeq + 1;
         if ((existingSeq & 1) != 0)

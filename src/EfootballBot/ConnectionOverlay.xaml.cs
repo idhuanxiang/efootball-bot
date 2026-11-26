@@ -61,8 +61,8 @@ public partial class ConnectionOverlay : Window
             if (!IsVisible)
             {
                 // 隐藏即停跟随（审查修复）：右键关闭只调 Hide()，不触发 Closed；
-                // 旧实现隐藏后 _followTimer 仍每 250ms 枚举进程 + 摆位置，白烧 CPU。
-                _followTimer.Stop();
+                // 但游戏最小化触发的 _autoHidden 不能停掉定时器，否则游戏还原后无法自动恢复显示。
+                if (!_autoHidden) _followTimer.Stop();
                 return;
             }
             if (IsLoaded) _followTimer.Start();

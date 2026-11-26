@@ -212,6 +212,7 @@ public partial class MainWindow
                         || reason.StartsWith("异常停止", StringComparison.Ordinal);
             AppendLog($"[结束] 场景已结束：{reason}", isError ? LogLevel.Error : LogLevel.Success);
             ResetButtons();
+            ResetPreviewOnStop();
             _statsTimer.Stop();
             _hotkey.Unregister();
             MuteGameOnScenarioStopped();
@@ -225,6 +226,7 @@ public partial class MainWindow
                 || _starting || _stopping || host.ScenarioRunning) return;
             AppendLog("[断开] Worker 进程已断开，场景已停止。", LogLevel.Warn);
             ResetButtons();
+            ResetPreviewOnStop();
             _statsTimer.Stop();
             _hotkey.Unregister();
             MuteGameOnScenarioStopped();
@@ -346,7 +348,8 @@ public partial class MainWindow
         bool alreadyRunningStud = _workerHost?.ScenarioRunning == true && _activeStartBtn == BtnStartStud;
         if (!alreadyRunningStud)
         {
-            SaveUiToConfig();
+            try { SaveUiToConfig(); }
+            catch (Exception ex) { AppendLogError($"[配置] 保存种马配置失败：{ex.Message}", ex); }
             if (!training && _cfg.StudTraining.BuyGoalkeeperCount == 0
                 && _cfg.StudTraining.BuyOutfieldCount == 0)
             {
@@ -371,7 +374,7 @@ public partial class MainWindow
 
     private async Task ToggleScenarioAsync(Button btn, string? mode)
     {
-        if (_starting || _stopping) return;
+        if (_starting || _stopping || _manualStopBusy) return;
         var host = GetOrCreateWorkerHost();
 
         bool switching = false;
@@ -379,7 +382,8 @@ public partial class MainWindow
         {
             if (_activeStartBtn == btn || _activeStartBtn is null)
             {
-                await StopScenarioAsync();
+                try { await StopScenarioAsync(); }
+                catch (Exception ex) { AppendLogError($"[停止] 停止挂机失败：{ex.Message}", ex); }
                 return;
             }
             switching = true;
@@ -388,6 +392,7 @@ public partial class MainWindow
         // 开始前必须手动确认的两点（运行中直接切换模式时免二次弹窗）：
         // ① 真实手柄随时可拿：挂机检测到占用会自动让路（虚拟手柄暂时断开，你的手柄立刻可用）；
         // ② 全屏（尤其超宽）下定位与捕获均不稳定，720p 窗口模式是实测可靠配置。
+        CancelAutoClose();
         if (!switching)
         {
             // 软件本体主题风格的确认对话框；首次阅读确定键带 5s 倒计时，之后直接确认
@@ -400,7 +405,6 @@ public partial class MainWindow
         if (hdrWarn is not null)
             AppendLog(hdrWarn, LogLevel.Warn);
 
-        CancelAutoClose();
         _starting = true;
         string targetName = BotModuleCatalog.Find(mode ?? "")?.DisplayName ?? mode ?? "目标模式";
         try
@@ -562,6 +566,11 @@ public partial class MainWindow
     private async Task HandleMonitorCommandCoreAsync(string cmd)
     {
         AppendLog($"[监控页] 收到操作：{cmd}", LogLevel.Info);
+        if (_starting || _stopping || _manualStopBusy)
+        {
+            AppendLog("[监控页] 当前正在启停/切换挂机，操作已忽略", LogLevel.Info);
+            return;
+        }
         if (_workerHost is not { ScenarioRunning: true })
         {
             AppendLog("[监控页] 当前没有运行中的挂机，操作已忽略", LogLevel.Info);
@@ -756,6 +765,7 @@ public partial class MainWindow
     {
         CancelAutoClose();
         SaveUiToConfig();
+        StopDwmPreview();
         _previewTimer.Stop();
         _statsTimer.Stop();
         // 静音兜底：关程序时一定把游戏声音还回去（挂机中直接关窗也不会留下静音）

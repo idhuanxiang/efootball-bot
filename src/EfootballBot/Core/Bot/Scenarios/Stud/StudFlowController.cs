@@ -969,9 +969,9 @@ public sealed class StudFlowController
         _skillSlotEmpty = false;
         _skillCompleted = false;
         _slotProbeTries = 0;
-        _log(_trainRemaining == int.MaxValue
-            ? $"[种马培训] 打开第 {_playerIndex + 1} 名球员（全部）"
-            : $"[种马培训] 打开第 {_playerIndex + 1}/{_playerIndex + _trainRemaining} 名球员", LogLevel.Info);
+        _log(_listPlayerCount > 0
+            ? $"[种马培训] 打开第 {_playerIndex + 1}/{_listPlayerCount} 名球员（剩余待训 {_trainRemaining} 名）"
+            : $"[种马培训] 打开第 {_playerIndex + 1} 名球员（剩余待训 {_trainRemaining} 名）", LogLevel.Info);
         var pad = _engine.Pad;
         await pad.DpadRepeatFast(PadDir.Up, Math.Max(9, _playerIndex + 3));
         if (_playerIndex > 0)

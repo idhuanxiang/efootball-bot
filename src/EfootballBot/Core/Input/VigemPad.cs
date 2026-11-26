@@ -156,12 +156,20 @@ public sealed class VigemPad : IVirtualPad
                 try { pad.Disconnect(); } catch { }
                 return;
             }
+            // 上电后先提交一次“全释放”状态，确保游戏识别到手柄；成功后再置 _connected
+            try
+            {
+                _pad.ResetReport();
+                _pad.SubmitReport();
+            }
+            catch
+            {
+                try { _pad.Disconnect(); } catch { }
+                _pad = null;
+                throw;
+            }
             _connected = true;
             _log?.Invoke($"ViGEm 虚拟手柄已连接（XInput 玩家 {(UserIndex + 1)}）。");
-
-            // 上电后先提交一次“全释放”状态，确保游戏识别到手柄
-            _pad.ResetReport();
-            _pad.SubmitReport();
         }
     }
 

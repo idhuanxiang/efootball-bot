@@ -21,6 +21,12 @@ public sealed class Pad
         get { lock (_ctsGate) return _linkedCts?.Token ?? _sessionCt; }
     }
 
+    /// <summary>当前是否处于暂停取消态（供主循环区分“暂停中断”与“其他取消异常”）。</summary>
+    public bool IsPauseCanceled
+    {
+        get { lock (_ctsGate) return _pauseCts?.IsCancellationRequested == true; }
+    }
+
     // ---- 性能埋点（P1-14）：场景一秒钟到底花多少在"按键"上 ----
     // 只在 Pad 的公有动作入口计时：内部 Task.Delay（按住/间隔）也算动作时间——
     // 那本来就是场景为了"让游戏吃到这一下"必须付出的墙钟时间，隐藏它反而看不出瓶颈。
@@ -62,14 +68,19 @@ public sealed class Pad
 
     private void RebuildLinked()
     {
+        CancellationTokenSource? oldLinked;
+        CancellationTokenSource? oldPause;
         lock (_ctsGate)
         {
-            // 不 Dispose 旧 _linkedCts：可能有异步动作正持有它的 Token，
-            // Dispose 会让那些动作读 Token 时抛 ObjectDisposedException。
-            // CTS 由 GC 回收（每次启停仅一个，量极小），避免竞态。
+            oldLinked = _linkedCts;
+            oldPause = _pauseCts;
             _pauseCts = new CancellationTokenSource();
             _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_sessionCt, _pauseCts.Token);
         }
+        // 在锁外释放旧 CTS：ActionCt 仅在锁内读取 .Token，故不会在已释放对象上读 Token；
+        // 同时避免旧 _linkedCts 长期挂在 _sessionCt 回调链表上造成整会话内存累积。
+        try { oldLinked?.Dispose(); } catch { }
+        try { oldPause?.Dispose(); } catch { }
     }
 
     /// <summary>动作计时包装：次数 +1，耗时累加（异常也计，便于看出"卡在提交上"）。</summary>
@@ -134,9 +145,10 @@ public sealed class Pad
     /// <summary>右扳机 RT（个别赛前确认页右下角提示「RT 确定」）。</summary>
     public Task RT() => Timed(async () =>
     {
+        ActionCt.ThrowIfCancellationRequested();
         _vg.SetRightTrigger(255);
         try { await Task.Delay(Jitter(_t.TapHoldMs), ActionCt); }
-        finally { _vg.SetRightTrigger(0); }
+        finally { PadRelease.Safe(() => _vg.SetRightTrigger(0), _vg.ResetAll); }
         await Task.Delay(Jitter(_t.TapGapMs), ActionCt);
     });
 
@@ -161,14 +173,28 @@ public sealed class Pad
         }
     });
 
+    /// <summary>同时受外部 ct 与暂停令牌约束的延时，确保暂停时能立即打断等待。</summary>
+    private async Task DelayWithPauseAsync(int ms, CancellationToken ct)
+    {
+        var act = ActionCt;
+        if (!ct.CanBeCanceled || ct == _sessionCt)
+        {
+            await Task.Delay(ms, act);
+            return;
+        }
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, act);
+        await Task.Delay(ms, linked.Token);
+    }
+
     /// <summary>结算 / 奖励页：缓慢连按 A。</summary>
     public async Task ConfirmMany(int count, CancellationToken ct)
     {
         for (int i = 0; i < count; i++)
         {
             ct.ThrowIfCancellationRequested();
+            ActionCt.ThrowIfCancellationRequested();
             await Confirm();
-            await Task.Delay(Jitter(260), ct);
+            await DelayWithPauseAsync(Jitter(260), ct);
         }
     }
 
@@ -181,7 +207,7 @@ public sealed class Pad
         }
     }
 
-    public Task Wait(int ms, CancellationToken ct) => Task.Delay(Jitter(ms), ct);
+    public Task Wait(int ms, CancellationToken ct) => DelayWithPauseAsync(Jitter(ms), ct);
 
     /// <summary>
     /// 拟人随机等待（闭区间 [minMs, maxMs]），用于非必须立即的连点场景
@@ -194,6 +220,6 @@ public sealed class Pad
         int lo = Math.Clamp(Math.Min(minMs, maxMs), 0, 600_000);
         int hi = Math.Clamp(Math.Max(minMs, maxMs), lo, 600_000);
         int ms = _pace is not null ? _pace.SampleRange(lo, hi) : Random.Shared.Next(lo, hi + 1);
-        return Task.Delay(ms, ct);
+        return DelayWithPauseAsync(ms, ct);
     }
 }

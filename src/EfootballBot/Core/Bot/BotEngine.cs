@@ -664,13 +664,12 @@ public sealed class BotEngine : IDisposable
                         // 会话停止令牌取消 → 正常退出循环（外层 catch 记"[停止]"）
                         throw;
                     }
-                    catch (OperationCanceledException)
+                    catch (OperationCanceledException) when (_paused || Pad.IsPauseCanceled)
                     {
                         // 暂停中断按键序列产生的取消 ≠ 会话停止：绝不能让挂机终止。
-                        // 下一轮循环开头会看到 _paused 并进入等待分支。
+                        // 下一轮循环开头会看到 _paused 并进入等待分支；非暂停类的取消（如内部超时）
+                        // 落入下方 Exception 分支走退避重试，防止 0ms 死循环刷日志。
                         try { Pad360.ResetAll(); } catch { }
-                        if (!_paused)
-                            LogInternal("按键中断（非暂停/非停止），本轮跳过", LogLevel.Warn);
                     }
                     catch (CaptureUnrecoverableException ex)
                     {
@@ -1653,13 +1652,16 @@ public sealed class BotEngine : IDisposable
     /// </summary>
     public async Task StopAsync(int timeoutMs = 3000)
     {
-        Stop();
+        Interlocked.CompareExchange(ref _stopReason, "正常停止", null);
+        try { _cts?.Cancel(); } catch { }
         var loop = _loop;
-        if (loop is null || loop.IsCompleted) return;
-        if (Volatile.Read(ref _loopThreadId) == Environment.CurrentManagedThreadId)
-            return; // 场景在引擎线程里调停止：不能自己等自己
-        if (await Task.WhenAny(loop, Task.Delay(timeoutMs)) != loop)
-            LogInternal($"[停止] 主循环 {timeoutMs}ms 内未退出，继续回收（可能有一次资源竞态）", LogLevel.Warn);
+        if (loop is not null && !loop.IsCompleted
+            && Volatile.Read(ref _loopThreadId) != Environment.CurrentManagedThreadId)
+        {
+            if (await Task.WhenAny(loop, Task.Delay(timeoutMs)) != loop)
+                LogInternal($"[停止] 主循环 {timeoutMs}ms 内未退出，继续回收（可能有一次资源竞态）", LogLevel.Warn);
+        }
+        StopInternal("正常停止", isError: false);
     }
 
     private void StopInternal(string summaryReason, bool isError)

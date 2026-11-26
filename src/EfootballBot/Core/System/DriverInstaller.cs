@@ -123,6 +123,11 @@ public sealed class DriverInstaller
             _log("已取消管理员授权。");
             return (DriverSetupResultKind.UserCancelled, 1602);
         }
+        catch (Exception ex)
+        {
+            _log($"启动驱动安装程序失败：{ex.Message}");
+            return (DriverSetupResultKind.Failed, -1);
+        }
 
         using (process)
         {

@@ -92,7 +92,10 @@ public partial class StartConfirmDialog : Window
     private void OnDrag(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         if (e.ButtonState == System.Windows.Input.MouseButtonState.Pressed)
-            DragMove();
+        {
+            try { DragMove(); }
+            catch (InvalidOperationException) { }
+        }
     }
 
     // ★用 AppPaths.DataDir 而非 AppContext.BaseDirectory：单文件发布下 BaseDirectory 是

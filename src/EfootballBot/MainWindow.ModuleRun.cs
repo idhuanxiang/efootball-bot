@@ -93,7 +93,7 @@ public partial class MainWindow
     /// </summary>
     private async Task ManualStopWithReportAsync()
     {
-        if (_manualStopBusy) return;
+        if (_manualStopBusy || _starting || _stopping) return;
         if (_workerHost is not { ScenarioRunning: true })
         {
             AppendLog("[手动停止] 当前没有运行中的挂机。", LogLevel.Info);
@@ -101,6 +101,7 @@ public partial class MainWindow
         }
         _manualStopBusy = true;
         foreach (var m in _moduleRuns) m.Manual.IsEnabled = false;
+        RefreshRunButtons();
         try
         {
             AppendLog("[手动停止] 正在截取当前游戏画面…", LogLevel.Info);

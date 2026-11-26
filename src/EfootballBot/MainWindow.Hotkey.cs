@@ -44,9 +44,12 @@ public partial class MainWindow
         _ = TogglePauseAsync(skipThrottle: true);
     }
 
+    private bool _pauseBusy;
+
     /// <summary>统一暂停/恢复切换（GUI 按钮与监控页共用），同步按钮文字与热键可视化。</summary>
     private async Task TogglePauseAsync(bool skipThrottle = false)
     {
+        if (_starting || _stopping || _pauseBusy) return;
         // 纯时间节流（250ms）：只拦真正的机械连点/双击；250ms 足以让用户"暂停后立刻继续"。
         // 记录时间戳放在成功之后——发送失败不消耗节流，允许立刻重试（审查修复）。
         // 恢复热键是独立按键，skipThrottle 让它不受主热键双击防抖影响（复查修复）
@@ -54,14 +57,20 @@ public partial class MainWindow
         var host = _workerHost;
         if (host is not { ScenarioRunning: true }) return;
         bool next = !_paused;
+        _pauseBusy = true;
         try
         {
             await host.SendPauseAsync(next);
+            if (!ReferenceEquals(host, _workerHost) || !host.ScenarioRunning) return;
         }
         catch (System.Exception ex)
         {
             AppendLog($"[暂停] 命令发送失败：{ex.Message}", LogLevel.Error);
             return; // 发送失败不消耗节流
+        }
+        finally
+        {
+            _pauseBusy = false;
         }
         _lastPauseToggle = DateTime.Now;
         _paused = next;
@@ -91,10 +100,15 @@ public partial class MainWindow
             MuteGameOnScenarioStopped(); // 停挂机即恢复游戏声音（必须在按钮恢复可点之前，防止误取消新会话静音）
             AppendLog("[停止] 挂机已停止，手柄与窗口状态已恢复。", LogLevel.Info);
         }
+        catch (System.Exception ex)
+        {
+            AppendLogError($"[停止] 停止挂机异常：{ex.Message}", ex);
+        }
         finally
         {
             _stopping = false;
             ResetButtons();
+            ResetPreviewOnStop();
         }
         if (allowAutoClose && _cfg.AutoCloseWhenDone)
             ScheduleAutoClose();

@@ -80,7 +80,7 @@ public sealed class SessionScheduler
             int breakMin = _rnd.Next(2, 6);
             _breakUntil = now.AddMinutes(breakMin);
             _nextBreakAt = now.AddMinutes(_rnd.Next(30, 71));
-            _log($"作息调度：模拟真人短暂离开 {breakMin} 分钟（{now:HH:mm} 起）", LogLevel.Info);
+            _log($"作息调度：模拟真人短暂离开 {breakMin} 分钟（{now:HH:mm} 起，至 {_breakUntil:HH:mm}）", LogLevel.Info);
             should = false;
         }
 
@@ -102,9 +102,7 @@ public sealed class SessionScheduler
                 _log($"作息调度：今日挂机已达上限 {_cfg.DailyCapHours:0.#} 小时，休息至明天 {winStart} 自动恢复", LogLevel.Warn);
             else if (_restDay)
                 _log($"作息调度：今日随机整日休息，明天 {winStart} 自动恢复", LogLevel.Warn);
-            else if (now < _breakUntil)
-                _log($"作息调度：短暂离开至 {_breakUntil:HH:mm}", LogLevel.Info);
-            else
+            else if (now >= _breakUntil)
                 _log($"作息调度：超出活跃时段（今日 {winStart}–{winEnd}），明天 {winStart} 自动恢复", LogLevel.Warn);
         }
         else
@@ -154,9 +152,10 @@ public sealed class SessionScheduler
         return TimeSpan.FromTicks(ticks);
     }
 
-    /// <summary>当前时刻（含漂移后）是否在活跃窗口内。start &gt; end 视为跨午夜窗口。</summary>
+    /// <summary>当前时刻（含漂移后）是否在活跃窗口内。start == end 视为全天运行；start &gt; end 视为跨午夜窗口。</summary>
     private bool InWindow(TimeSpan t)
     {
+        if (_start == _end) return true;
         TimeSpan s = NormalizeTimeOfDay(_start + _drift), e = NormalizeTimeOfDay(_end + _drift);
         return s <= e ? t >= s && t < e : t >= s || t < e;
     }

@@ -170,6 +170,8 @@ public sealed partial class CnWeeklyScenario : IScenario
     private string _pendingFullCardSig = "";
     /// <summary>主页「前往比赛」独立重试计数（不随换屏清零，防乒乓绕过）。</summary>
     private int _goMatchAttempts;
+    /// <summary>挑战卡详情页「前往比赛」独立重试计数（不随换屏清零，防乒乓绕过）。</summary>
+    private int _chGoMatchAttempts;
     /// <summary>阵容退出/保存弹窗独立尝试计数（不随 Squad↔SavePopup 乒乓清零）。</summary>
     private int _squadExitAttempts;
     /// <summary>信息弹窗打开/读数独立尝试计数（不随乒乓清零）。</summary>
@@ -273,6 +275,7 @@ public sealed partial class CnWeeklyScenario : IScenario
             _tourPanelReopens = 0; // 比赛开打：游戏会重置主页焦点，乒乓探测复位
             _skipBlockedThisMatch = false; // 新一场：重新给一次跳过机会
             _goMatchAttempts = 0;
+            _chGoMatchAttempts = 0;
             _squadExitAttempts = 0;
             _cnConfirmAttempts = 0; // 比赛开打才清零确认页计数（审查修复⑪）
             _rewardOpenAttempts = 0;
@@ -332,8 +335,7 @@ public sealed partial class CnWeeklyScenario : IScenario
                 obs.Ocr, obs.Detections, (0.850, 0.920), ct);
         }
         int? cnWait = await HandleCnAsync(cw, ml, obs, ct);
-        if (cnWait is > 0) return cnWait.Value;
-        if (cnWait is not null) return 1500;
+        if (cnWait is not null) return cnWait.Value;
         // cw==None 且阶段已交回共享流程：走共用决策（比赛中/终场/弹窗/逃生）
         // 跳过比赛：2026-11-06 用户决定挑战赛也允许跳（旧版按「跳过不计积分」全网禁用）。
         // 安全性由 MyLeagueBrain 的暂停菜单二次把关保证：只有菜单里出现「对局获胜」
@@ -550,8 +552,9 @@ public sealed partial class CnWeeklyScenario : IScenario
                         if (_streak < 1) return 800; // 过渡帧防抖
                         int? done = await ChallengeCardDoneStepAsync(obs);
                         if (done is not null) return done.Value;
-                        if (++_attempts > 4)
+                        if (++_chGoMatchAttempts > 4)
                         {
+                            _chGoMatchAttempts = 0;
                             _log("[国服周活动] 挑战卡前往比赛多次未生效，B 返回重走流程", LogLevel.Warn);
                             SetPhase(CwPhase.Flow);
                             await _engine.Pad.Back();
@@ -604,7 +607,7 @@ public sealed partial class CnWeeklyScenario : IScenario
                     case CwScreen.RewardPopup:
                         return await HandleRewardPopupAsync(obs);
                     case CwScreen.CoachSelect:
-                        return await HandleCoachSelectAsync(obs);
+                        return await HandleCoachSelectAsync(obs, ct);
                     case CwScreen.CoachDetail:
                         return await HandleCoachDetailAsync();
                     case CwScreen.SignConfirm:

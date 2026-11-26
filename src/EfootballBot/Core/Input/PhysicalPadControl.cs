@@ -382,8 +382,14 @@ public static class PhysicalPadControl
         }
         if (record.Count > 0)
         {
-            cfg.HidHide.DisabledPadDevs = failed;
-            cfg.Save();
+            AppConfig.UpdateOnDisk(fresh =>
+            {
+                var remaining = fresh.HidHide.DisabledPadDevs.ToList();
+                var succeeded = record.Where(r => !failed.Contains(r, StringComparer.OrdinalIgnoreCase))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                remaining.RemoveAll(r => succeeded.Contains(r));
+                fresh.HidHide.DisabledPadDevs = remaining;
+            });
         }
 
         // 兜底扫描：记录之外的已禁用手柄节点（如 GUI 陈旧快照覆盖过记录）
@@ -466,13 +472,15 @@ public static class PhysicalPadControl
     /// <summary>把实例路径并入禁用记录并立即落盘（返回合并后的全量记录）。</summary>
     private static List<string> AppendToRecord(IEnumerable<string> instancePaths)
     {
-        var cfg = AppConfig.Load();
         var add = instancePaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var merged = cfg.HidHide.DisabledPadDevs.ToList();
-        merged.RemoveAll(p => add.Contains(p));
-        merged.AddRange(add);
-        cfg.HidHide.DisabledPadDevs = merged;
-        cfg.Save();
+        List<string> merged = [];
+        AppConfig.UpdateOnDisk(cfg =>
+        {
+            merged = cfg.HidHide.DisabledPadDevs.ToList();
+            merged.RemoveAll(p => add.Contains(p));
+            merged.AddRange(add);
+            cfg.HidHide.DisabledPadDevs = merged;
+        });
         return merged;
     }
 

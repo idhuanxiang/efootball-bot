@@ -110,6 +110,7 @@ public sealed class WorkerHost : IDisposable
             // ★先置位再发命令：Worker 可能秒回 exited（如找不到游戏窗口），
             // 若置位在发送之后，读循环先清零、这里再置 true → 永久"在跑"（按钮全禁）
             _actionRequiredReason = null;
+            _lastStats = new BotStats();
             _scenarioRunning = true;
             await SendAsync(PipeProtocol.CmdStart(mode), CommandWriteTimeout);
             _lastRunStartAt = DateTime.Now;
@@ -287,7 +288,22 @@ public sealed class WorkerHost : IDisposable
             _scenarioRunning = false;
             _ = Task.Run(async () =>
             {
-                try { await TeardownAsync(); } catch { }
+                bool acquired = false;
+                try
+                {
+                    await _lifecycle.WaitAsync();
+                    acquired = true;
+                    if (_disposed || Volatile.Read(ref _sessionId) != sessionId) return;
+                    await TeardownAsync();
+                }
+                catch { }
+                finally
+                {
+                    if (acquired)
+                    {
+                        try { _lifecycle.Release(); } catch (ObjectDisposedException) { }
+                    }
+                }
                 FireDisconnected();
             });
         }, TaskScheduler.Default);

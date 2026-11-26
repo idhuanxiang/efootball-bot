@@ -211,39 +211,54 @@ public sealed class NetworkProbe
 
     // ---------------- 目标表 ----------------
 
+    private readonly object _targetsLock = new();
+    private readonly object _monLock = new();
+
     public ProbeTarget Add(string input, bool monitor = false)
     {
         input = input.Trim();
         bool isDomain = Uri.CheckHostName(input) == UriHostNameType.Dns && !input.All(char.IsDigit) && input.Contains('.');
-        var t = new ProbeTarget
+        ProbeTarget t;
+        lock (_targetsLock)
         {
-            Id = _nextId++,
-            Label = input,
-            Kind = isDomain ? "domain" : "manual",
-            Domain = isDomain ? input : null,
-            Ip = isDomain ? "" : input,
-            Port = 443,
-            UseIcmp = false,
-            Monitor = monitor,
-        };
-        _targets.Add(t);
-        Save();
+            t = new ProbeTarget
+            {
+                Id = _nextId++,
+                Label = input,
+                Kind = isDomain ? "domain" : "manual",
+                Domain = isDomain ? input : null,
+                Ip = isDomain ? "" : input,
+                Port = 443,
+                UseIcmp = false,
+                Monitor = monitor,
+            };
+            _targets.Add(t);
+            Save();
+        }
         return t;
     }
 
     public bool Remove(int id)
     {
-        var n = _targets.RemoveAll(t => t.Id == id);
-        if (n > 0) Save();
-        return n > 0;
+        bool removed;
+        lock (_targetsLock)
+        {
+            var n = _targets.RemoveAll(t => t.Id == id);
+            removed = n > 0;
+            if (removed) Save();
+        }
+        return removed;
     }
 
     public void SetMonitor(int id, bool on)
     {
-        var t = _targets.FirstOrDefault(x => x.Id == id);
-        if (t is null) return;
-        t.Monitor = on;
-        Save();
+        lock (_targetsLock)
+        {
+            var t = _targets.FirstOrDefault(x => x.Id == id);
+            if (t is null) return;
+            t.Monitor = on;
+            Save();
+        }
     }
 
     private void Load()
@@ -431,19 +446,26 @@ public sealed class NetworkProbe
     {
         if (Monitoring) return;
         _stats.Clear();
-        var monitored = _targets.Where(t => t.Monitor).ToList();
+        List<ProbeTarget> monitored;
+        lock (_targetsLock) { monitored = _targets.Where(t => t.Monitor).ToList(); }
         _monCts = new CancellationTokenSource();
-        _csv = null;
-        if (csv)
+        lock (_monLock)
         {
-            try
+            _csv = null;
+            if (csv)
             {
-                Directory.CreateDirectory(CsvDir);
-                _csv = new StreamWriter(Path.Combine(CsvDir, "monitor.csv"), append: true, Encoding.UTF8) { AutoFlush = true };
-                _csv.WriteLine(string.Join(",",
-                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), "time", "label", "ip", "ms"));
+                StreamWriter? sw = null;
+                try
+                {
+                    Directory.CreateDirectory(CsvDir);
+                    sw = new StreamWriter(Path.Combine(CsvDir, "monitor.csv"), append: true, Encoding.UTF8) { AutoFlush = true };
+                    sw.WriteLine(string.Join(",",
+                        DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), "time", "label", "ip", "ms"));
+                    _csv = sw;
+                    sw = null;
+                }
+                catch { sw?.Dispose(); _csv = null; }
             }
-            catch { _csv = null; }
         }
         Monitoring = true;
         _monTask = Task.Run(() => MonitorLoopAsync(monitored, _monCts.Token));
@@ -456,51 +478,71 @@ public sealed class NetworkProbe
         try { _monCts?.Cancel(); } catch { }
         try { if (_monTask is not null) await _monTask.WaitAsync(TimeSpan.FromSeconds(3)); } catch { }
         _monCts?.Dispose(); _monCts = null; _monTask = null;
-        try { _csv?.Dispose(); } catch { }
-        _csv = null;
+        lock (_monLock)
+        {
+            try { _csv?.Dispose(); } catch { }
+            _csv = null;
+        }
     }
 
     private async Task MonitorLoopAsync(List<ProbeTarget> monitored, CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested)
+        try
         {
-            // 目标表可能被增删/勾选变化：每轮取最新勾选集
-            var round = _targets.Where(t => t.Monitor).ToList();
-            if (round.Count == 0) { try { await Task.Delay(1000, ct); } catch { return; } continue; }
-
-            var jobs = round.Select(async t =>
+            while (!ct.IsCancellationRequested)
             {
-                var ips = t.Domain is not null ? ResolveDomain(t.Domain) : new List<string> { t.Ip };
-                if (ips.Count == 0) ips.Add(t.Ip.Length > 0 ? t.Ip : "0.0.0.0");
-                int ms = -1;
-                foreach (var ip in ips)
+                // 目标表可能被增删/勾选变化：每轮加锁取最新勾选集
+                List<ProbeTarget> round;
+                lock (_targetsLock) { round = _targets.Where(t => t.Monitor).ToList(); }
+                if (round.Count == 0) { await Task.Delay(1000, ct); continue; }
+
+                var jobs = round.Select(t => Task.Run(() =>
                 {
-                    ms = Measure(ip, t.UseIcmp, t.Port);
-                    if (ms >= 0) { if (t.Ip != ip) t.Ip = ip; break; }
-                }
-                Record(t, ms);
-                Sample?.Invoke(t.Id, ms);
-            }).ToList();
-            await Task.WhenAll(jobs);
-            try { await Task.Delay(1000, ct); } catch { return; }
+                    if (ct.IsCancellationRequested) return;
+                    var ips = t.Domain is not null ? ResolveDomain(t.Domain) : new List<string> { t.Ip };
+                    if (ips.Count == 0) ips.Add(t.Ip.Length > 0 ? t.Ip : "0.0.0.0");
+                    int ms = -1;
+                    foreach (var ip in ips)
+                    {
+                        if (ct.IsCancellationRequested) return;
+                        ms = Measure(ip, t.UseIcmp, t.Port);
+                        if (ms >= 0) { if (t.Ip != ip) t.Ip = ip; break; }
+                    }
+                    if (ct.IsCancellationRequested) return;
+                    Record(t, ms);
+                    Sample?.Invoke(t.Id, ms);
+                }, ct)).ToList();
+                await Task.WhenAll(jobs);
+                await Task.Delay(1000, ct);
+            }
         }
+        catch (OperationCanceledException) { }
+        catch { }
+        finally { Monitoring = false; }
     }
 
     private void Record(ProbeTarget t, int ms)
     {
-        var s = StatsFor(t.Id);
-        s.Current = ms;
-        s.Samples.Enqueue(ms);
-        while (s.Samples.Count > 180) s.Samples.Dequeue();
-        if (ms >= 0)
+        lock (_monLock)
         {
-            s.OkCount++;
-            s.Min = s.Min < 0 ? ms : Math.Min(s.Min, ms);
-            s.Max = Math.Max(s.Max, ms);
-            s.Avg = s.Avg < 0 ? ms : Math.Round((s.Avg * (s.OkCount - 1) + ms) / s.OkCount, 1);
+            var s = StatsFor(t.Id);
+            s.Current = ms;
+            s.Samples.Enqueue(ms);
+            while (s.Samples.Count > 180) s.Samples.Dequeue();
+            if (ms >= 0)
+            {
+                s.OkCount++;
+                s.Min = s.Min < 0 ? ms : Math.Min(s.Min, ms);
+                s.Max = Math.Max(s.Max, ms);
+                s.Avg = s.Avg < 0 ? ms : Math.Round((s.Avg * (s.OkCount - 1) + ms) / s.OkCount, 1);
+            }
+            else s.FailCount++;
+            try
+            {
+                _csv?.WriteLine(string.Join(",", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    DateTime.Now.ToString("HH:mm:ss"), t.Label, t.Ip, ms));
+            }
+            catch { }
         }
-        else s.FailCount++;
-        _csv?.WriteLine(string.Join(",", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
-            DateTime.Now.ToString("HH:mm:ss"), t.Label, t.Ip, ms));
     }
 }

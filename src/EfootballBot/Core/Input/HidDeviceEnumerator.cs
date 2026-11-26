@@ -177,8 +177,8 @@ public static class HidDeviceEnumerator
     {
         var key = new DEVPROPKEY
         {
-            FmtId = new Guid("540B947E-8B40-45BC-A8A2-6A0B894CBDA2"), // DEVPKEY_Device_IsConnected
-            Pid = 2,
+            FmtId = new Guid("83DA6326-97A6-4088-9453-A1923F573B29"), // DEVPKEY_Device_IsConnected
+            Pid = 15,
         };
         var buf = new byte[1];
         uint size = (uint)buf.Length;

@@ -30,7 +30,15 @@ public sealed class UploadFrameRing : IDisposable
         _slotBytes = checked(maxWidth * maxHeight * 4);
         var total = HeaderBytes + (long)_slotBytes * _slots;
         _mmf = MemoryMappedFile.CreateNew(name, total);
-        _view = _mmf.CreateViewAccessor(0, total, MemoryMappedFileAccess.ReadWrite);
+        try
+        {
+            _view = _mmf.CreateViewAccessor(0, total, MemoryMappedFileAccess.ReadWrite);
+        }
+        catch
+        {
+            _mmf.Dispose();
+            throw;
+        }
 
         _view.Write(0, Magic);
         _view.Write(4, Version);
@@ -45,19 +53,26 @@ public sealed class UploadFrameRing : IDisposable
     /// <summary>写一帧并返回发布序号（偶数）。Rust 侧按同一公式取槽位。</summary>
     public long Publish(FrameData frame)
     {
-        var stride = frame.Width * 4;
-        var need = checked(stride * frame.Height);
-        if (need > _slotBytes)
+        if (frame.Width <= 0 || frame.Height <= 0)
+            throw new ArgumentOutOfRangeException(nameof(frame), $"非法帧尺寸：{frame.Width}x{frame.Height}");
+        long stride = (long)frame.Width * 4;
+        long needLong = stride * frame.Height;
+        if (needLong > _slotBytes || needLong > int.MaxValue)
             throw new InvalidOperationException($"帧 {frame.Width}x{frame.Height} 超过上传环容量（{_slotBytes} 字节）");
+        int need = (int)needLong;
+        if (frame.Bgra.Length < need)
+            throw new ArgumentException($"帧缓冲不足：{frame.Bgra.Length} < {need}", nameof(frame));
 
         var nextOdd = _seq + 1;
         _view.Write(OffSeq, nextOdd); // 奇数 = 写入中
-        var slot = (int)((nextOdd + 1) / 2 % _slots);
+        Thread.MemoryBarrier();
+        var slot = (long)((nextOdd + 1) / 2 % _slots);
         _view.WriteArray(HeaderBytes + slot * _slotBytes, frame.Bgra, 0, need);
         _view.Write(OffWidth, (uint)frame.Width);
         _view.Write(OffHeight, (uint)frame.Height);
         _view.Write(OffStride, (uint)stride);
         _view.Write(OffTs, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        Thread.MemoryBarrier();
         _seq = nextOdd + 1;
         _view.Write(OffSeq, _seq); // 偶数 = 稳定
         // 不要在这里 Flush()：映射是共享内存（非文件），对端可见性由内存一致性保证；
