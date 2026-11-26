@@ -114,7 +114,10 @@ public sealed class GdiWindowCapture : ICaptureProvider
             finally { ReleaseDC(nint.Zero, hdcScreen); }
             if (hdcMem == nint.Zero) return;
 
-            while (!_stopRequested)
+            // 循环条件加代际检查（审查修复⑧）：Stop 的 Join(2000) 超时后旧线程可能仍卡在
+            // PrintWindow 里；Start 重置 _stopRequested 会让它复活并与新线程并发抓帧。
+            // 每个循环顶部校验自己的代际，旧线程一旦恢复立刻退出，不再写共享状态。
+            while (!_stopRequested && Volatile.Read(ref _sessionGen) == myGen)
             {
                 // 节流：按最小帧间隔产出（与 DXGI 后端的休眠节流一致）
                 int interval = Math.Max(33, _minFrameIntervalMs);

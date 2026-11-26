@@ -140,6 +140,8 @@ public partial class MainWindow
             // 绑定全局热键（低级钩子：键盘任意键/鼠标键；单热键：第一次暂停，第二次终止）
             _hotkey.Attach(this);
             _hotkey.PauseStopTriggered += () => Dispatcher.BeginInvoke(Hotkey_PauseStop_Triggered);
+            // 恢复热键此前从未订阅、功能完全失效（审查修复⑪）
+            _hotkey.ResumeTriggered += () => Dispatcher.BeginInvoke(Hotkey_Resume_Triggered);
             RefreshHotkeyUi();
 
             StartMonitorIfEnabled();
@@ -702,6 +704,9 @@ public partial class MainWindow
     /// <summary>将 Worker 传来的 PNG base64 解码显示到预览控件。</summary>
     private void ShowPreviewPng(string pngBase64)
     {
+        // 关闭预览后管道里仍有迟到帧（BeginInvoke 排队中），若不检查开关会把刚清空的画面
+        // 又显示回来、停在最后一帧"关不掉"（审查修复⑨）
+        if (!_previewOn) return;
         try
         {
             _lastPreviewAt = DateTime.Now;

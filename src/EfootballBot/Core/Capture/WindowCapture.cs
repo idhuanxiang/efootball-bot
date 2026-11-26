@@ -528,7 +528,9 @@ public sealed class WindowCapture : ICaptureProvider
             || _latest is not null;
         if (!dirty) return;
         _running = false;
-        _minFrameIntervalMs = 0;
+        // 节流档位跨 Stop/Start 保留（审查修复⑦）：WGC 断帧自愈重建走 Stop+Start，
+        // 若在这里清零，重建后主循环 idleThrottled=false 不会补设 → 永久 33ms 全速抓帧打满 CPU。
+        // 启动时 BotEngine 总会显式 ApplyCaptureThrottle(300)，不会残留旧档位。
         _throttleTimer?.Dispose();
         _throttleTimer = null;
         _throttleTimerPeriod = 0;

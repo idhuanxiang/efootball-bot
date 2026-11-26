@@ -140,12 +140,15 @@ public sealed class BackgroundParker
             try
             {
                 // 还原挂机前原位置与尺寸；窗口已关闭时 SetWindowRect 自然失败，无需处理
+                bool ok = true;
                 if (_hadOriginal && _hwnd != nint.Zero)
-                    SetWindowPos(_hwnd, nint.Zero, _original.Left, _original.Top,
+                    ok = SetWindowPos(_hwnd, nint.Zero, _original.Left, _original.Top,
                         _original.Right - _original.Left, _original.Bottom - _original.Top,
                         SWP_NOZORDER | SWP_NOACTIVATE);
-                DeleteParkRecord(); // 正常还原完成，清除落盘记录
-                didRestore = true;
+                // 只在还原成功时删记录（审查修复⑩）：hwnd 失效/UIPI 拒绝时 SetWindowPos 返回 false，
+                // 若照常删记录，窗口卡屏外且丢失唯一的崩溃恢复依据、还报"已还原"假象。
+                if (ok) { DeleteParkRecord(); didRestore = true; }
+                else _log("后台停靠还原失败（SetWindowPos 拒绝），保留落盘记录供下次启动重试", LogLevel.Warn);
             }
             catch { /* 还原失败不影响停止流程 */ }
         }
@@ -401,8 +404,12 @@ public sealed class BackgroundParker
 
             if (IsIconic(hwnd))
                 ShowWindow(hwnd, SW_RESTORE);
-            SetWindowPos(hwnd, nint.Zero, rec.Left, rec.Top, rec.Width, rec.Height,
-                SWP_NOZORDER | SWP_NOACTIVATE);
+            if (!SetWindowPos(hwnd, nint.Zero, rec.Left, rec.Top, rec.Width, rec.Height,
+                SWP_NOZORDER | SWP_NOACTIVATE))
+            {
+                message = "按记录还原窗口失败（SetWindowPos 拒绝），保留记录供下次重试";
+                return false;
+            }
             DeleteParkRecord();
             message = $"已按停靠记录把游戏窗口还原到原位置（{rec.Left},{rec.Top}）";
             return true;

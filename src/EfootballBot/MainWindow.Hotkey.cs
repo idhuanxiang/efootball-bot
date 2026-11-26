@@ -21,6 +21,10 @@ public partial class MainWindow
         if (_starting || _stopping || _workerHost is not { ScenarioRunning: true }) return;
         if (_paused)
         {
+            // 停止路径也要节流（审查修复⑫）：双击主热键时第一次暂停、第二次原本会
+            // 绕过 TogglePause 的节流直接 StopScenario，变成"暂停后立刻停止"。
+            if ((DateTime.Now - _lastPauseToggle).TotalMilliseconds < 250) return;
+            _lastPauseToggle = DateTime.Now;
             AppendLog($"[热键] 已通过「{_cfg.Hotkey.DisplayString()}」请求停止。", LogLevel.Success);
             _ = StopScenarioAsync();
         }
@@ -31,12 +35,22 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>恢复热键：仅在暂停态才恢复，未暂停时忽略（审查修复⑪）。</summary>
+    private void Hotkey_Resume_Triggered()
+    {
+        if (_starting || _stopping || _workerHost is not { ScenarioRunning: true }) return;
+        if (!_paused) return; // 没暂停就不动，避免恢复热键误触发把运行中的挂机暂停
+        AppendLog($"[热键] 已通过「恢复热键」请求继续挂机。", LogLevel.Success);
+        _ = TogglePauseAsync(skipThrottle: true);
+    }
+
     /// <summary>统一暂停/恢复切换（GUI 按钮与监控页共用），同步按钮文字与热键可视化。</summary>
-    private async Task TogglePauseAsync()
+    private async Task TogglePauseAsync(bool skipThrottle = false)
     {
         // 纯时间节流（250ms）：只拦真正的机械连点/双击；250ms 足以让用户"暂停后立刻继续"。
         // 记录时间戳放在成功之后——发送失败不消耗节流，允许立刻重试（审查修复）。
-        if ((DateTime.Now - _lastPauseToggle).TotalMilliseconds < 250) return;
+        // 恢复热键是独立按键，skipThrottle 让它不受主热键双击防抖影响（复查修复）
+        if (!skipThrottle && (DateTime.Now - _lastPauseToggle).TotalMilliseconds < 250) return;
         var host = _workerHost;
         if (host is not { ScenarioRunning: true }) return;
         bool next = !_paused;

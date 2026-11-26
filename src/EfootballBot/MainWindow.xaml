@@ -3145,6 +3145,9 @@
                             <CheckBox x:Name="ChkCheckOnStartup" Content="启动时自动检查更新" IsChecked="True" Margin="0,2,0,0"/>
                             <CheckBox x:Name="ChkIncludePrerelease" Content="包含测试版（pre-release）" IsChecked="False"/>
                             <CheckBox x:Name="ChkAutoDownloadInstall" Content="发现更新后自动下载安装" IsChecked="False"/>
+                            <TextBlock Text="注：启动检查/自动安装为下次启动生效；「包含测试版」点检查更新时立即生效"
+                                       Foreground="{DynamicResource TextMuted}" FontSize="10.5" TextWrapping="Wrap"
+                                       Margin="0,2,0,0"/>
 
                             <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                 <Button x:Name="BtnCheckUpdate" Content="检查更新" Style="{StaticResource GhostBtn}"

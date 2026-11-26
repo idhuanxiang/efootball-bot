@@ -267,7 +267,11 @@ public static class PhysicalPadControl
         try
         {
             Directory.CreateDirectory(AppPaths.TempDir);
-            File.WriteAllText(SessionMarkerPath, Environment.ProcessId.ToString());
+            // 写入 PID + 进程启动时间：PID 复用时靠启动时间区分，避免误判会话仍在（审查修复⑭）
+            long startTicks;
+            try { startTicks = global::System.Diagnostics.Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks; }
+            catch { startTicks = 0; }
+            File.WriteAllText(SessionMarkerPath, $"{Environment.ProcessId}|{startTicks}");
         }
         catch { }
     }
@@ -283,10 +287,22 @@ public static class PhysicalPadControl
         try
         {
             if (!File.Exists(SessionMarkerPath)) return false;
-            int pid = int.Parse(File.ReadAllText(SessionMarkerPath).Trim());
+            string raw = File.ReadAllText(SessionMarkerPath).Trim();
+            string[] parts = raw.Split('|');
+            int pid = int.Parse(parts[0]);
             using var p = global::System.Diagnostics.Process.GetProcessById(pid);
-            return p is { HasExited: false }
-                && p.ProcessName.Contains("EfootballBot", StringComparison.OrdinalIgnoreCase);
+            if (p is not { HasExited: false } ||
+                !p.ProcessName.Contains("EfootballBot", StringComparison.OrdinalIgnoreCase))
+                return false;
+            // 标记带启动时间时校验：PID 被新进程复用则 ticks 不同 → 判为旧残留，允许恢复
+            if (parts.Length > 1 && long.TryParse(parts[1], out long expectedTicks) && expectedTicks > 0)
+            {
+                long actualTicks;
+                try { actualTicks = p.StartTime.ToUniversalTime().Ticks; }
+                catch { return false; }
+                if (actualTicks != expectedTicks) return false;
+            }
+            return true;
         }
         catch { return false; }
     }
@@ -353,16 +369,20 @@ public static class PhysicalPadControl
         var record = cfg.HidHide.DisabledPadDevs;
         int restored = 0;
 
+        // 只清除真正恢复成功的记录（审查修复⑬）：此前无条件清空，恢复时节点正在重枚举
+        // 导致 CM_Enable 失败的话，记录被丢弃、兜底扫描又覆盖不到父设备 USB\VID_...，
+        // 手柄节点就长期停在禁用态。
+        var failed = new List<string>();
         for (int i = record.Count - 1; i >= 0; i--)
         {
-            if (CM_Locate_DevNodeW(out int devInst, record[i], 0) == CrSuccess)
-            {
-                if (CM_Enable_DevNode(devInst, 0) == CrSuccess) restored++;
-            }
+            bool ok = CM_Locate_DevNodeW(out int devInst, record[i], 0) == CrSuccess
+                      && CM_Enable_DevNode(devInst, 0) == CrSuccess;
+            if (ok) restored++;
+            else failed.Add(record[i]); // 保留失败项，下次再试
         }
         if (record.Count > 0)
         {
-            cfg.HidHide.DisabledPadDevs = new();
+            cfg.HidHide.DisabledPadDevs = failed;
             cfg.Save();
         }
 
@@ -378,8 +398,10 @@ public static class PhysicalPadControl
 
         int total = restored + swept;
         return (true, total == 0
-            ? (record.Count == 0 ? "无需恢复（无禁用记录）" : $"记录 {record.Count} 项已处理")
-            : $"已恢复 {total} 个手柄节点（记录 {restored} + 扫描 {swept}）");
+            ? (record.Count == 0 ? "无需恢复（无禁用记录）"
+               : $"恢复失败：{failed.Count} 项禁用记录已保留，下次启动/插入时重试")
+            : $"已恢复 {total} 个手柄节点（记录 {restored} + 扫描 {swept}）"
+              + (failed.Count > 0 ? $"；{failed.Count} 项失败已保留待重试" : ""));
     }
 
     // ---------------- 普通权限可用 ----------------

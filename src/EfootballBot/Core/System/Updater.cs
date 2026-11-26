@@ -81,6 +81,27 @@ public static class Updater
 
     /// <summary>清单里的 file 字段只允许「纯文件名」：带路径分隔符/查询串/上跳的脏值一律
     /// 回退到默认名，避免被远端清单把下载地址指到桶外或拼出越权路径。</summary>
+    /// <summary>解析版本号：支持 semver 预发布后缀（如 9.0.7-beta1），System.Version.TryParse 不支持（审查修复④）。</summary>
+    internal static bool TryParseVersion(string text, out Version version)
+    {
+        string v = text?.Trim().TrimStart('v', 'V') ?? "";
+        int dash = v.IndexOf('-');
+        if (dash > 0) v = v[..dash];
+        return Version.TryParse(v, out version!);
+    }
+
+    /// <summary>
+    /// 版本号比较：先补齐到 4 段再比（Version 未指定段=-1，会让 9.0.7 &lt; 9.0.7.0，
+    /// 把"清单三段号 vs 程序集四段号"误判成清单落后，白跳过主源/Raw——复查修复）。
+    /// </summary>
+    internal static int CompareVersion(Version a, Version b)
+    {
+        static Version Pad(Version v) => new(
+            Math.Max(v.Major, 0), Math.Max(v.Minor, 0),
+            Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
+        return Pad(a).CompareTo(Pad(b));
+    }
+
     internal static string ResolveManifestFileName(string? file)
     {
         const string fallback = "EfootballBot.exe";
@@ -99,9 +120,9 @@ public static class Updater
         // 2026-11-26：版本检查已改走 Raw 清单（无 API 限流），这句描述的是"下载"通道，
         // 不再用"未配置主源"制造误解——Raw 清单不是下载源，131MB 的 exe 仍走镜像/GitHub。
         if (string.IsNullOrEmpty(PrimaryBaseUrl))
-            return "Raw 清单查版本 → 加速镜像 / GitHub 下载";
+            return "查版本：主源R2→Raw→GitHub；下载：主源→加速镜像→GitHub";
         string host = Uri.TryCreate(PrimaryBaseUrl, UriKind.Absolute, out var uri) ? uri.Host : PrimaryBaseUrl;
-        return $"Raw 清单查版本 → 主源 {host} → 加速镜像 → GitHub 下载";
+        return $"查版本：{host}→Raw→GitHub；下载：主源→加速镜像→GitHub";
     }
 
     /// <summary>下载加速镜像前缀（第三方 GitHub 反代，拼在完整原始 URL 前）。镜像清单与「GitHub 访问加速」
@@ -204,9 +225,12 @@ public static class Updater
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
                 http.DefaultRequestHeaders.UserAgent.ParseAdd("EfootballBot");
                 var m = await http.GetFromJsonAsync<R2Manifest>(url, JsonOpts);
-                if (m?.Version is null || !Version.TryParse(m.Version, out var remoteVer)) continue;
-                if (remoteVer <= CurrentVersion)
+                if (m?.Version is null || !TryParseVersion(m.Version, out var remoteVer)) continue;
+                // 版本相等=可信终态；版本落后=清单可能是旧桶/缓存/漏传，不能当"已是最新"
+                // 否则会屏蔽掉后面所有兜底源（审查修复①）
+                if (CompareVersion(remoteVer, CurrentVersion) == 0)
                     return UpdateResult.AlreadyLatest($"已是最新版本 v{FormatVersion(CurrentVersion)}");
+                if (CompareVersion(remoteVer, CurrentVersion) < 0) continue;
                 return UpdateResult.Available(remoteVer, $"v{remoteVer}",
                     BuildDownloadUrls(remoteVer, ResolveManifestFileName(m.File), githubFileName: "EfootballBot.exe"),
                     m.Size, null, singleExecutable: true,
@@ -234,9 +258,11 @@ public static class Updater
             string manifestName = includePrerelease ? "latest-pre.json" : "latest.json";
             var m = await http.GetFromJsonAsync<R2Manifest>(
                 $"{PrimaryBaseUrl}/{manifestName}", JsonOpts);
-            if (m?.Version is null || !Version.TryParse(m.Version, out var remoteVer)) return null;
-            if (remoteVer <= CurrentVersion)
+            if (m?.Version is null || !TryParseVersion(m.Version, out var remoteVer)) return null;
+            // 清单版本落后本机 → 不可信（桶漏传/旧清单），交兜底源，不误报"已是最新"（审查修复①）
+            if (CompareVersion(remoteVer, CurrentVersion) == 0)
                 return UpdateResult.AlreadyLatest($"已是最新版本 v{FormatVersion(CurrentVersion)}");
+            if (CompareVersion(remoteVer, CurrentVersion) < 0) return null;
 
             // 清单自带文件名（带版本号）时按它下；老清单没有该字段则用固定名。远端清单是
             // 不可信输入，文件名先过一遍净化，拼不出桶外路径。
@@ -278,9 +304,9 @@ public static class Updater
 
             if (latest is null)
                 return UpdateResult.Error("仓库没有 Release");
-            if (!Version.TryParse(latest.Tag_Name.TrimStart('v'), out var remoteVer))
+            if (!TryParseVersion(latest.Tag_Name, out var remoteVer))
                 return UpdateResult.Error($"无法解析版本号：{latest.Tag_Name}");
-            if (remoteVer <= CurrentVersion)
+            if (CompareVersion(remoteVer, CurrentVersion) <= 0)
                 return UpdateResult.AlreadyLatest($"已是最新版本 v{FormatVersion(CurrentVersion)}");
 
             // 新更新器优先裸 exe；老 Release 只有 zip 时兜底

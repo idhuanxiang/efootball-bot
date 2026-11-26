@@ -833,13 +833,16 @@ public sealed class AppConfig
                     cfg.SchemaVersion = 1;
                 bool upgraded = cfg.SchemaVersion < CurrentSchemaVersion;
                 cfg.Migrate();
-                cfg.Timing.MigrateIdleTapDefaults();
+                // 旧默认 1~10s 收紧只在老 schema 升级时做（审查修复②）：
+                // 无条件调用会把用户经 UI 合法设置的 1~10s 也悄悄重置成 1~4s。
+                if (upgraded) cfg.Timing.MigrateIdleTapDefaults();
                 if (upgraded) cfg.HidHide.MigrateDefaults();
                 cfg.Pad.MigrateDefaults();
                 if (upgraded && saveOnUpgrade)
                 {
-                    // 升级结果立即回写：下次启动不再重复走迁移，也让用户能看到新增字段
-                    try { cfg.Save(); } catch { /* 回写失败不影响本次运行 */ }
+                    // 升级结果立即回写到本次加载的路径（审查修复③）：
+                    // 此前无条件 cfg.Save() 固定写默认路径，自定义路径永远重复迁移且覆盖主配置。
+                    try { cfg.Save(path); } catch { /* 回写失败不影响本次运行 */ }
                 }
                 result = cfg;
                 return true;
@@ -894,11 +897,13 @@ public sealed class AppConfig
         SchemaVersion = CurrentSchemaVersion;
     }
 
-    public void Save()
+    /// <summary>保存配置；path 为空写默认 ConfigPath，否则写指定路径（审查修复③）。</summary>
+    public void Save(string? path = null)
     {
-        Directory.CreateDirectory(ConfigDir);
+        string target = string.IsNullOrWhiteSpace(path) ? ConfigPath : path;
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         // 原子替换：进程+GUID 唯一临时文件，防止 GUI 与 Worker 并发 Save 时互踩同一 .tmp
-        var tmp = $"{ConfigPath}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
+        var tmp = $"{target}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
         try
         {
             File.WriteAllText(tmp, JsonSerializer.Serialize(this, JsonOpts));
@@ -906,7 +911,7 @@ public sealed class AppConfig
             {
                 try
                 {
-                    File.Move(tmp, ConfigPath, overwrite: true);
+                    File.Move(tmp, target, overwrite: true);
                     break;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 2)
