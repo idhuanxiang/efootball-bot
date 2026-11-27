@@ -3,6 +3,11 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v9.3.7
+
+### 启动闪退紧急修复与训练/OCR 能力增强
+修复 `v9.3.6` 在用户已开启「挂机时自动采样」时启动崩溃的问题：`LoadConfigToUi()` 前半段赋值 `ChkCollectSuspicious.IsChecked` 时 `_loadingConfig` 尚未置位，导致提前触发 `SaveUiToConfig()` 访问未初始化控件而抛出 `NullReferenceException`。现已为整个 `LoadConfigToUi()` 加上 `try/finally` 加载保护，并将 `ChkCollectSuspicious_Changed` 与 `CmbSuspiciousThrottle_SelectionChanged` 改为仅更新对应配置并触发运行中 Worker 热更新，不再在单控件事件里执行全量保存。同时本版本合入了固定 UI 词表低置信度容错纠错器 `OcrLexiconCorrector`、UI 安全数据增强（关闭 `fliplr`/`flipud`/`degrees`）、合成 UI 漂移增强 `augment_ui.py`、困难负样本入库支持以及 Colab T4 GPU 一键训练 Notebook。
+
 ## v9.3.6
 
 ### 阵容挑战完成态识别与列表绿勾兼容

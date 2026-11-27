@@ -169,6 +169,10 @@ public partial class MainWindow
 
     private void LoadConfigToUi()
     {
+        bool prevLoading = _loadingConfig;
+        _loadingConfig = true;
+        try
+        {
         // 设置面板
         ChkAutoClose.IsChecked = _cfg.AutoCloseWhenDone;
         ChkMinimizeTray.IsChecked = false;
@@ -377,6 +381,11 @@ public partial class MainWindow
         _loadingConfig = true;
         ChkPadTakeover.IsChecked = _cfg.HidHide.HidePhysicalGamepad;
         _loadingConfig = false;
+        }
+        finally
+        {
+            _loadingConfig = prevLoading;
+        }
     }
 
     private void SaveUiToConfig()
@@ -605,14 +614,24 @@ public partial class MainWindow
 
     private void ChkCollectSuspicious_Changed(object sender, RoutedEventArgs e)
     {
-        if (_loadingConfig || _cfg is null) return;
-        SaveUiToConfig();
+        if (_loadingConfig || _cfg is null || ChkCollectSuspicious is null) return;
+        _cfg.Learning.CollectSuspicious = ChkCollectSuspicious.IsChecked == true;
+        PersistConfigSafe("保存自动采样开关");
+        if (_workerHost?.ScenarioRunning == true)
+            _ = _workerHost.SendReloadConfigAsync();
     }
 
     private void CmbSuspiciousThrottle_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_loadingConfig || _cfg is null) return;
-        SaveUiToConfig();
+        if (_loadingConfig || _cfg is null || CmbSuspiciousThrottle is null) return;
+        if (CmbSuspiciousThrottle.SelectedIndex >= 0)
+        {
+            int[] suspendSec = { 10, 30, 60, 120, 300 };
+            _cfg.Learning.ThrottleSeconds = suspendSec[Math.Clamp(CmbSuspiciousThrottle.SelectedIndex, 0, suspendSec.Length - 1)];
+        }
+        PersistConfigSafe("保存采样节流");
+        if (_workerHost?.ScenarioRunning == true)
+            _ = _workerHost.SendReloadConfigAsync();
     }
 
     // ---------------- 挂机节奏 ----------------
