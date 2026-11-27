@@ -136,6 +136,19 @@ public class CnMyLeagueDifficultyTests
     }
 
     [Fact]
+    public void PlanDifficultySelect_UnknownChecked_SkipsBlindReselectWhenAlreadyDone()
+    {
+        // 蓝勾读不出只能盲改选（上×9→下×k→A），改完也核验不了：本会话已为该难度盲改过就不再重复，
+        // 避免每场白花 3~5s；换目标难度（配置改了）则重新允许盲改一次。
+        var ocr = ModernDifficultyPage();
+        var options = MyLeagueBrain.DetectDifficultyOptions(ocr);
+        Assert.Null(MyLeagueBrain.PlanDifficultySelect(null, "传奇", options, false, ocr, blindSelectAlreadyDone: true));
+        Assert.NotNull(MyLeagueBrain.PlanDifficultySelect(null, "传奇", options, false, ocr, blindSelectAlreadyDone: false));
+        // 蓝勾读得出且与目标不符时，盲改标记不影响纠正（仍会改选）
+        Assert.NotNull(MyLeagueBrain.PlanDifficultySelect("业余", "传奇", options, false, ocr, blindSelectAlreadyDone: true));
+    }
+
+    [Fact]
     public void PlanDifficultySelect_KeyMatch_NeverSwitches()
     {
         var ocr = ModernDifficultyPage();

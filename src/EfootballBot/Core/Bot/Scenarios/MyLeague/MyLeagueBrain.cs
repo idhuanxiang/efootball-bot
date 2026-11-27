@@ -175,13 +175,16 @@ public static class MyLeagueBrain
     /// </summary>
     public static DifficultySelectPlan? PlanDifficultySelect(
         string? checkedDiff, string wanted, IReadOnlyList<string> options,
-        bool nextMatchIsKey, OcrResult ocr)
+        bool nextMatchIsKey, OcrResult ocr, bool blindSelectAlreadyDone = false)
     {
         if (RespectGameDifficulty(nextMatchIsKey, ocr)) return null;
         int canonicalIdx = Array.IndexOf(MatchBrain.Difficulties, wanted);
         if (canonicalIdx < 0) return null;
         if (options.Count > 0 && !options.Contains(wanted)) return null;
         if (checkedDiff == wanted) return null;
+        // 蓝勾读不出时只能盲改选（上×9 → 下×k → A），改完也核验不了：每场都盲改要白花 3~5s。
+        // 本次会话已为该难度盲改过一次就跳过；若蓝勾恢复可读且与目标不符，仍会走读得出的比对分支纠正。
+        if (checkedDiff is null && blindSelectAlreadyDone) return null;
 
         int targetIdx = canonicalIdx;
         if (!LooksLikeFullDifficultyTable(options, ocr))

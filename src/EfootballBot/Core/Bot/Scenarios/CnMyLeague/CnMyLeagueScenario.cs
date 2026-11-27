@@ -42,6 +42,8 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     private int _diffRound;
     /// <summary>新式难度页改选尝试次数（最多 2 次，防极端情况死循环）。</summary>
     private int _diffSwitchAttempts;
+    /// <summary>已为哪个难度做过一次「蓝勾读不出」的盲改选（同一难度不重复盲改，省 3~5s/场）。</summary>
+    private string? _diffBlindApplied;
     /// <summary>最近一轮国服界面判定（ClassifyScreen 产出，InterceptAsync 消费；单线程无竞争）。</summary>
     private PlScreen _pl = PlScreen.None;
 
@@ -455,12 +457,14 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         string wanted = LeagueConfig.Difficulty;
         var options = MyLeagueBrain.DetectDifficultyOptions(obs.Ocr);
         var checkedDiff = MyLeagueBrain.DetectCheckedDifficulty(obs.Frame, obs.Ocr);
-        var selectPlan = MyLeagueBrain.PlanDifficultySelect(checkedDiff, wanted, options, _nextMatchIsKey, obs.Ocr);
+        var selectPlan = MyLeagueBrain.PlanDifficultySelect(checkedDiff, wanted, options, _nextMatchIsKey, obs.Ocr,
+            blindSelectAlreadyDone: _diffBlindApplied == wanted);
         if (selectPlan is not null)
         {
             if (_diffSwitchAttempts < 2)
             {
                 _diffSwitchAttempts++;
+                if (checkedDiff is null) _diffBlindApplied = wanted;
                 if (_diffSwitchAttempts == 1)
                 {
                     _log($"[我的联赛] 新式难度页改选（第 1/2 次）：{selectPlan.Summary}（上×{selectPlan.UpStrokes} 下×{selectPlan.DownStrokes} A）", LogLevel.Info);

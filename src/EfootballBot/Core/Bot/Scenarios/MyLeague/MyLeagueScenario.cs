@@ -128,6 +128,8 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
     private int _difficultyConfirmRound;
     /// <summary>难度页改选尝试次数（最多 2 次，防极端情况死循环）。</summary>
     private int _difficultySwitchAttempts;
+    /// <summary>已为哪个难度做过一次「蓝勾读不出」的盲改选（同一难度不重复盲改，省 3~5s/场）。</summary>
+    private string? _difficultyBlindApplied;
     /// <summary>主页连续按 A 前往比赛但画面未离开主页的次数（无响应自愈计数）。</summary>
     private int _goMatchAttempts;
     /// <summary>上次按 A 前往比赛的时间（用于只 dump 一次前往后的弹窗画面 OCR）。</summary>
@@ -1219,12 +1221,14 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         string wanted = LeagueConfig.Difficulty;
         var options = MyLeagueBrain.DetectDifficultyOptions(ocr);
         var checkedDiff = MyLeagueBrain.DetectCheckedDifficulty(frame, ocr);
-        var selectPlan = MyLeagueBrain.PlanDifficultySelect(checkedDiff, wanted, options, _nextMatchIsKey, ocr);
+        var selectPlan = MyLeagueBrain.PlanDifficultySelect(checkedDiff, wanted, options, _nextMatchIsKey, ocr,
+            blindSelectAlreadyDone: _difficultyBlindApplied == wanted);
         if (selectPlan is not null)
         {
             if (_difficultySwitchAttempts < 2)
             {
                 _difficultySwitchAttempts++;
+                if (checkedDiff is null) _difficultyBlindApplied = wanted;
                 _log($"[我的联赛] 难度改选（第 {_difficultySwitchAttempts}/2 次）：{selectPlan.Summary}（上×{selectPlan.UpStrokes} 下×{selectPlan.DownStrokes} A）", LogLevel.Info);
                 await _engine.Pad.DpadRepeat(PadDir.Up, selectPlan.UpStrokes);
                 if (selectPlan.DownStrokes > 0)
