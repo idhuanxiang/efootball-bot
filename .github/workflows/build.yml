@@ -231,6 +231,17 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "R2 上传失败：$key（见上面 aws 的报错，常见是密钥无权或被吊销）" }
             Write-Host "R2 uploaded: $key"
           }
+          # 同版本号重复发版保护：该 key 带 immutable 缓存，桶里已存在同名但内容不同时，
+          # 边缘仍会把旧字节发给已下过该版本的客户端 → SHA256 校验必失败、更新卡死。
+          # 与其让用户在客户端撞「校验失败」，不如在这里直接拦住并提示升版本号。
+          $headJson = & aws s3api head-object --bucket $env:R2_BUCKET --key $file --endpoint-url $env:R2_ENDPOINT 2>$null
+          if ($LASTEXITCODE -eq 0 -and $headJson) {
+            $existingSize = 0
+            try { $existingSize = [int64]($headJson | ConvertFrom-Json).ContentLength } catch { }
+            if ($existingSize -gt 0 -and $existingSize -ne [int64]$size) {
+              throw "R2 已存在 $file（$existingSize 字节，本次 $size 字节）。同版本号内容不同会污染 immutable 边缘缓存，请先升版本号再发版。"
+            }
+          }
           Push-Object $exe $file 'application/octet-stream' 'public, max-age=31536000, immutable'
           Write-Host "R2 binary uploaded: $file ($size bytes)"
           $manifest = @{ version = $ver; file = $file; sha256 = $sha; size = $size } | ConvertTo-Json -Compress
