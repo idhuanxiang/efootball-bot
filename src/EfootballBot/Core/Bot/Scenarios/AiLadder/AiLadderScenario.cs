@@ -426,7 +426,14 @@ public sealed class AiLadderScenario : IScenario
                     await _engine.Pad.Back();
                     return 2400;
                 }
-                // 盲归位到「前往比赛」（主页左上卡）：Left×4 + Up×6 位置无关、到头多按无害
+                if (_attempts == 1)
+                {
+                    // 首轮直接 A：刚进组别主页时默认焦点已在「前往比赛」，省去 10 下无效方向键
+                    _log("[AI天梯联赛] 组别主页：默认焦点在前往比赛，直接 A 开赛", LogLevel.Info);
+                    await _engine.Pad.Confirm();
+                    return 3000;
+                }
+                // 第 2 次起才用盲归位到「前往比赛」（主页左上卡）：Left×4 + Up×6 位置无关、到头多按无害
                 // （同我的联赛主页左列链：前往比赛--下-->比赛历史，反向同链；i 图标在前往比赛右边）
                 _log($"[AI天梯联赛] 盲归位到前往比赛（左×4+上×6）后开赛（第 {_attempts} 次）", LogLevel.Info);
                 await _engine.Pad.DpadRepeat(PadDir.Left, 4);

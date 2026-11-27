@@ -2018,7 +2018,7 @@
                             </Grid>
                             <TextBlock x:Name="TxtScheduleError" Foreground="{DynamicResource Danger}" FontSize="11.5"
                                        Margin="20,6,0,0" Visibility="Collapsed" TextWrapping="Wrap"/>
-                            <Grid Margin="0,6,0,0" MaxWidth="600">
+                            <Grid Margin="0,6,0,0" MaxWidth="600" HorizontalAlignment="Left">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
                                     <ColumnDefinition Width="*"/>

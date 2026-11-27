@@ -220,6 +220,20 @@ public sealed partial class WeeklyEventScenario : IScenario
         if (focus is not null)
         {
             _planBlindStep = 0; // 探针回到可读状态：盲走进度作废，改按屏幕走
+            int curIdx = Array.IndexOf(WeeklyBrain.SquadSidebarItems, focus);
+            int targetIdx = Array.IndexOf(WeeklyBrain.SquadSidebarItems, target);
+            if (curIdx >= 0 && targetIdx > curIdx)
+            {
+                int steps = targetIdx - curIdx;
+                _log($"[周活动·阵容挑战] 侧边栏一次定位「{focus}」→「{target}」（下×{steps} → A）", LogLevel.Info);
+                await _engine.Pad.DpadRepeat(PadDir.Down, steps);
+                await Task.Delay(250);
+                _planStep = PlanStep.Options;
+                _planOptionPicked = false;
+                _attempts = 0;
+                await _engine.Pad.Confirm();
+                return 2400;
+            }
             _log($"[周活动·阵容挑战] 侧边栏焦点「{focus}」：下×1（目标：自动配置球员）", LogLevel.Info);
             await _engine.Pad.Dpad(PadDir.Down);
             return 1100;

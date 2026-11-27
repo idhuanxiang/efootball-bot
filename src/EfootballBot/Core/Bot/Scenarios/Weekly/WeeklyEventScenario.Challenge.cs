@@ -194,8 +194,8 @@ public sealed partial class WeeklyEventScenario : IScenario
             await _engine.Pad.DpadRepeat(PadDir.Left, 6);
             return 1500;
         }
-        var cur = WeeklyBrain.ScanChallengeCards(obs.Ocr, obs.Frame)
-            .FirstOrDefault(c => c.Index == _chScan);
+        var cards = WeeklyBrain.ScanChallengeCards(obs.Ocr, obs.Frame);
+        var cur = cards.FirstOrDefault(c => c.Index == _chScan);
         if (cur is null)
         {
             // 卡详情页误判防线（实机 2026-10-17 反馈）：详情页的大字数字+底栏「返回」
@@ -242,16 +242,33 @@ public sealed partial class WeeklyEventScenario : IScenario
             }
         }
         _chMissing = 0;
-        // 已通关判定先于锁判定：勾/本运行内通关/已拉黑 → 右移
+        // 已通关判定先于锁判定：勾/本运行内通关/已拉黑 → 一次跳过全部连续可见已完成卡
         if (cur.Checked || _chLocalDone.Contains(cur.Index) || _chBlocked.Contains(cur.Index))
         {
-            bool blockedOnly = _chBlocked.Contains(cur.Index) && !cur.Checked && !_chLocalDone.Contains(cur.Index);
-            _chCursorDone = !blockedOnly; // 拉黑未通关的卡不算「越过已勾卡」
-            string why = cur.Checked ? "右上角绿勾"
-                : _chLocalDone.Contains(cur.Index) ? "本运行内已通关" : "多次进入未生效已拉黑";
-            _chScan++;
-            _log($"[周活动·挑战] 卡 {cur.Index:00} 已完成（{why}），右移下一张", LogLevel.Info);
-            await _engine.Pad.Dpad(PadDir.Right);
+            int skipCount = 0;
+            while (true)
+            {
+                var c = cards.FirstOrDefault(x => x.Index == _chScan + skipCount);
+                if (c is null || !(c.Checked || _chLocalDone.Contains(c.Index) || _chBlocked.Contains(c.Index)))
+                    break;
+                bool blockedOnly = _chBlocked.Contains(c.Index) && !c.Checked && !_chLocalDone.Contains(c.Index);
+                if (!blockedOnly) _chCursorDone = true;
+                skipCount++;
+            }
+            _chScan += skipCount;
+            var nextCard = cards.FirstOrDefault(x => x.Index == _chScan);
+            if (nextCard is not null && !nextCard.Locked &&
+                !(nextCard.Checked || _chLocalDone.Contains(nextCard.Index) || _chBlocked.Contains(nextCard.Index)))
+            {
+                _log($"[周活动·挑战] 一次跳过 {skipCount} 张已完成卡，直达卡 {nextCard.Index:00} → A 进入", LogLevel.Info);
+                await _engine.Pad.DpadRepeat(PadDir.Right, skipCount);
+                await Task.Delay(250);
+                _chReentry++;
+                await _engine.Pad.Confirm();
+                return 2600;
+            }
+            _log($"[周活动·挑战] 一次跳过 {skipCount} 张已完成卡（右×{skipCount}）", LogLevel.Info);
+            await _engine.Pad.DpadRepeat(PadDir.Right, skipCount);
             return 1100;
         }
         if (cur.Locked)

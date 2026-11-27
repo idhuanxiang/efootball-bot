@@ -165,6 +165,15 @@ public sealed partial class WeeklyEventScenario : IScenario
         var dir = delta > 0 ? PadDir.Down : PadDir.Up;
         int steps = Math.Abs(delta);
         string dirName = delta > 0 ? "下" : "上";
+        if (_dropdownMoves == 1)
+        {
+            _log($"[周活动] 赛事等级下拉：一次定位 {current} → {wanted}（{dirName}×{steps} → A 确认）", LogLevel.Info);
+            await _engine.Pad.DpadRepeat(dir, steps);
+            await Task.Delay(250);
+            SetPhase(WkPhase.Settings);
+            await _engine.Pad.Confirm();
+            return 1800;
+        }
         _log($"[周活动] 赛事等级下拉：{current} → {wanted}（{dirName}×{steps}，下帧复核焦点）", LogLevel.Info);
         await _engine.Pad.DpadRepeat(dir, steps);
         return 900;
