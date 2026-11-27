@@ -343,15 +343,32 @@ public sealed class SamplingPipelineTests
         Assert.Equal("自动配置球员", OcrLexiconCorrector.Correct("自动配量球员", 0.68f));
         Assert.Equal("活动已完成", OcrLexiconCorrector.Correct("活动已完战", 0.75f));
 
-        // 高置信度、短词、英文/球员名、含数字均不改动
+        // 高置信度、短词(<4字)、反义/邻近真实UI词、英文/球员名、含数字均不改动
         Assert.Equal("前往北赛", OcrLexiconCorrector.Correct("前往北赛", 0.95f));
         Assert.Equal("确定", OcrLexiconCorrector.Correct("确定", 0.60f));
+        Assert.Equal("上一步", OcrLexiconCorrector.Correct("上一步", 0.60f));
+        Assert.Equal("活动未完成", OcrLexiconCorrector.Correct("活动未完成", 0.60f));
+        Assert.Equal("上一场比赛", OcrLexiconCorrector.Correct("上一场比赛", 0.60f));
+        Assert.Equal("手动控制", OcrLexiconCorrector.Correct("手动控制", 0.60f));
+        Assert.Equal("选择球员", OcrLexiconCorrector.Correct("选择球员", 0.60f));
         Assert.Equal("Mbappe", OcrLexiconCorrector.Correct("Mbappe", 0.50f));
         Assert.Equal("100GP", OcrLexiconCorrector.Correct("100GP", 0.50f));
 
         // CorrectRaw 同步保留原样或纠错后的中文词
         Assert.Equal("自动配置球员", OcrLexiconCorrector.CorrectRaw("自动配量 球员", 0.70));
         Assert.Equal("自动配量 球员", OcrLexiconCorrector.CorrectRaw("自动配量 球员", 0.92));
+    }
+
+    [Fact]
+    public async Task Pad_HumanPacingEnabled_HotReloadsDynamically()
+    {
+        var timing = new EfootballBot.Core.Config.TimingConfig { HumanPacingEnabled = false };
+        var pad = new EfootballBot.Core.Input.Pad(new EfootballBot.Core.Input.DryRunPad(null!), timing);
+        await pad.HumanWait(1, 2, CancellationToken.None);
+        timing.HumanPacingEnabled = true;
+        await pad.HumanWait(1, 2, CancellationToken.None);
+        timing.HumanPacingEnabled = false;
+        await pad.HumanWait(1, 2, CancellationToken.None);
     }
 
     private static void PaintRect(FrameData f, double x0, double y0, double x1, double y1, byte lum)

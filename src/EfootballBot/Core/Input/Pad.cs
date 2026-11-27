@@ -7,7 +7,8 @@ public sealed class Pad
 {
     private readonly IVirtualPad _vg;
     private readonly TimingConfig _t;
-    private readonly HumanPacer? _pace;
+    private HumanPacer? _pace;
+    private HumanPacer? ActivePacer => _t.HumanPacingEnabled ? (_pace ??= new HumanPacer()) : null;
     private CancellationToken _sessionCt;
     // 暂停中断：按键序列用 session+pause 链接令牌，暂停时取消 pause 即中断正在执行的连按
     // （2026-11-26 实机：组别页暂停时正在跑的「左×4+上×6」没停，游戏还在动）
@@ -93,13 +94,18 @@ public sealed class Pad
     {
         Interlocked.Increment(ref _actionCount);
         long t0 = Environment.TickCount64;
+        long epochBefore = PauseEpoch;
         try { await action().ConfigureAwait(false); }
+        catch (ObjectDisposedException) when (IsPauseCanceled || PauseEpoch != epochBefore)
+        {
+            throw new OperationCanceledException("动作被暂停/恢复令牌重建中断");
+        }
         finally { Interlocked.Add(ref _busyMs, Environment.TickCount64 - t0); }
     }
 
     private int Jitter(int baseMs)
     {
-        if (_pace is not null) return _pace.Sample(baseMs);
+        if (ActivePacer is { } p) return p.Sample(baseMs);
         int j = Math.Max(0, Math.Min(200, _t.HumanJitterMs));
         int d = j == 0 ? 0 : Random.Shared.Next(-j, j + 1);
         return Math.Max(40, baseMs + d);
@@ -108,8 +114,8 @@ public sealed class Pad
     /// <summary>小概率插入一次「犹豫」停顿（真人被手机/弹窗打断的瞬间），仅高频语义键。</summary>
     private async Task MaybeHesitate()
     {
-        if (_pace is null || !_pace.RollHesitation()) return;
-        await Task.Delay(_pace.HesitationMs(), ActionCt);
+        if (ActivePacer is not { } p || !p.RollHesitation()) return;
+        await Task.Delay(p.HesitationMs(), ActionCt);
     }
 
     /// <summary>下一步 / 确认（手柄 A）。</summary>
@@ -235,7 +241,7 @@ public sealed class Pad
     {
         int lo = Math.Clamp(Math.Min(minMs, maxMs), 0, 600_000);
         int hi = Math.Clamp(Math.Max(minMs, maxMs), lo, 600_000);
-        int ms = _pace is not null ? _pace.SampleRange(lo, hi) : Random.Shared.Next(lo, hi + 1);
+        int ms = ActivePacer is { } p ? p.SampleRange(lo, hi) : Random.Shared.Next(lo, hi + 1);
         return DelayWithPauseAsync(ms, ct);
     }
 }

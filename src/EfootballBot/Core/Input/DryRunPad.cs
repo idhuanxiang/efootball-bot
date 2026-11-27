@@ -35,6 +35,12 @@ public sealed class DryRunPad : IVirtualPad
     public void Connect()
     {
         if (_inner.Kind == PadBackendKind.XInputProxy) return;
+        // 影子模式不禁用物理手柄：允许在 slot 0 被占用时连接，避免插着真实手柄无法启动影子模式
+        if (_inner is VigemPad vigem)
+        {
+            vigem.Connect(allowSlot0Occupied: true);
+            return;
+        }
         _inner.Connect();
     }
 

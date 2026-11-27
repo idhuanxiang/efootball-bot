@@ -801,8 +801,7 @@ public sealed partial class CnWeeklyScenario : IScenario
                         await _engine.Pad.Back();
                         return 2200;
                     }
-                    _log("[国服周活动] RS 菜单仍在：重选「活动加成」→ A", LogLevel.Warn);
-                    await _engine.Pad.DpadRepeat(PadDir.Down, CnWeeklyBrain.EventBonusOptionIndex);
+                    _log("[国服周活动] RS 菜单仍在：直接确认「活动加成」→ A", LogLevel.Warn);
                     await EnterAsync(obs, _attempts, "国服进入/确认");
                     return 2800;
                 }

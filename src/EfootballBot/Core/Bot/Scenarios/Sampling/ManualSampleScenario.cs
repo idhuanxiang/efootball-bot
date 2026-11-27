@@ -124,7 +124,11 @@ public sealed class ManualSampleScenario : IScenario, IModuleLifecycle
 
         _lastObserveTick = now;
         var obs = await _engine.ObserveAsync(ct, forceOcr: forceOcr);
-        var screen = MatchBrain.Classify(obs.Detections, obs.Ocr);
+        var screen = MatchBrain.Classify(obs.Detections, obs.Ocr,
+            ScreenProbe.CornerHasContent(obs.Frame),
+            allowCornerInMatch: false,
+            ScreenProbe.IsMostlyLightPage(obs.Frame),
+            pitchLike: ScreenProbe.LooksLikePitch(obs.Frame));
         var currGrid = FrameQualityFilter.ComputeLumaGrid(obs.Frame);
         var focusShift = FrameQualityFilter.DetectFocusShift(_lastSampledGrid, currGrid, obs.Ocr);
         var decision = OcrSampleTrigger.Evaluate(
@@ -150,7 +154,7 @@ public sealed class ManualSampleScenario : IScenario, IModuleLifecycle
         // 跨页切换本身会造成全屏亮度网格剧变，不能把跨页帧算成页内光标移动
         var effectiveFocusShift = pageChanged ? new FocusShiftResult(false, 0, 0, 0, 0, "", null, 0) : focusShift;
 
-        if (_pendingAction is { } pending)
+        if (_pendingAction is { } pending && (pageChanged || effectiveFocusShift.Moved || _followUpStage == 0))
         {
             transitionDesc = $"{pending.FromPage} --[{pending.ActionLabel}]--> {targetPageId}";
         }
@@ -185,10 +189,13 @@ public sealed class ManualSampleScenario : IScenario, IModuleLifecycle
             {
                 if (_pendingAction is { } p)
                 {
-                    _engine.SampleWriter.RecordTransition(p.FromPage, p.ActionLabel, res.PageId, screen == MatchScreen.Unknown, obs.Frame.Width, obs.Frame.Height, effectiveFocusShift);
-                    // Stage 1 已成功落盘并记录跳转边，立即消费掉本次挂起操作，避免 Stage 2 重复采样与伪造二次跳转
-                    _pendingAction = null;
-                    _followUpStage = 0;
+                    // Stage 1 仅在确实发生页面切换或光标移动时才消费挂起操作；若 600ms 仍在过渡中则留给 Stage 2 (1400ms) 捕获
+                    if (pageChanged || effectiveFocusShift.Moved || _followUpStage == 0)
+                    {
+                        _engine.SampleWriter.RecordTransition(p.FromPage, p.ActionLabel, res.PageId, screen == MatchScreen.Unknown, obs.Frame.Width, obs.Frame.Height, effectiveFocusShift);
+                        _pendingAction = null;
+                        _followUpStage = 0;
+                    }
                 }
                 else if (_currentPageId is not null)
                 {

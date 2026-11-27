@@ -199,6 +199,7 @@ def main() -> int:
     added_val = 0
     skipped_existing_name = 0
 
+    date_tag = "".join(ch for ch in args.src.name if ch.isalnum() or ch in ("_", "-")) or "sample"
     for page_id in sorted(by_page):
         items = sorted(by_page[page_id], key=lambda x: x["stem"])
         selected = uniform_cap(items, args.max_per_page)
@@ -210,7 +211,7 @@ def main() -> int:
 
         for idx, item in enumerate(selected):
             subset = "val" if idx in val_indices else "train"
-            out_stem = f"s20261127_{page_id}_{item['stem']}"
+            out_stem = f"s{date_tag}_{page_id}_{item['stem']}"
             dst_img = DATASET / "images" / subset / f"{out_stem}{item['img_path'].suffix.lower()}"
             dst_lbl = DATASET / "labels" / subset / f"{out_stem}.txt"
 

@@ -115,10 +115,12 @@ public sealed class BotEngine : IDisposable
         _cfg.Timing.IdleTapMaxMs = next.Timing.IdleTapMaxMs;
         _cfg.Timing.HumanPacingEnabled = next.Timing.HumanPacingEnabled;
         bool dryRunChanged = _cfg.DryRun != next.DryRun;
-        _cfg.DryRun = next.DryRun;
+        if (!dryRunChanged || Pad360 is null)
+            _cfg.DryRun = next.DryRun;
         _cfg.Schedule = next.Schedule;
         _scheduler = new SessionScheduler(_cfg.Schedule, LogInternal);
         _cfg.Notify = next.Notify;
+        _cfg.PostMatchActivity = next.PostMatchActivity;
         _cfg.MyLeague = next.MyLeague;
         _cfg.CnMyLeague = next.CnMyLeague;
         _cfg.AiLadder = next.AiLadder;
@@ -126,9 +128,9 @@ public sealed class BotEngine : IDisposable
         _cfg.CnWeekly = next.CnWeekly;
         _cfg.Learning.CollectSuspicious = next.Learning.CollectSuspicious;
         _cfg.Learning.ThrottleSeconds = next.Learning.ThrottleSeconds;
-        LogInternal("[热更新] 已实时应用最新配置（时序/作息/通知/影子模式/场景阈值/采样）", LogLevel.Info);
+        LogInternal("[热更新] 已实时应用最新配置（时序/作息/通知/赛后任务/场景阈值/采样）", LogLevel.Info);
         if (dryRunChanged && Pad360 is not null)
-            LogInternal("[热更新] 影子模式开关已变更，手柄包装切换将在下次重启挂机时完全生效", LogLevel.Warn);
+            LogInternal("[热更新] 影子模式开关已变更，为避免手柄与安全巡检状态失步，将在下次重启挂机时生效", LogLevel.Warn);
     }
     /// <summary>虚拟手柄（连接失败按 <see cref="PadBackendInfo.FallbackChain"/> 回退时整体换实例）。</summary>
     public IVirtualPad Pad360 { get; private set; }
@@ -759,7 +761,8 @@ public sealed class BotEngine : IDisposable
                         {
                             _gdiFallbackTried = true;
                             LogInternal($"捕获链路熔断，自动降级 GDI 捕获继续挂机：{ex.Message}", LogLevel.Error);
-                            var (gw, gh) = _window is { } wwin ? GameWindow.GetClientSize(wwin.Handle) : (1280, 720);
+                            var gdiWin = Observation.Window ?? _window;
+                    var (gw, gh) = gdiWin is { } wwin ? GameWindow.GetClientSize(wwin.Handle) : (1280, 720);
                             if (gw <= 0 || gh <= 0) (gw, gh) = (1280, 720);
                             if (await TryStartGdiCaptureAsync(gw, gh))
                             {
@@ -1092,11 +1095,11 @@ public sealed class BotEngine : IDisposable
                         LogLevel.Warn);
 
                     LogInternal("尝试换回 ViGEmBus 虚拟手柄接管…", LogLevel.Warn);
+                    try { Pad360.Dispose(); } catch { }
+                    await EnsureVigemReadyAsync(); // 驱动缺失/需重启等异常直接透出真实原因，不被误判为物理手柄占用
                     bool recovered = false;
                     try
                     {
-                        try { Pad360.Dispose(); } catch { }
-                        await EnsureVigemReadyAsync();
                         Pad360 = CreatePad(PadBackendKind.Vigem);
                         Pad = new Pad(Pad360, _cfg.Timing);
                         Pad360.Connect();
@@ -1196,7 +1199,10 @@ public sealed class BotEngine : IDisposable
             }
             try
             {
-                Pad360.Connect();
+                if (!_cfg.HidHide.HidePhysicalGamepad && Pad360 is VigemPad vigem)
+                    vigem.Connect(allowSlot0Occupied: true);
+                else
+                    Pad360.Connect();
                 if (i > 0)
                     LogInternal($"已回退到 {PadBackendInfo.DisplayName(chain[i])}", LogLevel.Warn);
                 return;
@@ -2198,7 +2204,11 @@ public sealed class BotEngine : IDisposable
         // 统一经过黑屏/重复/反标清洗，以无损 PNG + 标准 YOLO/OCR/未知页提示词写入 data\samples\。
         if (_cfg.Learning.CollectSuspicious && _requiresGamepad)
         {
-            var screen = MatchBrain.Classify(dets, ocr);
+            var screen = MatchBrain.Classify(dets, ocr,
+                ScreenProbe.CornerHasContent(f),
+                allowCornerInMatch: false,
+                ScreenProbe.IsMostlyLightPage(f),
+                pitchLike: ScreenProbe.LooksLikePitch(f));
             var training = MatchBrain.CollectTrainingFrame(ocr, dets);
             string? tag = training?.Tag ?? (screen == MatchScreen.Unknown ? null : screen.ToString());
             string reason = training?.Reason ?? (screen == MatchScreen.Unknown ? "挂机遇到未知页面" : $"挂机采样：{screen}");

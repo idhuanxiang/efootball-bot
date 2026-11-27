@@ -238,6 +238,7 @@ public sealed class WorkerHost : IDisposable
                         StatsChanged?.Invoke(_lastStats);
                         break;
                     case "screen":
+                        _lastStats.LastScreen = msg.Screen ?? "";
                         ScreenObserved?.Invoke(msg.Screen ?? "未知", msg.Score, msg.Evidence);
                         break;
                     case "preview":
@@ -470,8 +471,9 @@ public sealed class WorkerHost : IDisposable
         }
         try
         {
+            bool hadProcess = _process is not null;
             bool confirmed = await TeardownAsync();
-            if (!confirmed && _process is not null)
+            if (!confirmed && hadProcess)
                 EmitLog("Warn", "Worker 停止确认超时，已强杀工作进程（PadPanicGate 已确保游戏侧提前松手）。");
         }
         finally

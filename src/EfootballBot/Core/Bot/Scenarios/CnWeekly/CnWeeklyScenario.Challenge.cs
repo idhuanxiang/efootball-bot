@@ -130,7 +130,7 @@ public sealed partial class CnWeeklyScenario : IScenario
             // 有专属分支在更早处，走不到这里）
             bool dismissable = obs.Ocr.ContainsJoined("取消") || obs.Ocr.ContainsJoined("关闭");
             _log("[国服周活动·挑战] 清单弹窗：A 确认", LogLevel.Info);
-            if (dismissable) await _engine.Pad.Dpad(PadDir.Up);
+            if (dismissable && _attempts == 1) await _engine.Pad.Dpad(PadDir.Up);
             await EnterAsync(obs, _attempts, "国服进入/确认");
             return 2200;
         }
@@ -148,7 +148,7 @@ public sealed partial class CnWeeklyScenario : IScenario
         {
             if (++_attempts > 6) { SetPhase(CwPhase.Flow); return 600; }
             _log("[国服周活动·挑战] 参加新挑战弹窗：上移选「进入」→ A", LogLevel.Info);
-            await _engine.Pad.Dpad(PadDir.Up);
+            if (_attempts == 1) await _engine.Pad.Dpad(PadDir.Up);
             await EnterAsync(obs, _attempts, "国服进入/确认");
             return 2600;
         }

@@ -3,6 +3,14 @@
 正式版每次发版的内容写在这里，CI 发 Release 时自动把对应版本段落贴进 GitHub Release 正文。
 格式约定：`## v<版本号>` 开头的段落，段内可用 `-` 列点；CI 按 tag 名精确匹配段落。
 
+## v9.3.8
+
+### 视觉纠错安全加固与影子模式手柄兼容
+对 `OcrLexiconCorrector` 进行了安全性加固，将最小纠错词长提升至 4 字并增加反义/邻近 UI 词黑名单（如「上一步」「活动未完成」「上一场比赛」「手动控制」「选择球员」等绝不改写），同时移除 `RapidV6` 误传检测框分数以及 `AddMergedWord` 与排版行割裂调用的问题，防止低置信度下将未完成或返回提示纠反。手柄方面修复了影子模式（`DryRun`）或关闭物理手柄接管时插着实体手柄仍因 `VigemPad.Connect` 校验 slot 0 而无法启动的问题。
+
+### 热更新全链路补全、引擎竞态与监控/采样修复
+补全了运行期配置热更新的最后几处缺口：`ApplyHotConfig` 现已同步 `PostMatchActivity` 并在运行中保持 `DryRun` 与 `Pad360` 状态一致；`Pad` 改为动态读取 `Timing.HumanPacingEnabled`，热切换拟人节奏即时生效；设置页实时修改挂机节奏与作息字段时同步下发 `reloadConfig`。引擎与 IPC 层面修复了 `Pad.Timed` 在快速「暂停→恢复」重建令牌期间可能漏出 `ObjectDisposedException`、代理回退 ViGEm 时把驱动安装/重启异常掩盖为物理手柄占用弹窗、GDI 熔断降级未取最新 `Observation.Window` 句柄、`WorkerHost.StopAsync` 超时告警死代码，以及局域网监控页 `lastScreen`（画面感知）因未同步而长期显示为空的问题；同时修复了 `LoadConfigToUi()` 内部残留 `_loadingConfig = false;` 提前解除保护、国服周活动与巅峰赛相对方向键重试绕回「取消」、手动/自动采样漏传 `ScreenProbe` 探针与 Stage 1 过早记录自环边，以及训练脚本硬编码本机路径和 POSIX 路径清洗遗漏。
+
 ## v9.3.7
 
 ### 启动闪退紧急修复与训练/OCR 能力增强

@@ -363,7 +363,7 @@ public sealed class PeakLadderScenario : IScenario
                         return 3200;
                     }
                     _log("[天梯巅峰赛] 参赛模式弹窗：上×2 选「单场比赛」→ A", LogLevel.Info);
-                    await _engine.Pad.DpadRepeat(PadDir.Up, 2);
+                    if (_attempts <= 1) await _engine.Pad.DpadRepeat(PadDir.Up, 2);
                     await EnterAsync(obs, _attempts, "国服进入/确认", ct: ct);
                     return 3000;
                 }

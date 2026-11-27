@@ -208,10 +208,8 @@ public partial class MainWindow
         TxtUnlimitedOcrEndpoint.Text = _cfg.UnlimitedOcr.Endpoint;
         PnlUnlimitedOcr.Visibility = CmbOcrEngine.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
 
-        // 手柄后端（进程内代理 / ViGEmBus）：加载赋值期间同样屏蔽 SelectionChanged，避免启动期误写配置
-        _loadingConfig = true;
+        // 手柄后端（进程内代理 / ViGEmBus）：由外层 LoadConfigToUi 的 _loadingConfig 统一屏蔽
         LoadPadBackendUi();
-        _loadingConfig = false;
         if (_currentNav == EfootballBot.Shell.NavMode.Game)
             SetRightPanelCollapsed(_rightUserCollapsed);
 
@@ -236,10 +234,8 @@ public partial class MainWindow
             if (_cfg.PreviewIntervalMs == previewMsValues[i]) { CmbPreviewInterval.SelectedIndex = i; break; }
 
         // 挂机节奏：加载期间屏蔽 TextChanged，避免逐框赋值的中间态触发校验/保存
-        _loadingConfig = true;
         TxtIdleMin.Text = FormatIdleSeconds(_cfg.Timing.IdleTapMinMs);
         TxtIdleMax.Text = FormatIdleSeconds(_cfg.Timing.IdleTapMaxMs);
-        _loadingConfig = false;
 
         // 防检测保护（★重要设定）
         ChkBackgroundParking.IsChecked = _cfg.BackgroundParking.Enabled;
@@ -247,17 +243,14 @@ public partial class MainWindow
         ChkHumanPacing.IsChecked = _cfg.Timing.HumanPacingEnabled;
         // 赛后活动任务（★重要设定，仅国际服）：默认关闭
         ChkPmAutoAdvance.IsChecked = _cfg.PostMatchActivity.AutoAdvanceWeeklyTasks;
-        _loadingConfig = true;
         ChkScheduleEnabled.IsChecked = _cfg.Schedule.Enabled;
         TxtScheduleStart.Text = _cfg.Schedule.StartTime;
         TxtScheduleEnd.Text = _cfg.Schedule.EndTime;
         TxtScheduleCap.Text = _cfg.Schedule.DailyCapHours.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
         TxtScheduleDrift.Text = _cfg.Schedule.DriftMinutes.ToString();
-        _loadingConfig = false;
         TxtScheduleError.Visibility = Visibility.Collapsed;
 
         // 我的联赛道具
-        _loadingConfig = true;
         ChkBuyExpBoost.IsChecked = _cfg.MyLeague.BuyExpBoost;
         string[] expLevels = { "2x", "3x", "4x" };
         int expIdx = Array.IndexOf(expLevels, _cfg.MyLeague.ExpBoostLevel);
@@ -272,7 +265,6 @@ public partial class MainWindow
         ChkAutoSwapMaxLevel.IsChecked = _cfg.MyLeague.AutoSwapMaxLevel;
         CmbAutoSwapEvery.SelectedIndex = AutoSwapEveryIndex(_cfg.MyLeague.AutoSwapEveryMatches);
         ChkOnlyKeyMatches.IsChecked = _cfg.MyLeague.OnlyKeyMatches;
-        _loadingConfig = false;
 
         // 场次计数停止（0=无限；预设 1/3/5/10/20，其他值进自定义输入框）
         LoadStopAfterUi(CmbStopAfterMatches, TxtStopAfterMatches, _cfg.MyLeague.StopAfterMatches);
@@ -312,7 +304,6 @@ public partial class MainWindow
         TxtAiStopAtRating.Text = _cfg.AiLadder.StopAtRating > 0 ? _cfg.AiLadder.StopAtRating.ToString() : "0";
 
         // 种马球员培训（购买）：两类买入数量 + 培训开关 + 技能卡消耗数量
-        _loadingConfig = true;
         LoadStudCountUi(CmbStudGkCount, TxtStudGkCount, _cfg.StudTraining.BuyGoalkeeperCount, StudBuyCountPresets);
         LoadStudCountUi(CmbStudOutfieldCount, TxtStudOutfieldCount, _cfg.StudTraining.BuyOutfieldCount, StudBuyCountPresets);
         ChkStudTrainGk.IsChecked = _cfg.StudTraining.TrainGoalkeepers;
@@ -325,7 +316,6 @@ public partial class MainWindow
         {
             LoadStudCountUi(CmbStudSkillCount, TxtStudSkillCount, _cfg.StudTraining.SkillCardCount, StudSkillCountPresets);
         }
-        _loadingConfig = false;
 
         // 日志设置
         ChkFileLog.IsChecked = _cfg.FileLogEnabled;
@@ -356,17 +346,13 @@ public partial class MainWindow
 
         // 运行日志显示过滤档（仅 UI 显示，文件日志不受影响）
         _runtimeLogFilter = _cfg.RuntimeLogFilter is "Key" or "Warn" ? _cfg.RuntimeLogFilter : "All";
-        _loadingConfig = true;
         CmbRuntimeLogFilter.SelectedIndex = _runtimeLogFilter switch { "Key" => 1, "Warn" => 2, _ => 0 };
         // 日志历史过滤档（与运行日志同款三档，持久化）
         _historyLogFilter = _cfg.HistoryLogFilter is "Key" or "Warn" ? _cfg.HistoryLogFilter : "All";
         CmbHistoryLogFilter.SelectedIndex = _historyLogFilter switch { "Key" => 1, "Warn" => 2, _ => 0 };
-        _loadingConfig = false;
 
         // 热键（记录式配置，加载时只同步开关，键位显示由 RefreshHotkeyUi 负责）
-        _loadingConfig = true;
         ChkHotkeyEnabled.IsChecked = _cfg.Hotkey.Enabled;
-        _loadingConfig = false;
 
         // 自动更新
         TxtCurrentVersion.Text = "v" + Updater.FormatVersion(Updater.CurrentVersion);
@@ -378,9 +364,7 @@ public partial class MainWindow
         InitChangelogHistory();
 
         // 手柄接管（赋值会触发 Changed：加载期间必须屏蔽）
-        _loadingConfig = true;
         ChkPadTakeover.IsChecked = _cfg.HidHide.HidePhysicalGamepad;
-        _loadingConfig = false;
         }
         finally
         {
@@ -646,7 +630,7 @@ public partial class MainWindow
     {
         // InitializeComponent 按 XAML 顺序建控件，TxtIdleError 在两个输入框之后；
         // 框架给 Text 赋默认值触发本事件时它可能尚未创建。加载赋值阶段由 _loadingConfig 屏蔽。
-        if (TxtIdleError is null || _loadingConfig) return;
+        if (TxtIdleError is null || _loadingConfig || _cfg is null) return;
         ApplyIdleTap(persist: true);
     }
 
@@ -664,7 +648,12 @@ public partial class MainWindow
             TxtIdleError.Visibility = Visibility.Collapsed;
             TxtIdleMin.ClearValue(Control.BorderBrushProperty);
             TxtIdleMax.ClearValue(Control.BorderBrushProperty);
-            if (persist) PersistConfigSafe("保存挂机节奏");
+            if (persist)
+            {
+                PersistConfigSafe("保存挂机节奏");
+                if (_workerHost?.ScenarioRunning == true)
+                    _ = _workerHost.SendReloadConfigAsync();
+            }
             return true;
         }
 
@@ -681,7 +670,7 @@ public partial class MainWindow
     private void ScheduleField_TextChanged(object sender, TextChangedEventArgs e)
     {
         // InitializeComponent 按 XAML 顺序建控件，错误提示框在输入框之后，加载期可能尚未创建
-        if (TxtScheduleError is null || _loadingConfig) return;
+        if (TxtScheduleError is null || _loadingConfig || _cfg is null) return;
         ApplySchedule(persist: true);
     }
 
@@ -714,7 +703,12 @@ public partial class MainWindow
         _cfg.Schedule.EndTime = end.ToString(@"hh\:mm");
         _cfg.Schedule.DailyCapHours = cap;
         _cfg.Schedule.DriftMinutes = drift;
-        if (persist) PersistConfigSafe("保存作息调度设置");
+        if (persist)
+        {
+            PersistConfigSafe("保存作息调度设置");
+            if (_workerHost?.ScenarioRunning == true)
+                _ = _workerHost.SendReloadConfigAsync();
+        }
         return true;
     }
 
@@ -765,7 +759,7 @@ public partial class MainWindow
 
     private void CmbPadBackend_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (_loadingConfig || CmbPadBackend is null) return;
+        if (_loadingConfig || _cfg is null || CmbPadBackend is null) return;
         _cfg.Pad.Backend = PadBackendInfo.FromUiIndex(CmbPadBackend.SelectedIndex);
         PersistConfigSafe("保存手柄后端设置");
         AppendLog($"[设置] 手柄后端已切换为：{PadBackendInfo.DisplayName(_cfg.Pad.Backend)}", LogLevel.Info);
@@ -1340,7 +1334,7 @@ public partial class MainWindow
 
     private void ChkPadTakeover_Changed(object sender, RoutedEventArgs e)
     {
-        if (_loadingConfig) return;
+        if (_loadingConfig || _cfg is null || ChkPadTakeover is null) return;
         _cfg.HidHide.HidePhysicalGamepad = ChkPadTakeover.IsChecked == true;
         PersistConfigSafe("保存手柄接管设置");
         AppendLog($"[设置] 物理手柄接管：{(_cfg.HidHide.HidePhysicalGamepad ? "已开启" : "已关闭")}", LogLevel.Info);

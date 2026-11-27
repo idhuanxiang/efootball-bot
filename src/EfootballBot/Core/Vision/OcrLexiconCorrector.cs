@@ -25,20 +25,27 @@ public static class OcrLexiconCorrector
 
     private static readonly HashSet<string> ExactSet = new(Lexicon, StringComparer.Ordinal);
 
+    /// <summary>绝对禁止被纠错改写的真实反义/邻近 UI 词（如「活动未完成」不能被改成「活动已完成」）。</summary>
+    private static readonly HashSet<string> NeverRewrite = new(StringComparer.Ordinal)
+    {
+        "上一步", "活动未完成", "上一场比赛", "手动控制", "手动配置球员",
+        "选择球员", "无法进入比赛", "取消比赛", "退出比赛",
+    };
+
     private static readonly Dictionary<int, string[]> ByLength = Lexicon
         .GroupBy(s => s.Length)
         .ToDictionary(g => g.Key, g => g.ToArray());
 
     /// <summary>
-    /// 对单个低置信度中文词做同长度 1 字容错纠错；高置信度、含英文数字或已精确命中时零开销原样返回。
+    /// 对单个低置信度中文词做同长度 1 字容错纠错；高置信度、短词(&lt;4字)、含英文数字、精确命中或反义词黑名单时直接原样返回。
     /// </summary>
     public static string Correct(string normalizedText, float confidence)
     {
         if (confidence >= HighConfidenceCutoff) return normalizedText;
         if (string.IsNullOrEmpty(normalizedText)) return normalizedText;
         int len = normalizedText.Length;
-        if (len < 3 || len > 8) return normalizedText;
-        if (ExactSet.Contains(normalizedText)) return normalizedText;
+        if (len < 4 || len > 8) return normalizedText;
+        if (ExactSet.Contains(normalizedText) || NeverRewrite.Contains(normalizedText)) return normalizedText;
 
         for (int i = 0; i < len; i++)
         {

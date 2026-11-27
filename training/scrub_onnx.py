@@ -64,9 +64,13 @@ def scrub(path: str | Path, description: str = NEUTRAL_DESCRIPTION) -> list[str]
 
     cleaned: list[tuple[str, str]] = [("description", description)]
     cleaned += [(k, props[k]) for k in KEEP_KEYS if k in props]
-    # args 里若含本机路径也一并中性化（Ultralytics 某些版本会写 data 路径）
+    # args 里若含本机路径也一并中性化（Ultralytics 某些版本会写 Windows 或 POSIX data 路径）
+    def _scrub_args(val: str) -> str:
+        val = re.sub(r"[A-Za-z]:[\\\\/][^'\" ,}]+", "<path>", val)
+        return re.sub(r"/(?:home|Users|content|tmp|var|opt|root)/[^'\" ,}]+", "<path>", val)
+
     cleaned = [
-        (k, re.sub(r"[A-Za-z]:[\\\\/][^'\" ,}]+", "<path>", v)) if k == "args" else (k, v)
+        (k, _scrub_args(v)) if k == "args" else (k, v)
         for k, v in cleaned
     ]
 
