@@ -163,5 +163,37 @@ public class CnMyLeagueDifficultyTests
         Assert.Equal(9, plan!.UpStrokes);
         Assert.Equal(1, plan.DownStrokes);
     }
+
+    [Fact]
+    public void PlanDifficultySelect_RestrictedListOf4_RemapsByVisibleIndex()
+    {
+        // 受限页出现 4 项（标准/职业/顶尖球员/传奇，首项不是「新手」= 不是全表）：
+        // 必须按可见位置落位（传奇在第 4 行 → 下×3），按全表索引会下移 6 行落到「取消/确认」按钮行
+        var ocr = Ocr(
+            W("选择赛事等级", 0.40, 0.11),
+            W("标准", 0.30, 0.45), W("职业", 0.30, 0.50),
+            W("顶尖球员", 0.30, 0.55), W("传奇", 0.30, 0.60));
+        var options = MyLeagueBrain.DetectDifficultyOptions(ocr);
+        Assert.Equal(4, options.Count);
+        var plan = MyLeagueBrain.PlanDifficultySelect("标准", "传奇", options, false, ocr);
+        Assert.NotNull(plan);
+        Assert.Equal(9, plan!.UpStrokes);
+        Assert.Equal(3, plan.DownStrokes);
+    }
+
+    [Fact]
+    public void PlanDifficultySelect_FullTableWithMissingFirstRow_StillUsesCanonicalIndex()
+    {
+        // 全表页但 OCR 漏读首行「新手」：中间存在整行空档 → 仍按全表索引（传奇=第 7 行 → 下×6），
+        // 不能因为首项是「业余」就按可见位置下移 5 行（会落到「超级球星」）
+        var ocr = Ocr(
+            W("选择赛事等级", 0.40, 0.11),
+            W("业余", 0.30, 0.40), W("标准", 0.30, 0.45), W("职业", 0.30, 0.50),
+            W("顶尖球员", 0.30, 0.55), W("超级球星", 0.30, 0.60), W("传奇", 0.30, 0.66));
+        var options = MyLeagueBrain.DetectDifficultyOptions(ocr);
+        var plan = MyLeagueBrain.PlanDifficultySelect("业余", "传奇", options, false, ocr);
+        Assert.NotNull(plan);
+        Assert.Equal(6, plan!.DownStrokes);
+    }
 }
 

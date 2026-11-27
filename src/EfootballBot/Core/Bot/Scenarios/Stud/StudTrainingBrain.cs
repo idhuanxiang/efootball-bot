@@ -247,7 +247,18 @@ public static class StudTrainingBrain
             return Math.Clamp(cur, 0, Math.Max(cap, 2000));
         }
 
+        // 斜杠被 OCR 吞掉的回退：容量既可能是 3 位（900）也可能是 4 位（1000）。
+        // 旧实现一律按末 3 位切容量，「9/1000」读成 91000 会得到 91（放大 10 倍），
+        // 再被上层 clamp 成 50 → 列表只有 9 人却按 50 人一路按 A 走到头。
         string digits = new(normText.Where(char.IsDigit).ToArray());
+        if (digits.Length >= 5 && digits.EndsWith("1000", StringComparison.Ordinal))
+        {
+            return int.TryParse(digits[..^4], out int cur4) ? Math.Clamp(cur4, 0, 2000) : null;
+        }
+        if (digits.Length >= 4 && digits.EndsWith("900", StringComparison.Ordinal))
+        {
+            return int.TryParse(digits[..^3], out int cur3) ? Math.Clamp(cur3, 0, 2000) : null;
+        }
         if (digits.Length < 4) return null;
         string countPart = digits[..^3];
         if (!int.TryParse(countPart, out int count)) return null;

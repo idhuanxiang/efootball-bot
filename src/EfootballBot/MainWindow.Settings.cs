@@ -400,15 +400,24 @@ public partial class MainWindow
         if (int.TryParse(TxtNotifyMerge.Text.Trim(), out int mergeMin) && mergeMin is >= 0 and <= 120)
             _cfg.Notify.MergeMinutes = mergeMin;
         else
+        {
             AppendLog($"[设置] 通知合并间隔无效（需 0–120 分钟），已保留原值 {_cfg.Notify.MergeMinutes}。", LogLevel.Warn);
+            TxtNotifyMerge.Text = _cfg.Notify.MergeMinutes.ToString(); // 回写生效值，避免输入框显示的值与实际配置不一致
+        }
         if (int.TryParse(TxtNotifyDaily.Text.Trim(), out int dailyLimit) && dailyLimit is >= 0 and <= 9999)
             _cfg.Notify.DailySendLimit = dailyLimit;
         else
+        {
             AppendLog($"[设置] 每日通知上限无效（需 0–9999），已保留原值 {_cfg.Notify.DailySendLimit}。", LogLevel.Warn);
+            TxtNotifyDaily.Text = _cfg.Notify.DailySendLimit.ToString();
+        }
         if (int.TryParse(TxtNotifySummaryMin.Text.Trim(), out int summaryMin) && summaryMin is >= 5 and <= 1440)
             _cfg.Notify.SummaryIntervalMinutes = summaryMin;
         else
+        {
             AppendLog($"[设置] 运行摘要间隔无效（需 5–1440 分钟），已保留原值 {_cfg.Notify.SummaryIntervalMinutes}。", LogLevel.Warn);
+            TxtNotifySummaryMin.Text = _cfg.Notify.SummaryIntervalMinutes.ToString();
+        }
         bool monitorWasEnabled = _cfg.Monitor.Enabled;
         int monitorOldPort = _cfg.Monitor.Port;
         string monitorOldToken = _cfg.Monitor.Token;
@@ -416,7 +425,10 @@ public partial class MainWindow
         if (int.TryParse(TxtMonitorPort.Text.Trim(), out int monPort) && monPort is > 0 and < 65536)
             _cfg.Monitor.Port = monPort;
         else
+        {
             AppendLog($"[设置] 监控页端口无效（需 1–65535），已保留原值 {_cfg.Monitor.Port}。", LogLevel.Warn);
+            TxtMonitorPort.Text = _cfg.Monitor.Port.ToString();
+        }
         _cfg.Monitor.Token = TxtMonitorToken.Text.Trim();
         _cfg.DryRun = ChkDryRun.IsChecked == true;
         // 监控页开关、端口或 Token 变更：即时重建监听

@@ -184,8 +184,9 @@ public static class MyLeagueBrain
         if (checkedDiff == wanted) return null;
 
         int targetIdx = canonicalIdx;
-        if (options.Count is > 0 and < 4)
+        if (!LooksLikeFullDifficultyTable(options, ocr))
         {
+            // 受限/滚动子集页：按「可见列表内的位置」下移（全表索引会多移几行落到取消/确认按钮行）
             for (int i = 0; i < options.Count; i++)
             {
                 if (options[i] == wanted) { targetIdx = i; break; }
@@ -195,6 +196,35 @@ public static class MyLeagueBrain
             ? $"当前蓝勾未检出，先归位勾选「{wanted}」（第 {targetIdx + 1} 行）"
             : $"当前蓝勾「{checkedDiff}」→ 改选「{wanted}」（第 {targetIdx + 1} 行）";
         return new DifficultySelectPlan(9, targetIdx, why);
+    }
+
+    /// <summary>
+    /// 判断本帧读到的难度名是否来自「全表」（7 行都该在页上，只是 OCR 可能漏读若干行）。
+    /// 全表 → 按难度表索引落位（漏读行不错位）；受限/滚动子集 → 按可见列表位置落位。
+    /// 判据：① 读到 0 项（交给调用方原逻辑）② 首项是「新手」③ 读到 6 项以上
+    /// ④ 相邻项之间存在明显大于行距的空档（中间漏读了一整行，说明仍是全表）。
+    /// </summary>
+    private static bool LooksLikeFullDifficultyTable(IReadOnlyList<string> options, OcrResult ocr)
+    {
+        if (options.Count == 0) return true;
+        if (options[0] == MatchBrain.Difficulties[0]) return true;
+        if (options.Count >= MatchBrain.Difficulties.Length - 1) return true;
+
+        var ys = new List<double>();
+        foreach (string name in options)
+        {
+            var w = ocr.Words.FirstOrDefault(x => x.Text.Replace(" ", "").Contains(name));
+            if (w is not null) ys.Add(w.CenterY);
+        }
+        if (ys.Count < 3) return false;
+        ys.Sort();
+        var gaps = new List<double>(ys.Count - 1);
+        for (int i = 1; i < ys.Count; i++) gaps.Add(ys[i] - ys[i - 1]);
+        var sorted = new List<double>(gaps);
+        sorted.Sort();
+        double median = sorted[sorted.Count / 2];
+        // 行距中位数天然含「漏读行」拉大的值，用中位数×1.6 判是否存在整行空档
+        return median > 0.005 && gaps.Max() > median * 1.6;
     }
 
     /// <summary>

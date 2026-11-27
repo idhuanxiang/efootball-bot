@@ -372,5 +372,8 @@ public class UpstreamV754PureTests
         Assert.Equal(9, StudTrainingBrain.ReadVisiblePlayerCount(Ocr(W("数量:9/1000", 0.88, 0.08))));
         Assert.Equal(12, StudTrainingBrain.ReadVisiblePlayerCount(Ocr(W("数量:", 0.84, 0.08), W("12/900", 0.91, 0.08))));
         Assert.Equal(9, StudTrainingBrain.ReadVisiblePlayerCount(Ocr(W("球员数量9900储备球员", 0.88, 0.08))));
+        // 4 位容量 + 斜杠被吞：「9/1000」→「91000」，末 3 位切片旧算法会读成 91（放大 10 倍）
+        Assert.Equal(9, StudTrainingBrain.ReadVisiblePlayerCount(Ocr(W("数量91000", 0.88, 0.08))));
+        Assert.Equal(12, StudTrainingBrain.ReadVisiblePlayerCount(Ocr(W("数量12900", 0.88, 0.08))));
     }
 }
