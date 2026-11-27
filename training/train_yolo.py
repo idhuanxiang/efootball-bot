@@ -108,6 +108,8 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=16)
+    ap.add_argument("--freeze", type=int, default=0,
+                    help="冻结前 N 层骨干网络（如 10 用于基于 best.pt 的快速增量微调；0=全量微调）")
     ap.add_argument("--device", default="", help="留空自动；CPU 写 cpu；NVIDIA 写 0")
     ap.add_argument("--workers", type=int, default=0,
                     help="dataloader 进程数；Windows 上默认 0，多进程常触发 bootstrapping 报错")
@@ -177,11 +179,22 @@ def main() -> None:
         project=args.project,
         name=args.name,
         exist_ok=True,
+        # 游戏 UI 按钮永不水平/垂直镜像或旋转：关闭 fliplr/flipud/degrees 防止把左下「B 返回」翻到右下污染 btn_confirm
+        fliplr=0.0,
+        flipud=0.0,
+        degrees=0.0,
     )
+    if args.freeze > 0:
+        train_kwargs["freeze"] = args.freeze
     if args.device:
         train_kwargs["device"] = args.device
     print(f"[..] 开始训练：{train_kwargs}")
     model.train(**train_kwargs)
+
+    best_pt = Path(args.project) / args.name / "weights" / "best.pt"
+    if best_pt.is_file():
+        shutil.copy2(best_pt, OUT_DIR / "yolo26n_best.pt")
+        print(f"[OK] 已保存最优权重：{OUT_DIR / 'yolo26n_best.pt'}（可用于下次 --weights 增量续训）")
 
     print("[..] 导出 ONNX（640×640 静态形状；默认 FP16，体积约 FP32 的一半）")
     export_kw = dict(format="onnx", imgsz=args.imgsz, dynamic=False, simplify=False)

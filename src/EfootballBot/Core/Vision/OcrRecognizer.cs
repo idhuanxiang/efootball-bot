@@ -440,6 +440,7 @@ public sealed record OcrResult(IReadOnlyList<OcrWord> Words, int Width, int Heig
         double x1 = group.Max(w => w.X + w.W), y1 = group.Max(w => w.Y + w.H);
         // 合并行置信度取最低：整行文本里只要有一个碎词可疑，合并结果就应降权（保守）
         double conf = group.Min(w => w.Confidence);
+        text = OcrLexiconCorrector.Correct(text, (float)conf);
         target.Add(new OcrWord(text, x0, y0, x1 - x0, y1 - y0, conf));
     }
 
@@ -929,7 +930,7 @@ internal sealed class RapidV6OcrBackend : IOcrBackend
                             maxY = Math.Max(maxY, pts[i].Y);
                         }
                         words.Add(new OcrWord(
-                            text,
+                            OcrLexiconCorrector.CorrectRaw(text, block.BoxScore),
                             Math.Clamp(minX / frame.Width, 0, 1),
                             Math.Clamp(minY / frame.Height, 0, 1),
                             Math.Clamp((maxX - minX) / frame.Width, 0, 1),
@@ -1011,7 +1012,7 @@ internal sealed class SimdPaddleOcrBackend : IOcrBackend
                 float minY = Math.Min(Math.Min(b.Y1, b.Y2), Math.Min(b.Y3, b.Y4));
                 float maxY = Math.Max(Math.Max(b.Y1, b.Y2), Math.Max(b.Y3, b.Y4));
                 words.Add(new OcrWord(
-                    text,
+                    OcrLexiconCorrector.CorrectRaw(text, line.RecognitionScore),
                     Math.Clamp(minX / frame.Width, 0, 1),
                     Math.Clamp(minY / frame.Height, 0, 1),
                     Math.Clamp((maxX - minX) / frame.Width, 0, 1),

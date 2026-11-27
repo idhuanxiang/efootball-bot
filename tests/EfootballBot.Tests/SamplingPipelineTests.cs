@@ -336,6 +336,24 @@ public sealed class SamplingPipelineTests
         Assert.True(e3 > e2);
     }
 
+    [Fact]
+    public void OcrLexiconCorrector_FixesLowConfidenceUiTyposWithoutTouchingNormalReads()
+    {
+        Assert.Equal("前往比赛", OcrLexiconCorrector.Correct("前往北赛", 0.72f));
+        Assert.Equal("自动配置球员", OcrLexiconCorrector.Correct("自动配量球员", 0.68f));
+        Assert.Equal("活动已完成", OcrLexiconCorrector.Correct("活动已完战", 0.75f));
+
+        // 高置信度、短词、英文/球员名、含数字均不改动
+        Assert.Equal("前往北赛", OcrLexiconCorrector.Correct("前往北赛", 0.95f));
+        Assert.Equal("确定", OcrLexiconCorrector.Correct("确定", 0.60f));
+        Assert.Equal("Mbappe", OcrLexiconCorrector.Correct("Mbappe", 0.50f));
+        Assert.Equal("100GP", OcrLexiconCorrector.Correct("100GP", 0.50f));
+
+        // CorrectRaw 同步保留原样或纠错后的中文词
+        Assert.Equal("自动配置球员", OcrLexiconCorrector.CorrectRaw("自动配量 球员", 0.70));
+        Assert.Equal("自动配量 球员", OcrLexiconCorrector.CorrectRaw("自动配量 球员", 0.92));
+    }
+
     private static void PaintRect(FrameData f, double x0, double y0, double x1, double y1, byte lum)
     {
         int ix0 = (int)(x0 * f.Width), ix1 = (int)(x1 * f.Width);

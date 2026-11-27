@@ -23,6 +23,21 @@ on:
         required: true
         default: "0"
         type: string
+      weights:
+        description: "Base weights (yolo26n.pt or path/URL to best.pt)"
+        required: true
+        default: "yolo26n.pt"
+        type: string
+      freeze:
+        description: "Freeze first N backbone layers (e.g. 10 for fast incremental fine-tune)"
+        required: true
+        default: "0"
+        type: string
+      augment_ui:
+        description: "Generate synthetic UI drift samples (titlebar/dimmed/OSD) before training"
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   train-yolo:
@@ -45,12 +60,18 @@ jobs:
       - name: Validate dataset
         run: python training/prepare_dataset.py
 
+      - name: Generate synthetic UI drift samples
+        if: ${{ inputs.augment_ui }}
+        run: python training/augment_ui.py --dataset training/dataset --ratio 0.35 --seed "${{ inputs.seed }}"
+
       - name: Train and export ONNX
         run: |
           python training/train_yolo.py \
+            --weights "${{ inputs.weights }}" \
             --epochs "${{ inputs.epochs }}" \
             --imgsz "${{ inputs.imgsz }}" \
             --batch "${{ inputs.batch }}" \
+            --freeze "${{ inputs.freeze }}" \
             --seed "${{ inputs.seed }}" \
             --device cpu \
             --workers 2
@@ -67,5 +88,6 @@ jobs:
           name: yolo26n-candidate
           path: |
             training/out/yolo26n_candidate.onnx
+            training/out/yolo26n_best.pt
             training/out/verify_report.txt
           retention-days: 14

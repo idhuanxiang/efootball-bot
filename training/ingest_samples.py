@@ -114,6 +114,10 @@ def main() -> int:
     ap.add_argument("--src", type=pathlib.Path, default=DEFAULT_SRC, help="Sample root directory")
     ap.add_argument("--max-per-page", type=int, default=45, help="Max samples to keep per page_id")
     ap.add_argument("--near-hamming", type=int, default=4, help="Near-duplicate dhash Hamming threshold")
+    ap.add_argument("--hard-negatives", type=pathlib.Path, default=None,
+                    help="Optional directory of false-positive / dump frames to ingest as empty-label hard negatives")
+    ap.add_argument("--max-hard-neg", type=int, default=80,
+                    help="Max hard negative frames to add (keeps <= ~1:3 negative-to-positive ratio)")
     ap.add_argument("--dry-run", action="store_true", help="Print stats without copying files")
     args = ap.parse_args()
 
@@ -242,6 +246,45 @@ def main() -> int:
     print(f"Added to train                 : {added_train}")
     print(f"Added to val                   : {added_val}")
     print(f"Ingested box counts by class   : {dict(sorted(class_counts.items()))}")
+
+    if args.hard_negatives is not None:
+        if not args.hard_negatives.is_dir():
+            print(f"[WARN] Hard negatives directory not found: {args.hard_negatives}", file=sys.stderr)
+        else:
+            neg_imgs = sorted(
+                p for p in args.hard_negatives.rglob("*")
+                if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+            )
+            neg_candidates: list[pathlib.Path] = []
+            for p in neg_imgs:
+                digest = sha256_file(p)
+                if digest in existing_hashes:
+                    continue
+                existing_hashes.add(digest)
+                neg_candidates.append(p)
+            neg_selected = uniform_cap(
+                [{"p": p} for p in neg_candidates],
+                max(0, args.max_hard_neg),
+            )
+            neg_train, neg_val = 0, 0
+            for idx, item in enumerate(neg_selected):
+                p = item["p"]
+                subset = "val" if (idx % VAL_EVERY == VAL_EVERY - 1) else "train"
+                out_stem = f"hneg_{sha256_file(p)[:10]}_{p.stem}"
+                dst_img = DATASET / "images" / subset / f"{out_stem}{p.suffix.lower()}"
+                dst_lbl = DATASET / "labels" / subset / f"{out_stem}.txt"
+                if dst_img.exists() or dst_lbl.exists():
+                    continue
+                if not args.dry_run:
+                    dst_img.parent.mkdir(parents=True, exist_ok=True)
+                    dst_lbl.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(p, dst_img)
+                    dst_lbl.write_text("", encoding="utf-8")
+                if subset == "val":
+                    neg_val += 1
+                else:
+                    neg_train += 1
+            print(f"Hard negatives added (train/val): {neg_train} / {neg_val}")
     return 0
 
 
