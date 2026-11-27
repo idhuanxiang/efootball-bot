@@ -77,11 +77,11 @@ public partial class MainWindow
         // 换人测试按钮：未激活时显示专用文案（ModuleRun 循环会把它改成「开始」）
         bool swapActive = running && _activeStartBtn == BtnTestSwap;
         BtnTestSwap.Content = swapActive ? $"一键结束{hk}" : "一键测试换人";
-        // 训练帧采集按钮（开发者选项）：与换人测试同属独立会话，必须一起管理文案/禁用态。
-        // 不纳入的话，ToggleScenarioAsync 里设的「启动中…」永不复位——用户反馈的永久卡住。
-        bool trainActive = running && _activeStartBtn == BtnCollectTrainFrames;
-        BtnCollectTrainFrames.Content = trainActive ? $"停止采集{hk}" : "开始采集训练帧";
-        BtnCollectTrainFrames.IsEnabled = !busy && (!running || trainActive);
+        // 手动操作采样按钮（开发者选项）：与换人测试同属独立会话，统一管理文案/禁用态。
+        bool sampleActive = running && _activeStartBtn == BtnManualSample;
+        BtnManualSample.Content = sampleActive ? $"停止手动采样{hk}" : "开始手动采样";
+        BtnManualSample.Style = (Style)FindResource(sampleActive ? "DangerBtn" : "PrimaryBtn");
+        BtnManualSample.IsEnabled = !busy && (!running || sampleActive);
     }
 
     private async void BtnManualStop_Click(object sender, RoutedEventArgs e)

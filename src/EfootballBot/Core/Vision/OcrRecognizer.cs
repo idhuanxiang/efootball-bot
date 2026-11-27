@@ -508,6 +508,17 @@ public sealed record OcrResult(IReadOnlyList<OcrWord> Words, int Width, int Heig
 /// <summary>文字规范化，对抗 OCR 的空格 / 全半角 / 常见误识。</summary>
 public static class OcrText
 {
+    private static readonly (string Wrong, string Right)[] PhraseReplacements =
+    {
+        ("北赛", "比赛"),
+        ("黄幅设置", "横幅设置"),
+        ("结引", "结束"),
+        ("设量", "设置"),
+        ("强力种断", "强力抢断"),
+        ("强力抢斯", "强力抢断"),
+        ("环间", "期间"),
+    };
+
     public static string Norm(string s)
     {
         if (string.IsNullOrEmpty(s)) return "";
@@ -518,7 +529,13 @@ public static class OcrText
             if (char.IsPunctuation(ch) || char.IsSymbol(ch)) continue;
             sb.Append(NormalizeChar(ch));
         }
-        return sb.ToString();
+        string normalized = sb.ToString();
+        foreach (var (wrong, right) in PhraseReplacements)
+        {
+            if (normalized.Contains(wrong, StringComparison.Ordinal))
+                normalized = normalized.Replace(wrong, right, StringComparison.Ordinal);
+        }
+        return normalized;
     }
 
     private static char NormalizeChar(char ch) => ch switch

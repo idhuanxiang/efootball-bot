@@ -22,6 +22,9 @@ public interface IModuleLifecycle
     /// 实现者应清掉旧会话的界面/比赛记忆（新窗口是冷启动），并作废当前场次。
     /// </summary>
     void OnGameRestarted(bool success);
+
+    /// <summary>模块停止时回调（用于写出会话汇总、导航图等收尾工作）。</summary>
+    void OnModuleStopped() { }
 }
 
 

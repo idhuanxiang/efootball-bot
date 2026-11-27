@@ -401,7 +401,7 @@ public partial class MainWindow
         // ① 真实手柄随时可拿：挂机检测到占用会自动让路（虚拟手柄暂时断开，你的手柄立刻可用）；
         // ② 全屏（尤其超宽）下定位与捕获均不稳定，720p 窗口模式是实测可靠配置。
         CancelAutoClose();
-        if (!switching)
+        if (!switching && BotModuleCatalog.RequiresGamepad(mode))
         {
             // 软件本体主题风格的确认对话框；首次阅读确定键带 5s 倒计时，之后直接确认
             var dialog = new EfootballBot.Views.StartConfirmDialog { Owner = this };
@@ -637,12 +637,14 @@ public partial class MainWindow
         => await ToggleScenarioAsync(BtnTestSwap, ModuleIds.IntlSwapTest);
 
     /// <summary>
-    /// 训练帧自动采集（独立会话）：机器人自己导航到主菜单/比赛页/周活动卡片/锦标赛卡片/联赛主页，
-    /// 每页抓一张训练样本到 data\trainingframes\日期\，抓完自动停止。再点一次＝停止。
-    /// 与满级换人测试走同一套 ToggleScenarioAsync（启动确认、按钮禁用、热键、自动复位）。
+    /// 手动操作智能采样（独立只读会话）：不接管手柄、不自动点击，随左侧当前服区自动选择国服/国际服，
+    /// 监听手柄与键盘操作并保存无损 PNG、未知页提示词与导航路径图到 data\samples\。再点一次＝停止。
     /// </summary>
-    private async void BtnCollectTrainFrames_Click(object sender, RoutedEventArgs e)
-        => await ToggleScenarioAsync(BtnCollectTrainFrames, ModuleIds.IntlTrainFrames);
+    private async void BtnManualSample_Click(object sender, RoutedEventArgs e)
+    {
+        string mode = RbCn.IsChecked == true ? ModuleIds.CnManualSample : ModuleIds.IntlManualSample;
+        await ToggleScenarioAsync(BtnManualSample, mode);
+    }
 
     /// <summary>
     /// 开启「满级自动换人」时弹确认窗（SwapGuideWindow）：展示巡检路径图，要求用户先手动

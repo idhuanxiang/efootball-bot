@@ -1,0 +1,71 @@
+name: Train YOLO (6-Class UI)
+
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: "Training epochs"
+        required: true
+        default: "80"
+        type: string
+      imgsz:
+        description: "Image size"
+        required: true
+        default: "640"
+        type: string
+      batch:
+        description: "Batch size"
+        required: true
+        default: "16"
+        type: string
+      seed:
+        description: "Random seed"
+        required: true
+        default: "0"
+        type: string
+
+jobs:
+  train-yolo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install training dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ultralytics onnx onnxruntime pillow
+
+      - name: Validate dataset
+        run: python training/prepare_dataset.py
+
+      - name: Train and export ONNX
+        run: |
+          python training/train_yolo.py \
+            --epochs "${{ inputs.epochs }}" \
+            --imgsz "${{ inputs.imgsz }}" \
+            --batch "${{ inputs.batch }}" \
+            --seed "${{ inputs.seed }}" \
+            --device cpu \
+            --workers 2
+
+      - name: Verify against hard negatives and compare with official model
+        run: |
+          python training/verify_model.py \
+            --frames training/negatives/images \
+            --compare src/EfootballBot/models/yolo/yolo26n.onnx | tee training/out/verify_report.txt
+
+      - name: Upload candidate model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolo26n-candidate
+          path: |
+            training/out/yolo26n_candidate.onnx
+            training/out/verify_report.txt
+          retention-days: 14

@@ -37,7 +37,10 @@ public sealed class BotModuleDescriptor
     /// 模块（我的联赛/AI 天梯/天梯巅峰赛）才配 true；周活动本身、种马、换人测试都不配。
     /// </summary>
     public bool HandoffEligible { get; init; }
-    /// <summary>是否场景模块（= 引擎要接虚拟手柄、要跑决策循环）。</summary>
+    /// <summary>是否需要接管/连接虚拟手柄。纯手动采样等只读观察场景设为 false。</summary>
+    public bool RequiresGamepad { get; init; } = true;
+
+    /// <summary>是否场景模块（= 要跑决策循环）。</summary>
     public bool IsScenario => Kind == ModuleKind.Scenario && Factory is not null;
 
     public override string ToString() => $"{Id}({Server.Display()}·{DisplayName})";

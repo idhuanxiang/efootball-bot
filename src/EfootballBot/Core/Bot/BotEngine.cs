@@ -12,6 +12,7 @@ using EfootballBot.Core.Bot.Scenarios.PeakLadder;
 using EfootballBot.Core.Bot.Scenarios.AiLadder;
 using EfootballBot.Core.Bot.Scenarios.Stud;
 using EfootballBot.Core.Bot.Modules;
+using EfootballBot.Core.Bot.Sampling;
 using EfootballBot.Core.Observation;
 using EfootballBot.Core.System;
 
@@ -118,7 +119,9 @@ public sealed class BotEngine : IDisposable
         _cfg.AiLadder = next.AiLadder;
         _cfg.Weekly = next.Weekly;
         _cfg.CnWeekly = next.CnWeekly;
-        LogInternal("[热更新] 已实时应用最新配置（时序/作息/通知/影子模式/场景阈值）", LogLevel.Info);
+        _cfg.Learning.CollectSuspicious = next.Learning.CollectSuspicious;
+        _cfg.Learning.ThrottleSeconds = next.Learning.ThrottleSeconds;
+        LogInternal("[热更新] 已实时应用最新配置（时序/作息/通知/影子模式/场景阈值/采样）", LogLevel.Info);
     }
     /// <summary>虚拟手柄（连接失败按 <see cref="PadBackendInfo.FallbackChain"/> 回退时整体换实例）。</summary>
     public IVirtualPad Pad360 { get; private set; }
@@ -265,7 +268,6 @@ public sealed class BotEngine : IDisposable
 
     private long _lastOcrDumpTick;
 
-    private long _lastFrameDumpTick;
 
     /// <summary>可疑帧转储节流（按 tag 分别计时），key=tag，value=上次转储的 TickCount64。</summary>
     private readonly global::System.Collections.Generic.Dictionary<string, long> _suspiciousDumpTicks = new();
@@ -303,6 +305,12 @@ public sealed class BotEngine : IDisposable
     private bool _padOwnershipLostLogged;
     /// <summary>观察循环分段耗时滚动统计（日志与侧栏共用；每次开始挂机重置）。</summary>
     public readonly PerfTrace Perf = new();
+
+    /// <summary>智能训练素材与路径采样器（每次会话按日期目录初始化）。</summary>
+    public DatasetSampleWriter SampleWriter { get; private set; } = new();
+
+    /// <summary>当前会话是否需要接管手柄（手动采样等只读场景为 false）。</summary>
+    private bool _requiresGamepad = true;
 
     private GameWindowInfo? _window;
     /// <summary>本次会话的停靠目标（虚拟显示器矩形；null = 屏外停靠）。重启游戏后据此重新停靠。</summary>
@@ -386,7 +394,10 @@ public sealed class BotEngine : IDisposable
         // 引擎这里只问两件事：「这个 id 是不是挂机场景」（要不要接管手柄）、「属于哪个服」
         // （找哪个窗口）。加模块不需要动引擎。
         bool scenarioMode = BotModuleCatalog.IsScenarioMode(mode);
+        bool needsPad = BotModuleCatalog.RequiresGamepad(mode);
+        _requiresGamepad = needsPad;
         bool cn = BotModuleCatalog.IsCn(mode);
+        SampleWriter = new DatasetSampleWriter();
         // 注册表自检：结构性错误（重复 id / 场景缺工厂 / 接力目标跨服）只会在运行期表现为
         // 「点了没反应」，所以每次启动都写一条日志留证（正常时一条都不打）
         if (BotModuleCatalog.SelfCheck() is { Count: > 0 } registryProblems)
@@ -396,7 +407,7 @@ public sealed class BotEngine : IDisposable
         CancellationToken token;
         try
         {
-            token = await PrepareSessionAsync(cn ? CnProcessName : null, connectPad: scenarioMode);
+            token = await PrepareSessionAsync(cn ? CnProcessName : null, connectPad: needsPad);
             // 所有模式统一节流到 300ms（场景决策周期 ≥2s，300ms 感知粒度足够）：
             // 全速 30fps 逐帧 SoftwareBitmap 拷贝 + CPU 降采样（LOH 高速churn）会打满 CPU 卡死系统
             Observation.ApplyCaptureThrottle(300);
@@ -441,15 +452,15 @@ public sealed class BotEngine : IDisposable
             LogInternal("YOLO 模型缺失，场景决策将大量退化为等待模式", LogLevel.Warn);
         else if (Scenario is null)
             LogInternal("当前为感知观察模式（无场景插件）", LogLevel.Info);
-        if (_cfg.FrameDump.Enabled)
-            LogInternal($"训练数据采集已开启：每 {_cfg.FrameDump.IntervalMs / 1000.0:F0} 秒存帧至 captures\\（exe 同级目录）", LogLevel.Info);
+        if (_cfg.Learning.CollectSuspicious)
+            LogInternal($"智能自动采样已开启：无损 PNG 落盘至 data\\samples\\（节流 {_cfg.Learning.ThrottleSeconds}s，自动过滤黑屏/重复/反标）", LogLevel.Info);
         // 微信实时动态：会话期间的事件合并/配额/定时摘要（配置为 Worker 启动时快照，
         // 设置页改动在下次开始挂机生效——与 Webhook 一致）
         WeChatFeed.SessionStart(_cfg, BuildRunningSummaryText, FeedQuietLog);
-        // 后台停靠：场景模式下把游戏窗口移出屏幕（观察模式用户要亲眼看画面，不隐藏）。
+        // 后台停靠：仅接管手柄的挂机场景才把游戏窗口移出屏幕（手动采样/观察模式用户要亲眼操作，不隐藏）。
         // 放在捕获会话建立之后：WGC/GDI 绑定的是窗口本身，与窗口是否在屏幕上无关。
         // 测试版可改用虚拟显示器停靠：游戏停靠到一块"看不见的屏幕"上，非 RDP，游戏不拒绝。
-        if (scenarioMode && _cfg.BackgroundParking.Enabled && _window is { } parkWin)
+        if (needsPad && _cfg.BackgroundParking.Enabled && _window is { } parkWin)
         {
             ParkRect? parkTarget = null;
 #if CHILD_SESSION_BETA
@@ -545,6 +556,30 @@ public sealed class BotEngine : IDisposable
                             await Task.Delay(400, token);
                             continue;
                         }
+                        // 纯手动采样等只读场景（_requiresGamepad == false）：
+                        // 不受作息休眠影响、不重复前置 ObserveAsync、不触发掉线弹窗/自学习/手柄活性检测。
+                        if (!_requiresGamepad)
+                        {
+                            if (idleThrottled)
+                            {
+                                idleThrottled = false;
+                                Observation.ApplyCaptureThrottle(300);
+                            }
+                            int readOnlyDelayMs = 100;
+                            if (Scenario is not null)
+                                readOnlyDelayMs = await Scenario.RunOnceAsync(token);
+                            CheckCaptureStaleness();
+                            await Task.Delay(readOnlyDelayMs, token);
+                            if (failStreak > 0)
+                            {
+                                failStreak = 0;
+                                faultEscalated = false;
+                                Stats.LastError = "";
+                                EmitStats();
+                            }
+                            continue;
+                        }
+
                         // 作息调度：超出活跃时段/当日上限/模拟短暂离开时，复位手柄空转等待自动恢复
                         if (!_scheduler.ShouldRunNow(DateTime.Now))
                         {
@@ -1741,18 +1776,21 @@ public sealed class BotEngine : IDisposable
         Interlocked.CompareExchange(ref _stopReason, summaryReason, null);
         try { _cts?.Cancel(); } catch { }
         if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
-        // 先断开再清零（顺序不能反）：Disconnect 会把 IsConnected 置 false + 撤代理 ACTIVE/PANIC，
-        // 之后即使还有一拍场景线程在跑，SetButton 也已经进不去。
-        try { Pad360.Disconnect(); } catch { }
-        try { Pad360.ResetAll(); } catch { }
-        // 全权接管收尾：恢复被禁用的真实手柄
-        try
+        if (_requiresGamepad)
         {
-            Input.PhysicalPadControl.RemoveSessionMarker();
-            if (_cfg.HidHide.HidePhysicalGamepad && Input.PhysicalPadControl.HasPendingRestore())
-                _pendingRestoreTask = Input.PhysicalPadControl.RestoreAsyncFireAndForget();
+            // 先断开再清零（顺序不能反）：Disconnect 会把 IsConnected 置 false + 撤代理 ACTIVE/PANIC，
+            // 之后即使还有一拍场景线程在跑，SetButton 也已经进不去。
+            try { Pad360.Disconnect(); } catch { }
+            try { Pad360.ResetAll(); } catch { }
+            // 全权接管收尾：恢复被禁用的真实手柄
+            try
+            {
+                Input.PhysicalPadControl.RemoveSessionMarker();
+                if (_cfg.HidHide.HidePhysicalGamepad && Input.PhysicalPadControl.HasPendingRestore())
+                    _pendingRestoreTask = Input.PhysicalPadControl.RestoreAsyncFireAndForget();
+            }
+            catch { }
         }
-        catch { }
         // 先还原后台停靠的窗口位置，再断捕获（还原依赖窗口仍在捕获会话里无影响，但先还原能让用户立刻看到游戏）
         try { _parker?.Stop(); } catch { }
         // 显式停止捕获会话：挂机停止后不再后台抓帧。
@@ -1767,6 +1805,7 @@ public sealed class BotEngine : IDisposable
         // 重连设备的 Left/A 全部失效（焦点不在磁贴行）。运行期自愈走 ReconnectPadAsync，
         // 仅在提交连续失败（手柄实质已失效）时才重建。
         WriteSessionSummary(summaryReason, isError);
+        try { (Scenario as IModuleLifecycle)?.OnModuleStopped(); } catch { }
         WeChatFeed.SessionStop();
     }
 
@@ -2135,14 +2174,31 @@ public sealed class BotEngine : IDisposable
         _lastYoloMs = Environment.TickCount64 - tYolo0;
         var obs = new Observation(f, ocr, dets);
         _lastObs = obs;
-        DumpFrame(f);
-        // 训练素材主动收集（fork 侧）：命中主要页面时转储到 data\suspicious\日期\ 当 YOLO 样本。
-        // 只在开关开启时判定；判定器纯读 OCR/dets、不读回不改行为，失败静默（见 DumpSuspiciousFrame）。
-        if (_cfg.Learning.CollectSuspicious)
+        // 挂机智能自动采样（仅当开启且非手动采样场景自身时触发，避免双写）：
+        // 统一经过黑屏/重复/反标清洗，以无损 PNG + 标准 YOLO/OCR/未知页提示词写入 data\samples\。
+        if (_cfg.Learning.CollectSuspicious && _requiresGamepad)
         {
+            var screen = MatchBrain.Classify(dets, ocr);
             var training = MatchBrain.CollectTrainingFrame(ocr, dets);
-            if (training is { } t)
-                DumpSuspiciousFrame(f, t.Tag, t.Reason);
+            string? tag = training?.Tag ?? (screen == MatchScreen.Unknown ? null : screen.ToString());
+            string reason = training?.Reason ?? (screen == MatchScreen.Unknown ? "挂机遇到未知页面" : $"挂机采样：{screen}");
+            string throttleKey = tag ?? "unknown_auto";
+            long nowSample = Environment.TickCount64;
+            int throttleMs = Math.Max(5, _cfg.Learning.ThrottleSeconds) * 1000;
+            bool allow = false;
+            lock (_suspiciousDumpTicks)
+            {
+                if (!_suspiciousDumpTicks.TryGetValue(throttleKey, out long last) || nowSample - last >= throttleMs)
+                {
+                    _suspiciousDumpTicks[throttleKey] = nowSample;
+                    allow = true;
+                }
+            }
+            if (allow)
+            {
+                SampleWriter.TryRecordFrame(f, ocr, dets, screen, _cnSession, "auto",
+                    pageTagOverride: training?.Tag, note: reason);
+            }
         }
         // ---------------- 事件派发 ----------------
         bool yoloOn = _perception.YoloEnabled;
@@ -2179,47 +2235,9 @@ public sealed class BotEngine : IDisposable
     }
 
     // ---------------- 杂项 ----------------
-    /// <summary>
-    /// 训练数据采集：按间隔把观察帧存为 JPG（exe 同级 captures\日期\HHmmss_fff.jpg），
-    /// 后台任务执行不阻塞观察循环；失败静默（采集不影响挂机）。仅新帧触发，间隔内重复画面跳过。
-    /// </summary>
-    private void DumpFrame(FrameData f)
-    {
-        var cfg = _cfg.FrameDump;
-        if (!cfg.Enabled || cfg.IntervalMs < 2000) return;
-        long now = Environment.TickCount64;
-        if (now - _lastFrameDumpTick < cfg.IntervalMs) return;
-        _lastFrameDumpTick = now;
-        // 帧池会复用数组：先在观察线程拷贝像素，后台任务只做编码写盘
-        var pixels = (byte[])f.Bgra.Clone();
-        // exe 真实目录（AppContext.BaseDirectory 在单文件自解压下指向 %TEMP% 解压目录，不能用）
-        string dir = Path.Combine(AppPaths.ExeDir, "captures", DateTime.Now.ToString("yyyyMMdd"));
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                Directory.CreateDirectory(dir);
-                var info = new SKImageInfo(f.Width, f.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
-                unsafe
-                {
-                    fixed (byte* p = pixels)
-                    {
-                        // InstallPixels 零拷贝借用拷贝出的数组（fixed 固定），编码结束前不释放
-                        using var bmp = new SKBitmap();
-                        if (!bmp.InstallPixels(info, (nint)p, info.RowBytes)) return;
-                        using var img = SKImage.FromBitmap(bmp);
-                        using var data = img.Encode(SKEncodedImageFormat.Jpeg, 85);
-                        using var fs = File.Create(Path.Combine(dir, $"{DateTime.Now:HHmmss_fff}.jpg"));
-                        data.SaveTo(fs);
-                    }
-                }
-            }
-            catch { /* 存帧失败静默 */ }
-        });
-    }
 
     /// <summary>
-    /// 可疑帧自动收集：判定卡住/低置信度时把当前画面存到 data\suspicious\日期\，
+    /// 可疑帧自动收集：判定卡住/低置信度时把当前画面存到 data\samples\日期\，
     /// 供用户抽查后补进 OcrText 替换表/探针。只写图，不读回、不改任何判定行为，失败静默。
     /// 按 tag 分别节流（默认60s），防同一问题刷屏。线程安全：供各场景状态机调用。
     /// </summary>
@@ -2234,53 +2252,12 @@ public sealed class BotEngine : IDisposable
             if (_suspiciousDumpTicks.TryGetValue(tag, out long last) && now - last < throttleMs) return;
             _suspiciousDumpTicks[tag] = now;
         }
-        WriteTaggedFrame(f, tag, reason, "suspicious");
-    }
-
-    /// <summary>
-    /// 训练帧采集专用落盘（v8.1.1）：与 DumpSuspiciousFrame 的区别——不受 CollectSuspicious 开关与
-    /// 节流限制（开发者选项按钮是显式触发，要保证「按一次按钮、每个目标页抓到一张」），
-    /// 写到独立的 data\trainingframes\日期\ 目录，文件名带 tag 便于直接挑进训练集。
-    /// 落盘逻辑与 DumpSuspiciousFrame 共用 WriteTaggedFrame。
-    /// </summary>
-    public void DumpTrainingFrame(FrameData f, string tag, string reason)
-        => WriteTaggedFrame(f, tag, reason, "trainingframes");
-
-    /// <summary>
-    /// 带 tag 的帧落盘公共实现（DumpSuspiciousFrame / DumpTrainingFrame 共用）：
-    /// 写 data\&lt;subDir&gt;\日期\&lt;时间&gt;_&lt;tag&gt;.jpg + 同名 .txt（tag/reason/time）。
-    /// 帧池会复用 Bgra 数组，先在调用线程克隆像素，后台任务只做编码写盘；失败静默。
-    /// </summary>
-    private static void WriteTaggedFrame(FrameData f, string tag, string reason, string subDir)
-    {
-        var pixels = (byte[])f.Bgra.Clone();
-        string dir = Path.Combine(AppPaths.DataDir, subDir, DateTime.Now.ToString("yyyyMMdd"));
-        string safeTag = string.IsNullOrWhiteSpace(tag) ? "frame" : tag.Replace(' ', '_');
-        string stamp = DateTime.Now.ToString("HHmmss_fff");
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                Directory.CreateDirectory(dir);
-                string basePath = Path.Combine(dir, $"{stamp}_{safeTag}");
-                var info = new SKImageInfo(f.Width, f.Height, SKColorType.Bgra8888, SKAlphaType.Premul);
-                unsafe
-                {
-                    fixed (byte* p = pixels)
-                    {
-                        using var bmp = new SKBitmap();
-                        if (!bmp.InstallPixels(info, (nint)p, info.RowBytes)) return;
-                        using var img = SKImage.FromBitmap(bmp);
-                        using var data = img.Encode(SKEncodedImageFormat.Jpeg, 88);
-                        using var fs = File.Create(basePath + ".jpg");
-                        data.SaveTo(fs);
-                    }
-                }
-                File.WriteAllText(basePath + ".txt",
-                    $"tag={safeTag}\nreason={reason}\ntime={DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            }
-            catch { /* 收集失败静默，绝不影响挂机 */ }
-        });
+        var obs = _lastObs;
+        var ocr = obs?.Ocr ?? OcrResult.Empty;
+        var dets = obs?.Detections ?? Array.Empty<Core.Vision.Yolo.YoloDetection>();
+        var screen = MatchBrain.Classify(dets, ocr);
+        SampleWriter.TryRecordFrame(f, ocr, dets, screen, _cnSession, "auto_suspicious",
+            pageTagOverride: tag, note: reason);
     }
 
     public void LogInternal(string msg, LogLevel lv)

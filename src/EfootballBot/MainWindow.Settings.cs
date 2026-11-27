@@ -172,12 +172,8 @@ public partial class MainWindow
         // 设置面板
         ChkAutoClose.IsChecked = _cfg.AutoCloseWhenDone;
         ChkMinimizeTray.IsChecked = false;
-        ChkFrameDump.IsChecked = _cfg.FrameDump.Enabled;
-        int[] dumpMsValues = { 2000, 5000, 10000, 30000, 60000 };
-        int dumpIdx = Array.IndexOf(dumpMsValues, _cfg.FrameDump.IntervalMs);
-        CmbFrameDumpInterval.SelectedIndex = dumpIdx >= 0 ? dumpIdx : 2; // 缺省 10 秒
 
-        // 可疑帧收集
+        // 智能采样收集
         ChkCollectSuspicious.IsChecked = _cfg.Learning.CollectSuspicious;
         // 自学习（录制/复现）
         ChkTeachingEnabled.IsChecked = _cfg.Learning.TeachingEnabled;
@@ -442,13 +438,7 @@ public partial class MainWindow
             else AppendLog("局域网监控页已关闭。", LogLevel.Info);
         }
 
-        _cfg.FrameDump.Enabled = ChkFrameDump.IsChecked == true;
-        if (CmbFrameDumpInterval.SelectedIndex >= 0)
-        {
-            int[] dumpMs = { 2000, 5000, 10000, 30000, 60000 };
-            _cfg.FrameDump.IntervalMs = dumpMs[CmbFrameDumpInterval.SelectedIndex];
-        }
-        // 可疑帧收集
+        // 智能采样收集
         _cfg.Learning.CollectSuspicious = ChkCollectSuspicious.IsChecked == true;
         // 自学习：模式与轨迹名（轨迹名只保留安全字符，防路径穿越）
         _cfg.Learning.TeachingEnabled = ChkTeachingEnabled.IsChecked == true;
@@ -1005,50 +995,20 @@ public partial class MainWindow
         if (cn.Dir is not null && cn.ExeName is not null) list.Add((cn.Dir, cn.ExeName, 2));
         return list;
     }
-    // ---------------- 训练数据采集（存帧） ----------------
+    // ---------------- 智能素材与路径采样 ----------------
 
-    /// <summary>打开 exe 同级 captures\ 目录（不存在则先创建，便于空目录也能打开）。</summary>
-    private void BtnOpenCaptures_Click(object sender, RoutedEventArgs e)
+    /// <summary>打开采样目录 data\samples\（不存在则先创建）。</summary>
+    private void BtnOpenSamples_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            string dir = Path.Combine(Core.System.AppPaths.ExeDir, "captures");
-            Directory.CreateDirectory(dir);
-            _ = OpenPathAsync(dir); // 工具层：ShellTool.OpenPath（界面层不再直接起进程）
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"打开存帧目录失败：{ex.Message}", LogLevel.Warn);
-        }
-    }
-
-    /// <summary>打开可疑帧目录 data\suspicious\（不存在则先创建）。</summary>
-    private void BtnOpenSuspicious_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            string dir = Path.Combine(Core.System.AppPaths.DataDir, "suspicious");
+            string dir = Path.Combine(Core.System.AppPaths.DataDir, "samples");
             Directory.CreateDirectory(dir);
             _ = OpenPathAsync(dir);
         }
         catch (Exception ex)
         {
-            AppendLog($"打开可疑帧目录失败：{ex.Message}", LogLevel.Warn);
-        }
-    }
-
-    /// <summary>打开训练帧目录 data\trainingframes\（不存在则先创建）。</summary>
-    private void BtnOpenTrainFrames_Click(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            string dir = Path.Combine(Core.System.AppPaths.DataDir, "trainingframes");
-            Directory.CreateDirectory(dir);
-            _ = OpenPathAsync(dir);
-        }
-        catch (Exception ex)
-        {
-            AppendLog($"打开训练帧目录失败：{ex.Message}", LogLevel.Warn);
+            AppendLog($"打开采样目录失败：{ex.Message}", LogLevel.Warn);
         }
     }
 

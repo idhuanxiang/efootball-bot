@@ -40,8 +40,8 @@ public static class ModuleIds
     public const string IntlStudTrain = "intlstudtrain";
     /// <summary>国际服·满级换人测试（只跑一次巡检即自动停）。</summary>
     public const string IntlSwapTest = "intlswaptest";
-    /// <summary>国际服·训练帧采集（自动导航到主要页面抓训练样本后停止，开发者选项用）。</summary>
-    public const string IntlTrainFrames = "intltrainframes";
+    /// <summary>国际服·手动操作采样（不接管手柄、不自动点击，识别操作与未知页）。</summary>
+    public const string IntlManualSample = "intlmanualsample";
     /// <summary>国际服·赛前快捷设置（工具页，不是挂机场景）。</summary>
     public const string IntlPreMatch = "intlprematch";
 
@@ -52,6 +52,8 @@ public static class ModuleIds
     public const string CnWeekly = "cnweekly";
     /// <summary>国服·我的联赛。</summary>
     public const string CnMyLeague = "cnmyleague";
+    /// <summary>国服·手动操作采样（不接管手柄、不自动点击，识别操作与未知页）。</summary>
+    public const string CnManualSample = "cnmanualsample";
     /// <summary>国服·赛前快捷设置（工具页，不是挂机场景）。</summary>
     public const string CnPreMatch = "cnprematch";
 }

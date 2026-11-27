@@ -4,6 +4,7 @@ using EfootballBot.Core.Bot.Scenarios.CnMyLeague;
 using EfootballBot.Core.Bot.Scenarios.CnWeekly;
 using EfootballBot.Core.Bot.Scenarios.MyLeague;
 using EfootballBot.Core.Bot.Scenarios.PeakLadder;
+using EfootballBot.Core.Bot.Scenarios.Sampling;
 using EfootballBot.Core.Bot.Scenarios.Stud;
 using EfootballBot.Core.Bot.Scenarios.Weekly;
 
@@ -95,10 +96,11 @@ public static class BotModuleCatalog
         },
         new()
         {
-            Id = ModuleIds.IntlTrainFrames, Server = ServerRegion.Intl, Kind = ModuleKind.Scenario,
-            DisplayName = "训练帧采集",
-            Summary = "自动导航到主菜单/比赛页/周活动/锦标赛/联赛主页抓训练样本后停止（开发者选项）",
-            Factory = (engine, log) => new TrainingFrameCollectScenario(engine, log),
+            Id = ModuleIds.IntlManualSample, Server = ServerRegion.Intl, Kind = ModuleKind.Scenario,
+            DisplayName = "手动操作采样",
+            Summary = "不接管手柄、不自动点击：监听手柄/键盘操作并智能采样无损 PNG、未知页提示词与导航路径",
+            RequiresGamepad = false,
+            Factory = (engine, log) => new ManualSampleScenario(engine, log, isCn: false),
         },
         new()
         {
@@ -132,6 +134,14 @@ public static class BotModuleCatalog
         },
         new()
         {
+            Id = ModuleIds.CnManualSample, Server = ServerRegion.Cn, Kind = ModuleKind.Scenario,
+            DisplayName = "手动操作采样",
+            Summary = "国服不接管手柄、不自动点击：监听手柄/键盘操作并智能采样无损 PNG、未知页提示词与导航路径",
+            RequiresGamepad = false,
+            Factory = (engine, log) => new ManualSampleScenario(engine, log, isCn: true),
+        },
+        new()
+        {
             Id = ModuleIds.CnPreMatch, Server = ServerRegion.Cn, Kind = ModuleKind.Tool,
             DisplayName = "赛前快捷设置",
             Summary = "启动国服本体/打开游戏自带设置工具/打开游戏目录",
@@ -148,8 +158,10 @@ public static class BotModuleCatalog
     /// <summary>按 id 找模块；未注册返回 null（不抛异常——配置手改/旧版本残留也要能安全降级）。</summary>
     public static BotModuleDescriptor? Find(string? id)
         => string.IsNullOrWhiteSpace(id) ? null : Registry.FirstOrDefault(d => d.Id == id);
-    /// <summary>id 是否是已注册的挂机场景（引擎要不要接手柄就看它）。</summary>
+    /// <summary>id 是否是已注册的挂机场景。</summary>
     public static bool IsScenarioMode(string? id) => Find(id)?.IsScenario == true;
+    /// <summary>id 是否需要接管/连接虚拟手柄（纯手动采样等只读场景返回 false）。</summary>
+    public static bool RequiresGamepad(string? id) => Find(id)?.RequiresGamepad == true;
     /// <summary>id 所属服务器；未注册返回 null（调用方按「不是本会话的模块」处理）。</summary>
     public static ServerRegion? ServerOf(string? id)
     {
