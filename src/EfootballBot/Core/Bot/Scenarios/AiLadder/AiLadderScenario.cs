@@ -286,6 +286,18 @@ public sealed class AiLadderScenario : IScenario
                     }
                     // 磁贴行随活动增减会左右漂移（2026-11-22 实机：活动卡消失后 eFootball™联赛
                     // 从第3卡移到第2卡，写死右×2 每次都按进「我的联赛」）。优先 OCR 实时定位。
+                    if (_hubNextSlot is null && _hubTry == 0 &&
+                        HubTileLocator.PlanOneShotMove(obs.Ocr, obs.Frame, "eFootball联赛") is { } move)
+                    {
+                        if (_streak == 0) await Task.Delay(500); // 刚切回比赛页留足过场稳定，防前两下方向键被吞
+                        if (move.Delta > 0) await _engine.Pad.DpadRepeat(PadDir.Right, move.Delta);
+                        else if (move.Delta < 0) await _engine.Pad.DpadRepeat(PadDir.Left, -move.Delta);
+                        await _engine.Pad.Confirm();
+                        _hubOcrPinned = null;
+                        _hubTry++;
+                        _log($"[AI天梯联赛] 比赛页：一次定位「{move.FocusedTitle}」→「eFootball™联赛」（{(move.Delta >= 0 ? "右" : "左")}×{Math.Abs(move.Delta)} → A）", LogLevel.Info);
+                        return 2800;
+                    }
                     int? ocrSlot = _hubNextSlot is null
                         ? HubTileLocator.FindTileOffset(obs.Ocr, "eFootball联赛")
                         : null;

@@ -570,6 +570,22 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
                 await _engine.Pad.Back();
                 return 2600;
             }
+            // 一次到位优化：白框读得出当前聚焦卡时，直接按相对偏移跨到「我的联赛」并 A，省掉逐格右移与多次 OCR
+            if (_hubScanMoves == 0 &&
+                HubTileLocator.PlanOneShotMove(obs.Ocr, obs.Frame, "我的联赛") is { } move)
+            {
+                if (_streak == 0) await Task.Delay(500, ct);
+                if (move.Delta > 0) await _engine.Pad.DpadRepeat(PadDir.Right, move.Delta);
+                else if (move.Delta < 0) await _engine.Pad.DpadRepeat(PadDir.Left, -move.Delta);
+                await _engine.Pad.Confirm();
+                _log($"[我的联赛] 比赛页：一次定位「{move.FocusedTitle}」→「我的联赛」（{(move.Delta >= 0 ? "右" : "左")}×{Math.Abs(move.Delta)} → A）", LogLevel.Info);
+                _hubScanMoves = 0;
+                _enteredFromHub = true;
+                _entryVerifyRounds = 0;
+                _entryLoadingRounds = 0;
+                _entryDialogAdvances = 0;
+                return 2800;
+            }
             // 焦点白框检测：只有确认焦点白框在「我的联赛」卡上才按 A（不再拿标题位置猜焦点）
             bool? focused = HubTileLocator.IsFocusedOnTarget(obs.Ocr, obs.Frame, "我的联赛");
             if (focused == true)

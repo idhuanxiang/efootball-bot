@@ -68,4 +68,73 @@ public class HubTileFocusTests
         Assert.Null(HubTileLocator.FindTileOffset(ocr, "我的联赛"));
         Assert.False(HubTileLocator.IsFocusedOnTarget(ocr, frame, "我的联赛"));
     }
+
+    private static FrameData MakeHubWhiteRingFrame(int focusedSlot)
+    {
+        const int W = 1280, H = 720;
+        var px = new byte[W * H * 4];
+        if (focusedSlot is >= 0 and <= 2)
+        {
+            double[][] slots =
+            {
+                new[] { 0.050, 0.340 },
+                new[] { 0.355, 0.645 },
+                new[] { 0.650, 0.950 },
+            };
+            double x0 = slots[focusedSlot][0], x1 = slots[focusedSlot][1];
+            int xa = (int)(W * x0), xb = (int)(W * x1);
+            int ya = (int)(H * 0.22), yb = (int)(H * 0.78);
+            int rx = (int)(W * 0.005), ry = (int)(H * 0.005);
+            for (int y = ya; y < yb; y++)
+                for (int x = xa; x < xb; x++)
+                {
+                    if (x < xa + rx || x >= xb - rx || y < ya + ry || y >= yb - ry)
+                    {
+                        int i = (y * W + x) * 4;
+                        px[i] = 245; px[i + 1] = 245; px[i + 2] = 245; px[i + 3] = 255;
+                    }
+                }
+        }
+        return new FrameData(px, W, H, 0);
+    }
+
+    private static OcrResult MakeHubOcr(params (string Title, double Cx)[] items)
+        => new(items.Select(x => new OcrWord(x.Title, x.Cx - 0.05, 0.48, 0.10, 0.04)).ToArray(), 1280, 720);
+
+    [Fact]
+    public void PlanOneShotMove_ComputesExactSignedDeltaAndOffscreenFallback()
+    {
+        // 实机帧1（焦点在锦标赛）：跳到「活动」应一次右移 +1
+        var (f1, o1) = Load("matchhub_user_1.png");
+        var p1 = HubTileLocator.PlanOneShotMove(o1, f1, "活动");
+        Assert.NotNull(p1);
+        Assert.Equal("锦标赛", p1!.FocusedTitle);
+        Assert.Equal(1, p1.Delta);
+        Assert.True(p1.TargetVisible);
+
+        // 合成帧：当前焦点在第 2 格「我的联赛」（索引 2），目标「活动」（索引 0）→ 左移 -2
+        var fRight = MakeHubWhiteRingFrame(2);
+        var oRight = MakeHubOcr(("活动", 0.20), ("eFootball™联赛", 0.50), ("我的联赛", 0.80));
+        var pBack = HubTileLocator.PlanOneShotMove(oRight, fRight, "活动");
+        Assert.NotNull(pBack);
+        Assert.Equal("我的联赛", pBack!.FocusedTitle);
+        Assert.Equal(-2, pBack.Delta);
+        Assert.True(pBack.TargetVisible);
+
+        // 已聚焦目标卡 → Delta == 0
+        var pSelf = HubTileLocator.PlanOneShotMove(oRight, fRight, "我的联赛");
+        Assert.NotNull(pSelf);
+        Assert.Equal(0, pSelf!.Delta);
+
+        // 目标卡在屏幕外（当前焦点「锦标赛」0 → 目标「我的联赛」3）→ 跨屏估算 +3
+        var fLeft = MakeHubWhiteRingFrame(0);
+        var oLeft = MakeHubOcr(("锦标赛", 0.20), ("活动", 0.50), ("eFootball™联赛", 0.80));
+        var pOff = HubTileLocator.PlanOneShotMove(oLeft, fLeft, "我的联赛");
+        Assert.NotNull(pOff);
+        Assert.Equal(3, pOff!.Delta);
+        Assert.False(pOff.TargetVisible);
+
+        // 白框灭相（无白框）→ null 交给回退扫描
+        Assert.Null(HubTileLocator.PlanOneShotMove(oRight, MakeHubWhiteRingFrame(-1), "活动"));
+    }
 }

@@ -357,7 +357,7 @@ public static partial class MatchBrain
                 // 转圈加载帧同判此处，加载期按键无效但无害。★绝不放弃——这是真标题
                 // （掉线）恢复的唯一入口，退避停手会让挂机永久卡死（同 TitleScreen 持续按 X 先例）
                 return screenStreak < BootLoginNavRounds
-                    ? new MatchAction(MatchActionKind.PadLoginNav, 3500, "标题页→下右A 登录")
+                    ? new MatchAction(MatchActionKind.PadLoginNav, screenStreak == 0 ? 7500 : 4000, "标题页→下右A 登录")
                     : new MatchAction(MatchActionKind.PadConfirm, 4500, "标题页→A 确认登录");
             }
             case MatchScreen.GachaPage:

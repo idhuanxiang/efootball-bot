@@ -3,6 +3,9 @@ using EfootballBot.Core.Vision;
 
 namespace EfootballBot.Core.Bot.Match;
 
+/// <summary>一次到位磁贴移动计划：Delta &gt; 0 右移，&lt; 0 左移，0 直接按 A。</summary>
+public sealed record HubTileMovePlan(int Delta, bool TargetVisible, string FocusedTitle);
+
 /// <summary>
 /// 比赛页（大活动页）磁贴行的 OCR 动态定位（共享层）：从画面文字认出各磁贴标题并按 x 排序，
 /// 返回目标磁贴是第几格（0 起）。
@@ -15,6 +18,9 @@ public static class HubTileLocator
 {
     /// <summary>磁贴标题（大字印在卡片下半部；描述句不是整词，不参与）。</summary>
     private static readonly string[] Titles = { "锦标赛", "活动", "我的联赛" };
+
+    /// <summary>比赛页国际服板块从左到右的标准物理顺序（目标卡被滚出视野时用于估算跨屏位移）。</summary>
+    private static readonly string[] CanonicalOrder = { "锦标赛", "活动", "eFootball联赛", "我的联赛" };
 
     /// <summary>
     /// 目标磁贴在磁贴行的序号（0 起，按屏幕从左到右）。读不全/找不到返回 null。
@@ -44,14 +50,38 @@ public static class HubTileLocator
     /// </returns>
     public static bool? IsFocusedOnTarget(OcrResult ocr, FrameData frame, string target)
     {
+        var detected = DetectFocusedTiles(ocr, frame);
+        return detected is null ? null : detected.Value.FocusedTitle == target;
+    }
+
+    /// <summary>
+    /// 一次到位磁贴移动规划：同帧结合可见磁贴顺序与当前白框焦点所在卡，算出相对偏移量 Delta
+    /// （省掉盲目「左×6」与逐格重跑 OCR）。目标卡在屏上时直接返回精确差值；被滚出视野时按
+    /// 标准物理顺序计算方向与步数；白框灭相读不出时返回 null 交由调用方走回退扫描。
+    /// </summary>
+    public static HubTileMovePlan? PlanOneShotMove(OcrResult ocr, FrameData frame, string target)
+    {
+        var detected = DetectFocusedTiles(ocr, frame);
+        if (detected is null) return null;
+        var (orderedTitles, focusedIdx, focusedTitle) = detected.Value;
+        int targetIdx = orderedTitles.FindIndex(t => t == target);
+        if (targetIdx >= 0)
+            return new HubTileMovePlan(targetIdx - focusedIdx, TargetVisible: true, focusedTitle);
+
+        int curCanonical = Array.IndexOf(CanonicalOrder, focusedTitle);
+        int dstCanonical = Array.IndexOf(CanonicalOrder, target);
+        if (curCanonical >= 0 && dstCanonical >= 0)
+            return new HubTileMovePlan(dstCanonical - curCanonical, TargetVisible: false, focusedTitle);
+
+        return null;
+    }
+
+    private static (List<string> OrderedTitles, int FocusedIdx, string FocusedTitle)? DetectFocusedTiles(
+        OcrResult ocr, FrameData frame)
+    {
         var tiles = CollectTilesForFocus(ocr);
         if (tiles.Count < 2 || frame.Width < 100 || frame.Height < 100) return null;
 
-        // 卡片槽位固定三格：虽然活动结束会去掉第一张「锦标赛」卡、后面的卡整体左移，
-        // 但屏幕上始终是「三张可见卡占满三格」的布局（用户 2026-11-23 的 9 张实机帧全部
-        // 是 3 格布局），变的是每格印的标题——所以按固定格采样边框、用标题词给格命名即可。
-        // 实测 9 帧：聚焦卡边框环 151~591、未聚焦 0~41；标题词 x 反推卡框会因「大字/小标签
-        // 偏移不同」采歪，故不用动态卡框。
         var sorted = tiles.OrderBy(t => t.X).ToList();
         double[][] slots =
         {
@@ -65,22 +95,23 @@ public static class HubTileLocator
         for (int i = 0; i < slots.Length; i++)
         {
             double x0 = slots[i][0], x1 = slots[i][1];
-            // 格内标题：x 中心落在该格的词（大字 y≈0.4 或底部标签 y≈0.74 都算）
             var inSlot = sorted.Where(t => t.X >= x0 && t.X < x1).ToList();
             if (inSlot.Count == 0) continue;
             int white = CountWhiteRing(frame, x0, x1, cardTop, cardBottom, 0.005);
-            // 一格可能同时有大字和底部标签两个标题词，只取一个避免同格重复计分
             scores.Add((inSlot[0].Title, white));
         }
         if (scores.Count == 0) return null;
 
-        var best = scores.OrderByDescending(s => s.White).First();
-        int restMax = scores.Where(s => s.Title != best.Title).Select(s => s.White)
+        int bestIdx = 0;
+        for (int i = 1; i < scores.Count; i++)
+            if (scores[i].White > scores[bestIdx].White) bestIdx = i;
+
+        var best = scores[bestIdx];
+        int restMax = scores.Where((_, i) => i != bestIdx).Select(s => s.White)
                             .DefaultIfEmpty(0).Max();
-        // 聚焦卡边框须过绝对下限且显著领先（≥2 倍）。白框全灭帧全员低 → null。
         if (best.White < FocusRingMin || best.White < restMax * 2)
             return null;
-        return best.Title == target;
+        return (scores.Select(s => s.Title).ToList(), bestIdx, best.Title);
     }
 
     /// <summary>卡片矩形边框环上的近白像素数（r/g/b 都高且彼此接近 = 白色亮边）。</summary>

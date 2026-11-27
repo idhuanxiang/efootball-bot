@@ -490,6 +490,16 @@ public sealed partial class WeeklyEventScenario : IScenario
                     // 磁贴标题词 OCR 能直接给出「活动」在第几格，优先按它定向；读不全再逐格扫。
                     if (_hubStep == 0)
                     {
+                        if (HubTileLocator.PlanOneShotMove(obs.Ocr, obs.Frame, "活动") is { } move)
+                        {
+                            if (_streak == 0) await Task.Delay(500, ct); // 刚切回比赛页留足过场稳定，防前两下方向键被吞
+                            if (move.Delta > 0) await _engine.Pad.DpadRepeat(PadDir.Right, move.Delta);
+                            else if (move.Delta < 0) await _engine.Pad.DpadRepeat(PadDir.Left, -move.Delta);
+                            await _engine.Pad.Confirm();
+                            _log($"[周活动] 比赛页：一次定位「{move.FocusedTitle}」→「活动」（{(move.Delta >= 0 ? "右" : "左")}×{Math.Abs(move.Delta)} → A）", LogLevel.Info);
+                            _hubStep = 1;
+                            return 2800;
+                        }
                         int? activityTile = WeeklyBrain.FindActivityTileOffset(obs.Ocr);
                         if (activityTile is int offset)
                         {
