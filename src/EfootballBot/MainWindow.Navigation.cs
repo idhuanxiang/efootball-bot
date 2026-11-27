@@ -262,10 +262,8 @@ public partial class MainWindow
         Sync(SubRbCnLeague, RbCnLeague);
         Sync(SubRbCnWeekly, RbCnWeekly);
         Sync(SubRbCnMyLeague, RbCnMyLeague);
-        Sync(SubRbSetImportant, RbSetImportant);
-        Sync(SubRbSetDisplay, RbSetDisplay);
-        Sync(SubRbSetInput, RbSetInput);
-        Sync(SubRbSetDaily, RbSetDaily);
+        // SubRbSetImportant/Display/Input/Daily 均为 Collapsed 兼容占位项，不再同步，
+        // 避免从其他一级页签切回设置时把 RbSetImportant（恒 true）顶掉用户选中的可见设置页签。
         // 开发者选项已独立成左栏入口，不再参与三级菜单同步
     }
 

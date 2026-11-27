@@ -735,7 +735,7 @@ public partial class MainWindow
                 TxtInGameState.Text = "未启动";
                 BtnInGameMonitor.Content = "启动监控";
                 TxtIgDetail.Text = "已停止。";
-                if (_overlay is { IsVisible: true }) _overlay.Hide();
+                _overlay?.ForceHide();
                 return;
             }
 

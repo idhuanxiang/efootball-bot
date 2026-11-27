@@ -280,14 +280,17 @@ public sealed class WorkerHost : IDisposable
         {
             if (_disposed || Volatile.Read(ref _sessionId) != sessionId) return;
             if (!_expectedRunning) return;          // 用户主动停止/回收中
-            bool exited;
-            try { exited = process.HasExited; } catch { exited = true; }
-            if (exited) return;                     // 进程退出由上面的看门狗按预算处理
-            EmitLog("Error", "[断开] 与 Worker 的通信管道已断开（进程仍在），场景无法继续；已停止本会话，请重新开始挂机。");
-            _expectedRunning = false;
-            _scenarioRunning = false;
             _ = Task.Run(async () =>
             {
+                // 给内核短窗口完成 HasExited 标志置位，避免管道先 EOF 抢跑扼杀崩溃自动重启
+                try { await Task.WhenAny(process.WaitForExitAsync(), Task.Delay(500)); } catch { }
+                if (_disposed || Volatile.Read(ref _sessionId) != sessionId || !_expectedRunning) return;
+                bool exited;
+                try { exited = process.HasExited; } catch { exited = true; }
+                if (exited) return;                 // 进程已退出，由看门狗走自动重启预算
+                EmitLog("Error", "[断开] 与 Worker 的通信管道已断开（进程仍在），场景无法继续；已停止本会话，请重新开始挂机。");
+                _expectedRunning = false;
+                _scenarioRunning = false;
                 bool acquired = false;
                 try
                 {

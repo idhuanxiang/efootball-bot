@@ -103,5 +103,65 @@ public class CnMyLeagueDifficultyTests
         Assert.Equal((false, 0, 0), MyLeagueBrain.DifficultyLegPlan(1)!.Value);
         Assert.Null(MyLeagueBrain.DifficultyLegPlan(4));
     }
+
+    [Fact]
+    public void PlanDifficultySelect_SwitchesToLegendEvenWhenMiddleRowOcrMisread()
+    {
+        // OCR 把「顶尖球员」误识别为「顶级球员」，options 为 6 项；仍按规范难度表索引下移 6 格到「传奇」
+        var ocr = ModernDifficultyPage();
+        var options = MyLeagueBrain.DetectDifficultyOptions(ocr);
+        var plan = MyLeagueBrain.PlanDifficultySelect("新手", "传奇", options, false, ocr);
+        Assert.NotNull(plan);
+        Assert.Equal(9, plan!.UpStrokes);
+        Assert.Equal(6, plan.DownStrokes);
+    }
+
+    [Fact]
+    public void PlanDifficultySelect_AlreadyChecked_ReturnsNull()
+    {
+        var ocr = ModernDifficultyPage();
+        var options = MyLeagueBrain.DetectDifficultyOptions(ocr);
+        Assert.Null(MyLeagueBrain.PlanDifficultySelect("传奇", "传奇", options, false, ocr));
+    }
+
+    [Fact]
+    public void PlanDifficultySelect_UnknownChecked_StillSelectsWanted()
+    {
+        var ocr = ModernDifficultyPage();
+        var options = MyLeagueBrain.DetectDifficultyOptions(ocr);
+        var plan = MyLeagueBrain.PlanDifficultySelect(null, "传奇", options, false, ocr);
+        Assert.NotNull(plan);
+        Assert.Equal(9, plan!.UpStrokes);
+        Assert.Equal(6, plan.DownStrokes);
+    }
+
+    [Fact]
+    public void PlanDifficultySelect_KeyMatch_NeverSwitches()
+    {
+        var ocr = ModernDifficultyPage();
+        var options = MyLeagueBrain.DetectDifficultyOptions(ocr);
+        Assert.Null(MyLeagueBrain.PlanDifficultySelect("新手", "传奇", options, true, ocr));
+
+        var keyOcr = Ocr(
+            W("选择赛事等级", 0.40, 0.11),
+            W("关键比赛", 0.40, 0.20),
+            W("超级球星", 0.30, 0.60),
+            W("传奇", 0.30, 0.66));
+        Assert.Null(MyLeagueBrain.PlanDifficultySelect("超级球星", "传奇", new[] { "超级球星", "传奇" }, false, keyOcr));
+    }
+
+    [Fact]
+    public void PlanDifficultySelect_RestrictedList_RespectsBounds()
+    {
+        var ocr = Ocr(W("选择赛事等级", 0.40, 0.11), W("超级球星", 0.30, 0.60), W("传奇", 0.30, 0.66));
+        var restricted = new[] { "超级球星", "传奇" };
+        // 不含目标难度 → null
+        Assert.Null(MyLeagueBrain.PlanDifficultySelect("超级球星", "新手", restricted, false, ocr));
+        // 短受限列表含目标 → 按受限列表索引下移 1 格
+        var plan = MyLeagueBrain.PlanDifficultySelect("超级球星", "传奇", restricted, false, ocr);
+        Assert.NotNull(plan);
+        Assert.Equal(9, plan!.UpStrokes);
+        Assert.Equal(1, plan.DownStrokes);
+    }
 }
 

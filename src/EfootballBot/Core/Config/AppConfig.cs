@@ -215,8 +215,8 @@ public sealed class HotkeyConfig
     /// <summary>是否启用全局热键。</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>恢复热键虚拟键码，默认 R。</summary>
-    public int ResumeVirtualKey { get; set; } = 0x52; // VK_R
+    /// <summary>恢复热键虚拟键码，默认 0（不启用隐藏恢复热键；可在 config.json 手动设为 0x52 等启用）。</summary>
+    public int ResumeVirtualKey { get; set; } = 0;
 
     /// <summary>恢复热键是否为鼠标键。</summary>
     public bool ResumeIsMouse { get; set; } = false;

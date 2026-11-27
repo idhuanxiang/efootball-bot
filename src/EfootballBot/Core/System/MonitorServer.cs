@@ -289,7 +289,7 @@ public sealed class MonitorServer : IDisposable
                 at = s.At.ToString("yyyy-MM-dd HH:mm:ss"),
                 canOperate,
             },
-            events = events.Take(20).Select(r => new { t = r.At.ToString("HH:mm:ss"), kind = r.Kind, msg = r.Text }),
+            events = events.TakeLast(20).Select(r => new { t = r.At.ToString("HH:mm:ss"), kind = r.Kind, msg = r.Text }),
             logs = logs.Select(r => new { t = r.Time, lv = r.Level, msg = r.Text }),
         });
     }

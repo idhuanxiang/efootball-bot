@@ -86,9 +86,13 @@ public static class HubTileLocator
     /// <summary>卡片矩形边框环上的近白像素数（r/g/b 都高且彼此接近 = 白色亮边）。</summary>
     private static int CountWhiteRing(FrameData f, double x0, double x1, double y0, double y1, double ring)
     {
+        if (f.Width <= 0 || f.Height <= 0 || f.Bgra.Length < f.Width * f.Height * 4)
+            return 0;
         int count = 0;
-        int xa = (int)(f.Width * x0), xb = (int)(f.Width * x1);
-        int ya = (int)(f.Height * y0), yb = (int)(f.Height * y1);
+        int xa = Math.Clamp((int)(f.Width * x0), 0, f.Width);
+        int xb = Math.Clamp((int)(f.Width * x1), 0, f.Width);
+        int ya = Math.Clamp((int)(f.Height * y0), 0, f.Height);
+        int yb = Math.Clamp((int)(f.Height * y1), 0, f.Height);
         int rx = Math.Max(1, (int)(f.Width * ring));
         int ry = Math.Max(1, (int)(f.Height * ring));
         for (int y = ya; y < yb; y++)

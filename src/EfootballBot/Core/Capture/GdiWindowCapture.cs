@@ -323,6 +323,7 @@ public sealed class GdiWindowCapture : ICaptureProvider
             if (ReferenceEquals(_thread, t))
                 _thread = null;
             _latest = null;
+            _lastFrameAt = DateTime.MinValue;
         }
     }
 

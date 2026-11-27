@@ -1,5 +1,6 @@
 using EfootballBot.Core.Bot.Match;
 using EfootballBot.Core.Bot.Scenarios.CnWeekly;
+using EfootballBot.Core.Bot.Scenarios.Stud;
 using EfootballBot.Core.Capture;
 using EfootballBot.Core.Vision;
 using EfootballBot.Core.Vision.Yolo;
@@ -335,5 +336,41 @@ public class UpstreamV754PureTests
         Assert.InRange(panels[0].X, 0.15, 0.30);
         Assert.InRange(panels[1].X, 0.45, 0.55);
         Assert.InRange(panels[2].X, 0.73, 0.83);
+    }
+
+    [Fact]
+    public void MatchBrain_QuickAdvance_DoesNotStealInMatchSkipOrOutOfMatchPopup()
+    {
+        // 1) InMatch 若已出现「跳过比赛」横幅且允许跳过，不得被右下角「继续/下一步」快通道抢占
+        var skipOcr = Ocr(
+            W("对局获胜", 0.50, 0.25),
+            W("跳过比赛", 0.50, 0.30),
+            W("继续", 0.88, 0.92));
+        var a1 = MatchBrain.Decide(MatchScreen.InMatch, skipOcr, 0, inMatchRecently: true, allowMatchSkip: true);
+        Assert.Equal(MatchActionKind.PadStartPress, a1.Kind);
+
+        // 2) 赛外 HasConfirm 若 PopupBrain 识别到按钮框（或非赛中），不得走 200ms 立刻点快通道
+        var frame = Frame(1280, 720, (0.42, 0.52, 0.58, 0.58));
+        var popupOcr = Ocr(W("确定", 0.50, 0.55), W("继续", 0.50, 0.45));
+        var a2 = MatchBrain.Decide(MatchScreen.HasConfirm, popupOcr, 0, inMatchRecently: false, frame: frame);
+        Assert.DoesNotContain("立刻点", a2.Target);
+    }
+
+    [Fact]
+    public void HubTileLocator_TruncatedBgra_DoesNotThrow()
+    {
+        var truncated = new FrameData(new byte[16], 1280, 720, 0);
+        var ocr = Ocr(
+            W("eFootball™联赛", 0.30, 0.37),
+            W("AI比赛", 0.60, 0.37));
+        Assert.Null(HubTileLocator.IsFocusedOnTarget(ocr, truncated, "我的联赛"));
+    }
+
+    [Fact]
+    public void StudTrainingBrain_ReadVisiblePlayerCount_HandlesSlashAnd4DigitCap()
+    {
+        Assert.Equal(9, StudTrainingBrain.ReadVisiblePlayerCount(Ocr(W("数量:9/1000", 0.88, 0.08))));
+        Assert.Equal(12, StudTrainingBrain.ReadVisiblePlayerCount(Ocr(W("数量:", 0.84, 0.08), W("12/900", 0.91, 0.08))));
+        Assert.Equal(9, StudTrainingBrain.ReadVisiblePlayerCount(Ocr(W("球员数量9900储备球员", 0.88, 0.08))));
     }
 }

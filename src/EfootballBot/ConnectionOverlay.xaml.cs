@@ -84,6 +84,14 @@ public partial class ConnectionOverlay : Window
         Closed += (_, _) => _followTimer.Stop();
     }
 
+    /// <summary>停止监控时强制关闭悬浮窗并停止跟随定时器（即使窗口已因最小化隐藏，也不再自动重弹）。</summary>
+    public void ForceHide()
+    {
+        _autoHidden = false;
+        _followTimer.Stop();
+        if (IsVisible) Hide();
+    }
+
     /// <summary>
     /// 兜底自检：SizeToContent="Height" 会把宽度压成 2px（WPF 实测 Loaded 时 Width 已经是 2），
     /// 窗口就成了一条看不见的竖线——这是「点了显示悬浮窗但根本没有」的真因。

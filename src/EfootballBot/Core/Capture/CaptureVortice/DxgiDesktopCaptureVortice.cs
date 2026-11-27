@@ -288,6 +288,12 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
                 }
                 catch (Exception)
                 {
+                    // staging/duplication 已置空时立即退出循环交由上层重建，不再无效空转
+                    if (_stagingTexture is null || _duplication is null)
+                    {
+                        if (Volatile.Read(ref _sessionGen) == myGen) _running = false;
+                        break;
+                    }
                     // 其他瞬时错误，继续循环
                     Thread.Sleep(50);
                 }
@@ -472,6 +478,7 @@ public sealed class DxgiDesktopCaptureVortice : ICaptureProvider
             // 未 join 成功时保留资源：旧线程可能正用着，等它自己退出时由 CaptureLoop 兜底释放。
             // 但因为代际已失效，它不会再产出任何帧，_latest 清空是安全的。
             _latest = null;
+            _lastFrameAt = DateTime.MinValue;
         }
     }
 

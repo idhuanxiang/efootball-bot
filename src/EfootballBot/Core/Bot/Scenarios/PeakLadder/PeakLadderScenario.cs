@@ -223,11 +223,15 @@ public sealed class PeakLadderScenario : IScenario
             },
             onConfirm: async () =>
             {
+                if (ml is MatchScreen.CnMatchPause or MatchScreen.PaymentConfirmDialog)
+                {
+                    await _engine.Pad.Confirm();
+                    return action.WaitMs;
+                }
                 // 国服键序：比赛中弹窗也优先 RT（改版后弹窗确认键印 RT），不点鼠标；
                 // 赛外统一 ① RT ② A ③ 鼠标兜底
                 bool preKickoffCutscene = ml == MatchScreen.Unknown && matchContext;
-                if (InMatch || ml is MatchScreen.InMatch or MatchScreen.CnMatchPause
-                    or MatchScreen.PaymentConfirmDialog || preKickoffCutscene)
+                if (ml == MatchScreen.InMatch || (InMatch && MatchBrain.HasLiveMatchHud(obs.Ocr)) || preKickoffCutscene)
                 {
                     return await CnAdvance.ConfirmInMatchAsync(_engine, _streak + 1, action.Target,
                         "天梯巅峰赛", _log, ct, action.WaitMs);

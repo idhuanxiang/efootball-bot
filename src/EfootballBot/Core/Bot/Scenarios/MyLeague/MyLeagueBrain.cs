@@ -166,6 +166,37 @@ public static class MyLeagueBrain
         return (UpFirst: true, Downs: 10, Rights: round % 2 == 0 ? 2 : 1);
     }
 
+    /// <summary>新式难度页改选规划：先饱和上移回列表顶行，再下移至目标行按 A 勾选。</summary>
+    public sealed record DifficultySelectPlan(int UpStrokes, int DownStrokes, string Summary);
+
+    /// <summary>
+    /// 规划新式难度页改选动作（国际服与国服新式页共用）。
+    /// 返回 null 表示无需改选（关键比赛受限、非法配置、受限列表不含目标、或蓝勾已命中目标）。
+    /// </summary>
+    public static DifficultySelectPlan? PlanDifficultySelect(
+        string? checkedDiff, string wanted, IReadOnlyList<string> options,
+        bool nextMatchIsKey, OcrResult ocr)
+    {
+        if (RespectGameDifficulty(nextMatchIsKey, ocr)) return null;
+        int canonicalIdx = Array.IndexOf(MatchBrain.Difficulties, wanted);
+        if (canonicalIdx < 0) return null;
+        if (options.Count > 0 && !options.Contains(wanted)) return null;
+        if (checkedDiff == wanted) return null;
+
+        int targetIdx = canonicalIdx;
+        if (options.Count is > 0 and < 4)
+        {
+            for (int i = 0; i < options.Count; i++)
+            {
+                if (options[i] == wanted) { targetIdx = i; break; }
+            }
+        }
+        string why = checkedDiff is null
+            ? $"当前蓝勾未检出，先归位勾选「{wanted}」（第 {targetIdx + 1} 行）"
+            : $"当前蓝勾「{checkedDiff}」→ 改选「{wanted}」（第 {targetIdx + 1} 行）";
+        return new DifficultySelectPlan(9, targetIdx, why);
+    }
+
     /// <summary>
     /// 在物品列表 OCR 行中找目标道具行。物品区为页面主体（y 0.22~0.90），
     /// 按类别关键词 + 档位词匹配（x2/x3/x4 匹配数字位；状态档位匹配中文词）。

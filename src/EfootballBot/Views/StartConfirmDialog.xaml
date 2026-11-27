@@ -40,9 +40,9 @@
                 <Border Background="{DynamicResource Surface2}" CornerRadius="8" Padding="12,10" Margin="0,0,0,8">
                     <StackPanel>
                         <TextBlock FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Accent}"
-                                   Text="① 真实手柄随时可拿去玩" Margin="0,0,0,4"/>
+                                   Text="① 挂机期间物理手柄将被接管" Margin="0,0,0,4"/>
                         <TextBlock FontSize="12" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap"
-                                   Text="挂机中检测到你在用真实手柄会自动让路（虚拟手柄暂时断开，你的手柄立刻可用）；停手后自动恢复继续挂机。注意：虚拟手柄占用玩家 1，挂机运行中请勿同时用两只手柄玩同一个游戏。"/>
+                                   Text="默认开启物理手柄接管：挂机启动后会自动禁用真实手柄直至停止挂机，避免双柄冲突；如需随时使用真实手柄，可在「设置 → 手柄与输入」关闭接管。"/>
                     </StackPanel>
                 </Border>
                 <Border Background="{DynamicResource Surface2}" CornerRadius="8" Padding="12,10" Margin="0,0,0,14">

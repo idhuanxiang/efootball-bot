@@ -46,7 +46,12 @@
 
     var can = s.canOperate !== false;
     Array.prototype.forEach.call(document.querySelectorAll("button[data-cmd]"), function (b) {
-      b.disabled = !can;
+      var cmd = b.getAttribute("data-cmd");
+      if (!can || !s.running) { b.disabled = true; return; }
+      if (cmd === "pause") b.disabled = !!s.paused;
+      else if (cmd === "resume" || cmd === "step") b.disabled = !s.paused;
+      else if (cmd === "stop") b.disabled = false;
+      else b.disabled = false;
     });
   }
 
@@ -62,7 +67,8 @@
       text(el.evCount, "0 条");
       return;
     }
-    var key = rows.length + "|" + rows[0].t + rows[0].msg;
+    var evLast = rows[rows.length - 1];
+    var key = rows.length + "|" + rows[0].t + rows[0].msg + "|" + evLast.t + evLast.msg;
     if (key === lastEventKey) return;
     lastEventKey = key;
 
@@ -82,7 +88,8 @@
       text(el.logCount, "0 条");
       return;
     }
-    var key = rows.length + "|" + rows[0].t + rows[0].msg;
+    var evLast = rows[rows.length - 1];
+    var key = rows.length + "|" + rows[0].t + rows[0].msg + "|" + evLast.t + evLast.msg;
     if (key === lastLogKey) return;
     lastLogKey = key;
 

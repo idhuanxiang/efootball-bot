@@ -55,8 +55,10 @@ public static partial class MatchBrain
             bool settingsLike = IsDifficultyChoice(ocr) || IsGameSettingsDialog(ocr);
             bool quickAdvance = nextStepWord ||
                 (blueAdvance && !dialogButtons && !settingsLike && !popupHasCancel);
-            bool screenAllowsQuick = screen is MatchScreen.InMatch or MatchScreen.HasConfirm
-                || (screen == MatchScreen.Unknown && inMatchRecently && !InputLivenessProbe.IsWatermarkPage(ocr));
+            bool skipReady = screen == MatchScreen.InMatch && allowMatchSkip && SkipBannerHasCheck(frame, ocr);
+            bool screenAllowsQuick = !skipReady && (screen == MatchScreen.InMatch
+                || (screen == MatchScreen.HasConfirm && (inMatchRecently || (!dialogButtons && nextStepWord)))
+                || (screen == MatchScreen.Unknown && inMatchRecently && !InputLivenessProbe.IsWatermarkPage(ocr)));
             // 交回各分支原有规则（含菜单弹窗的 B 逃生），绝不在这里无限空点。
             if (quickAdvance && !popupHasCancel && !settingsLike &&
                 screenStreak < ConfirmEscapeStreak && screenAllowsQuick)

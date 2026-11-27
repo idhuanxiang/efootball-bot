@@ -218,6 +218,12 @@ public partial class MainWindow
         {
             AppendLog("[预览] 游戏窗口已关闭或重建，DWM 实时预览已自动回退到帧流", LogLevel.Info);
             StopDwmPreview();
+            if (_workerHost is null || !_workerHost.ScenarioRunning)
+            {
+                _previewOn = false;
+                _previewTimer.Stop();
+                BtnPreview.Content = "开启预览";
+            }
             return;
         }
 

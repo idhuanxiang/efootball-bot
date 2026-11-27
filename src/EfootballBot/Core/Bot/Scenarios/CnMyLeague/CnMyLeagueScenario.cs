@@ -40,6 +40,8 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     private int _diffAttempts;
     /// <summary>新式难度页确认轮次（国际服同款 UI）：见 <see cref="DifficultyLegPlan"/>，第 4/7 轮 B 逃生。</summary>
     private int _diffRound;
+    /// <summary>新式难度页改选尝试次数（最多 2 次，防极端情况死循环）。</summary>
+    private int _diffSwitchAttempts;
     /// <summary>最近一轮国服界面判定（ClassifyScreen 产出，InterceptAsync 消费；单线程无竞争）。</summary>
     private PlScreen _pl = PlScreen.None;
 
@@ -152,7 +154,10 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         // 已进入比赛流程（起始页/比赛/终场）或回主页：清零关键比赛梯次与新式难度轮次；
         // 注意：不在 Round 4 B 退回 LeaguePage 后清零 _diffRound，否则 5~9 轮与 StopWithError 不可达
         if (screen is MatchScreen.MatchStartPage or MatchScreen.InMatch or MatchScreen.FullTime || IsCnHome)
+        {
             _diffRound = 0;
+            _diffSwitchAttempts = 0;
+        }
         if (screen is MatchScreen.DifficultyPage or MatchScreen.MatchStartPage or MatchScreen.InMatch or MatchScreen.FullTime ||
             (_keyMatchRounds > 0 && (DateTime.Now - _lastKeyMatchPopupAt).TotalSeconds > 120))
             _keyMatchRounds = 0;
@@ -231,9 +236,15 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     protected override async Task<int> AdvanceConfirmAsync(MatchAction action, Observation obs, int streak,
         MatchScreen screen, bool inMatchRecently, CancellationToken ct)
     {
+        if (screen is MatchScreen.CnMatchPause or MatchScreen.PaymentConfirmDialog)
+        {
+            await _engine.Pad.Confirm();
+            return action.WaitMs;
+        }
         // 比赛中的回放/中场小弹窗也优先 RT（2026-11-25 国服改版后弹窗确认键印 RT），
         // 但比赛里不点鼠标：走 CnAdvance.ConfirmInMatchAsync 的 RT → A 交替
-        if (InMatch || screen is MatchScreen.InMatch or MatchScreen.CnMatchPause or MatchScreen.PaymentConfirmDialog ||
+        if (screen == MatchScreen.InMatch ||
+            (InMatch && MatchBrain.HasLiveMatchHud(obs.Ocr)) ||
             (screen == MatchScreen.Unknown && inMatchRecently))
             return await CnAdvance.ConfirmInMatchAsync(_engine, streak + 1, action.Target, "我的联赛", _log, ct, action.WaitMs);
         int attempt = ++_cnConfirmAttempts;
@@ -434,18 +445,60 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     }
 
     /// <summary>
-    /// 新式难度页（国际服同款 UI）处置：配方与国际服 <see cref="MyLeagueBrain.DifficultyLegPlan"/>
-    /// 一致——第 1 轮纯 A（吃定「确认已聚焦」的常见情形；列表行上 A 是空操作无副作用），
-    /// 第 2 轮起 上×9 饱和回顶 → 下×10 饱和落底行 → 右×N（取消→确认）→ A，偶数轮 右×2 防吞键；
-    /// 第 4/7 轮 B 关对话框回主页重进，第 9 轮后停止挂机。蓝勾检测只做告警不改导航
-    /// （难度在建库时已定档，页面内列表 A 不改选——国服改版后与国际服同守则）。
+    /// 新式难度页（国际服同款 UI）处置：先通过 <see cref="MyLeagueBrain.PlanDifficultySelect"/>
+    /// 检查蓝勾是否与配置一致，不一致且非关键比赛时先上×9归位→下移落位→A（第 2 次改后台鼠标点击目标行）
+    /// 勾选目标难度并返回等待核验；蓝勾已就位/关键比赛/超过改选预算后，按 <see cref="MyLeagueBrain.DifficultyLegPlan"/>
+    /// 跳到底行确认（第 4/7 轮 B 逃生重进，第 9 轮后停止挂机）。
     /// </summary>
     private async Task<int> HandleCnModernDifficultyAsync(Observation obs)
     {
         string wanted = LeagueConfig.Difficulty;
+        var options = MyLeagueBrain.DetectDifficultyOptions(obs.Ocr);
         var checkedDiff = MyLeagueBrain.DetectCheckedDifficulty(obs.Frame, obs.Ocr);
-        if (checkedDiff is not null && checkedDiff != wanted)
-            _log($"[我的联赛] 注意：蓝勾在「{checkedDiff}」而配置要「{wanted}」——新式难度页列表按 A 不改选，按当前勾选确认", LogLevel.Warn);
+        var selectPlan = MyLeagueBrain.PlanDifficultySelect(checkedDiff, wanted, options, _nextMatchIsKey, obs.Ocr);
+        if (selectPlan is not null)
+        {
+            if (_diffSwitchAttempts < 2)
+            {
+                _diffSwitchAttempts++;
+                if (_diffSwitchAttempts == 1)
+                {
+                    _log($"[我的联赛] 新式难度页改选（第 1/2 次）：{selectPlan.Summary}（上×{selectPlan.UpStrokes} 下×{selectPlan.DownStrokes} A）", LogLevel.Info);
+                    await _engine.Pad.DpadRepeat(PadDir.Up, selectPlan.UpStrokes);
+                    if (selectPlan.DownStrokes > 0)
+                        await _engine.Pad.DpadRepeat(PadDir.Down, selectPlan.DownStrokes);
+                    await _engine.Pad.Confirm();
+                }
+                else
+                {
+                    var word = obs.Ocr.Words.FirstOrDefault(w => w.Text.Replace(" ", "").Contains(wanted));
+                    if (word is not null)
+                    {
+                        _log($"[我的联赛] 新式难度页改选（第 2/2 次·鼠标兜底）：点击「{wanted}」（{word.CenterX:F3},{word.CenterY:F3}）", LogLevel.Warn);
+                        await CnAdvance.ClickAsync(_engine, _mouse, word.CenterX, word.CenterY, "我的联赛", _log,
+                            CancellationToken.None, CnAdvance.MouseMode.Background);
+                    }
+                    else
+                    {
+                        _log($"[我的联赛] 新式难度页改选（第 2/2 次·手柄重试）：{selectPlan.Summary}（上×{selectPlan.UpStrokes} 下×{selectPlan.DownStrokes} A）", LogLevel.Warn);
+                        await _engine.Pad.DpadRepeat(PadDir.Up, selectPlan.UpStrokes);
+                        if (selectPlan.DownStrokes > 0)
+                            await _engine.Pad.DpadRepeat(PadDir.Down, selectPlan.DownStrokes);
+                        await _engine.Pad.Confirm();
+                    }
+                }
+                return 1200;
+            }
+            _log($"[我的联赛] 难度改选「{wanted}」连续 2 次未生效（蓝勾={checkedDiff ?? "未检出"}），按当前勾选继续确认", LogLevel.Warn);
+        }
+        else if (checkedDiff is not null && checkedDiff != wanted)
+        {
+            _log($"[我的联赛] 注意：蓝勾在「{checkedDiff}」而配置要「{wanted}」（受限/关键比赛，按当前勾选确认）", LogLevel.Info);
+        }
+
+        // 刚做过列表改选且首次进入确认阶段：光标在列表行上，跳过第 1 轮纯 A 直接从第 2 轮跳底行确认
+        if (_diffSwitchAttempts > 0 && _diffRound == 0)
+            _diffRound = 1;
         int round = ++_diffRound;
         if (round > 9)
         {
@@ -457,6 +510,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         if (leg is null) // 第 4/7 轮：B 关对话框回联赛主页，正常流程会重新前往比赛重进
         {
             _log($"[我的联赛] 新式难度页第 {round} 轮仍未确认：B 退出对话框重进（光标复位）", LogLevel.Warn);
+            _diffSwitchAttempts = 0;
             await _engine.Pad.Back();
             return 3500;
         }

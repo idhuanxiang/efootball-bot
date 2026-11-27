@@ -126,6 +126,8 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
     private int _difficultyPageRounds;
 
     private int _difficultyConfirmRound;
+    /// <summary>难度页改选尝试次数（最多 2 次，防极端情况死循环）。</summary>
+    private int _difficultySwitchAttempts;
     /// <summary>主页连续按 A 前往比赛但画面未离开主页的次数（无响应自愈计数）。</summary>
     private int _goMatchAttempts;
     /// <summary>上次按 A 前往比赛的时间（用于只 dump 一次前往后的弹窗画面 OCR）。</summary>
@@ -617,7 +619,10 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         }
         _difficultyPageRounds = 0;
         if (screen is MatchScreen.MatchStartPage or MatchScreen.InMatch or MatchScreen.FullTime or MatchScreen.MainMenu or MatchScreen.MatchHub)
+        {
             _difficultyConfirmRound = 0;
+            _difficultySwitchAttempts = 0;
+        }
         return await MatchActionExecutor.ExecuteAsync(
             _engine, _matchPlay, action, obs, _log, "我的联赛", ct,
             onConfirm: async () =>
@@ -853,7 +858,10 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         // 赛前把巡检收尾。状态机此时仍在自己的阶段里，会把「底栏 Y 球场 / X 设置」当成自己的
         // 页面按钮按下去——用户 2026-11-25 实机看到的就是「起始页该点 RT 下一步，却按了 Y 打开球场」。
         // 这里必须立刻中止巡检、把控制权交还开赛流程，绝不在这几个页面上按任何导航键。
-        if (screen is MatchScreen.DifficultyPage or MatchScreen.MatchStartPage or MatchScreen.InMatch
+        bool swapOwnedConfirm = screen == MatchScreen.HasConfirm &&
+                                (MaxLevelSwapBrain.IsGameErrorDialog(obs.Ocr) || MaxLevelSwapBrain.HasDialogConfirmWords(obs.Ocr));
+        if (!swapOwnedConfirm &&
+            screen is MatchScreen.DifficultyPage or MatchScreen.MatchStartPage or MatchScreen.InMatch
             or MatchScreen.FullTime or MatchScreen.HasConfirm or MatchScreen.KeyMatchDialog)
         {
             _maxSwap.Reset();
@@ -1201,23 +1209,41 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
 
     // ---------------- 难度选择页 ----------------
     /// <summary>
-    /// 难度页处理（用户 2026-10-20 实机配方重写，替换旧的「上×(N+1-k) A 勾选」舞步）：
-    /// 实机帧结构 = 难度列表 ≤7 行 + 底行「取消 | 确认」两个按钮；进页光标在列表第 1 行；
-    /// 蓝勾 = 联赛难度，进页后不变（列表行上按 A 是空操作——实机连按两次 ✓ 纹丝不动），
-    /// 改选无手段也不需要（难度在建库时已定档）。确认开赛唯一路径 = 下×10 饱和落底行
-    /// → 右×1（取消→确认）→ A（用户配方：新手行 ↓×7 →×1；光标已在底行就是 ↓→）。
-    /// 蓝勾检测（DetectCheckedDifficulty）只用于日志与配置不符告警，不参与导航。
-    /// 轮次计划见 DifficultyLegPlan：第 4/7 轮 B 逃生重进，第 9 轮后停止挂机。
+    /// 难度页处理：先通过 <see cref="MyLeagueBrain.PlanDifficultySelect"/> 核对蓝勾与配置难度，
+    /// 不一致且非关键比赛时先上×9归位→下移落位→A 勾选目标难度（最多尝试 2 次）并返回等待核验；
+    /// 蓝勾已就位/关键比赛/超过改选预算后，按 <see cref="MyLeagueBrain.DifficultyLegPlan"/>
+    /// 跳到底行「取消 | 确认」确认开赛（第 4/7 轮 B 逃生重进，第 9 轮后停止挂机）。
     /// </summary>
     private async Task<int> HandleDifficultyAsync(Capture.FrameData frame, OcrResult ocr)
     {
         string wanted = LeagueConfig.Difficulty;
         var options = MyLeagueBrain.DetectDifficultyOptions(ocr);
         var checkedDiff = MyLeagueBrain.DetectCheckedDifficulty(frame, ocr);
-        if (checkedDiff is not null && checkedDiff != wanted)
-            _log($"[我的联赛] 注意：蓝勾在「{checkedDiff}」而配置要「{wanted}」——难度页列表按 A 不改选，按当前勾选确认", LogLevel.Warn);
+        var selectPlan = MyLeagueBrain.PlanDifficultySelect(checkedDiff, wanted, options, _nextMatchIsKey, ocr);
+        if (selectPlan is not null)
+        {
+            if (_difficultySwitchAttempts < 2)
+            {
+                _difficultySwitchAttempts++;
+                _log($"[我的联赛] 难度改选（第 {_difficultySwitchAttempts}/2 次）：{selectPlan.Summary}（上×{selectPlan.UpStrokes} 下×{selectPlan.DownStrokes} A）", LogLevel.Info);
+                await _engine.Pad.DpadRepeat(PadDir.Up, selectPlan.UpStrokes);
+                if (selectPlan.DownStrokes > 0)
+                    await _engine.Pad.DpadRepeat(PadDir.Down, selectPlan.DownStrokes);
+                await _engine.Pad.Confirm();
+                return 1200;
+            }
+            _log($"[我的联赛] 难度改选「{wanted}」连续 2 次未生效（当前蓝勾={checkedDiff ?? "未检出"}），按当前勾选继续确认", LogLevel.Warn);
+        }
+        else if (checkedDiff is not null && checkedDiff != wanted)
+        {
+            _log($"[我的联赛] 注意：蓝勾在「{checkedDiff}」而配置要「{wanted}」（受限/关键比赛，按当前勾选确认）", LogLevel.Info);
+        }
         else if (options.Count > 0 && !options.Contains(wanted))
+        {
             _log($"[我的联赛] 配置难度「{wanted}」不在当前 {options.Count} 项中（关键比赛受限页？），按当前蓝勾确认", LogLevel.Info);
+        }
+        if (_difficultySwitchAttempts > 0 && _difficultyConfirmRound == 0)
+            _difficultyConfirmRound = 1;
         _difficultyConfirmRound++;
         int round = _difficultyConfirmRound;
         if (round > 9)
@@ -1230,6 +1256,7 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         if (plan is null) // 第 4/7 轮：B 关对话框回联赛主页，正常流程会重新前往比赛重进
         {
             _log($"[我的联赛] 难度页第 {round} 轮仍未确认：B 退出对话框重进（光标复位第 1 行）", LogLevel.Warn);
+            _difficultySwitchAttempts = 0;
             await _engine.Pad.Back();
             return 3500;
         }

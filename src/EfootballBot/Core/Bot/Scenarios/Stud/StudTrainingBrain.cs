@@ -210,19 +210,48 @@ public static class StudTrainingBrain
     }
 
     /// <summary>
-    /// 全部球员列表右上「数量:9/900」。OCR 常把冒号和斜杠吞掉（如「球员数量9900储备球员」），
-    /// 统一取数字串：末 3 位为容量 900，前面的数字为当前数量。
+    /// 全部球员列表右上「数量:9/900」或「9/1000」。优先按斜杠解析 cur/max（兼容拆词与 4 位容量），
+    /// 若 OCR 吞掉斜杠（如「球员数量9900储备球员」）再回退末 3 位容量切片。
     /// </summary>
     public static int? ReadVisiblePlayerCount(OcrResult ocr)
     {
-        var head = ocr.Words.FirstOrDefault(w => w.NormText.Contains("数量"))
-                   ?? ocr.Words.FirstOrDefault(w => w.NormText.Contains("储备球员"));
+        static OcrWord? FindHead(IReadOnlyList<OcrWord> pool) =>
+            pool.FirstOrDefault(w => w.NormText.Contains("数量"))
+            ?? pool.FirstOrDefault(w => w.NormText.Contains("储备球员"));
+
+        var pool = ocr.MergedWords.Count > 0 ? ocr.MergedWords : ocr.Words;
+        var head = FindHead(pool) ?? FindHead(ocr.Words);
         if (head is null) return null;
-        string digits = new(head.NormText.Where(char.IsDigit).ToArray());
+
+        string rawText = head.Text;
+        string normText = head.NormText;
+        if (!normText.Any(char.IsDigit))
+        {
+            var right = (ocr.MergedWords.Count > 0 ? ocr.MergedWords : ocr.Words)
+                .Concat(ocr.Words)
+                .FirstOrDefault(w => Math.Abs(w.CenterY - head.CenterY) < 0.03 &&
+                                     w.CenterX > head.CenterX && w.NormText.Any(char.IsDigit));
+            if (right is not null)
+            {
+                rawText = right.Text;
+                normText = right.NormText;
+            }
+        }
+
+        var slash = global::System.Text.RegularExpressions.Regex.Match(rawText, @"(\d+)\s*/\s*(\d+)");
+        if (slash.Success &&
+            int.TryParse(slash.Groups[1].Value, out int cur) &&
+            int.TryParse(slash.Groups[2].Value, out int cap) &&
+            cap >= 10)
+        {
+            return Math.Clamp(cur, 0, Math.Max(cap, 2000));
+        }
+
+        string digits = new(normText.Where(char.IsDigit).ToArray());
         if (digits.Length < 4) return null;
         string countPart = digits[..^3];
         if (!int.TryParse(countPart, out int count)) return null;
-        return Math.Clamp(count, 0, 900);
+        return Math.Clamp(count, 0, 2000);
     }
 
     public static bool IsRatingFilter(OcrResult ocr) =>

@@ -567,6 +567,7 @@ public sealed class WindowCapture : ICaptureProvider
         _pool = null;
         FreeDevice();
         _latest = null;
+        _lastFrameAt = DateTime.MinValue;
     }
 
     private void FreeDevice()

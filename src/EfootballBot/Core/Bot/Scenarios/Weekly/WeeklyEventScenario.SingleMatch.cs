@@ -250,11 +250,20 @@ public sealed partial class WeeklyEventScenario : IScenario
             await _engine.Pad.Confirm();
             return 2400;
         }
-        // ② 目标不在屏（传奇在列表底，需滚动）或焦点探针失效（弹窗遮挡/OCR 退化）：下×1 试探
+        // ② 目标不在屏或焦点探针失效（弹窗遮挡/OCR 退化）：目标在当前焦点上方时向上滚动，否则向下
         if (target is null || focus is null)
         {
-            _log($"[周活动] 选择赛事等级：目标「{wanted}」{(target is null ? "不在屏，下×1 滚动查找" : "在屏")}，焦点「{focus ?? "未检出"}」下×1", LogLevel.Info);
-            await _engine.Pad.Dpad(PadDir.Down);
+            var scrollDir = PadDir.Down;
+            if (focus is not null)
+            {
+                int wantedIdx = Array.IndexOf(MatchBrain.Difficulties, wanted);
+                int focusIdx = Array.IndexOf(MatchBrain.Difficulties, focus);
+                if (wantedIdx >= 0 && focusIdx >= 0 && wantedIdx < focusIdx)
+                    scrollDir = PadDir.Up;
+            }
+            string scrollDirName = scrollDir == PadDir.Up ? "上" : "下";
+            _log($"[周活动] 选择赛事等级：目标「{wanted}」{(target is null ? $"不在屏，{scrollDirName}×1 滚动查找" : "在屏")}，焦点「{focus ?? "未检出"}」{scrollDirName}×1", LogLevel.Info);
+            await _engine.Pad.Dpad(scrollDir);
             return 1200;
         }
         // ③ 焦点与目标都在屏：按行距差值（0.11/行，实机帧校准）一次移到位

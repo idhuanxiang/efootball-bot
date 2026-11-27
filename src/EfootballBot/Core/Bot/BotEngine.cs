@@ -371,11 +371,21 @@ public sealed class BotEngine : IDisposable
         try
         {
             token = await PrepareSessionAsync(cn ? CnProcessName : null, connectPad: scenarioMode);
+            // 所有模式统一节流到 300ms（场景决策周期 ≥2s，300ms 感知粒度足够）：
+            // 全速 30fps 逐帧 SoftwareBitmap 拷贝 + CPU 降采样（LOH 高速churn）会打满 CPU 卡死系统
+            Observation.ApplyCaptureThrottle(300);
+            // 感知管线（YOLO 模型缺失时仅 OCR，不阻塞启动）；同样跨会话复用，
+            // 避免每次开始都重建 ONNX 会话（DirectML/CPU 会话初始化本身就是百毫秒级）
+            _perception = EngineServices.AcquirePerception(_cfg, _factory, LogInternal, out bool yoloReused);
+            if (yoloReused && _perception.YoloEnabled)
+                LogInternal($"目标检测：复用已加载会话（{_perception.YoloLabel}）", LogLevel.Info);
+            // 场景由注册表造（BotModuleCatalog.Create）：本引擎不认识任何具体场景类型
+            Scenario = scenarioMode ? CreateScenario(mode) : null;
         }
         catch
         {
-            // 启动中途失败（如找不到窗口/捕获异常）：捕获会话与虚拟手柄/会话标记可能已开启，必须一并清干净，
-            // 否则 Worker 空闲却在后台全速抓帧或留存假标记/占用槽位；并标停以防 Dispose 误写"正常停止"摘要与推送。
+            // 启动中途失败（如找不到窗口/捕获异常/感知或场景初始化异常）：捕获会话与虚拟手柄/会话标记可能已开启，
+            // 必须一并清干净，否则 Worker 空闲却在后台全速抓帧或留存假标记/占用槽位；并标停以防 Dispose 误写"正常停止"摘要与推送。
             Interlocked.Exchange(ref _stopped, 1);
             _summaryWritten = true;
             try
@@ -391,16 +401,6 @@ public sealed class BotEngine : IDisposable
             try { _gdi?.Stop(); } catch { }
             throw;
         }
-        // 所有模式统一节流到 300ms（场景决策周期 ≥2s，300ms 感知粒度足够）：
-        // 全速 30fps 逐帧 SoftwareBitmap 拷贝 + CPU 降采样（LOH 高速churn）会打满 CPU 卡死系统
-        Observation.ApplyCaptureThrottle(300);
-        // 感知管线（YOLO 模型缺失时仅 OCR，不阻塞启动）；同样跨会话复用，
-        // 避免每次开始都重建 ONNX 会话（DirectML/CPU 会话初始化本身就是百毫秒级）
-        _perception = EngineServices.AcquirePerception(_cfg, _factory, LogInternal, out bool yoloReused);
-        if (yoloReused && _perception.YoloEnabled)
-            LogInternal($"目标检测：复用已加载会话（{_perception.YoloLabel}）", LogLevel.Info);
-        // 场景由注册表造（BotModuleCatalog.Create）：本引擎不认识任何具体场景类型
-        Scenario = scenarioMode ? CreateScenario(mode) : null;
         string captureSummary = _dxgi is not null ? "DXGI" : (_gdi is not null ? "GDI" : _cfg.CaptureMode.ToString());
         string parkSummary = _cfg.BackgroundParking.Enabled
             ? (_cfg.VirtualDisplayPark.Enabled ? "虚拟屏" : "屏外")
@@ -468,6 +468,7 @@ public sealed class BotEngine : IDisposable
             try
             {
                 int failStreak = 0;
+                int reconnectFails = 0;
                 bool faultEscalated = false; // 持续异常是否已升级成 Error 提示（成功一轮后复位）
                 bool idleThrottled = false; // 暂停/作息休息期间已把捕获降到 2s/帧
                 while (!token.IsCancellationRequested)
@@ -721,9 +722,24 @@ public sealed class BotEngine : IDisposable
                         LogInternal($"虚拟手柄提交失败（连续第 {failStreak} 次）：{ex.Message}", LogLevel.Warn);
                         if (failStreak >= 3)
                         {
-                            await ReconnectPadAsync();
-                            failStreak = 0;
-                            Stats.LastError = "";
+                            if (await ReconnectPadAsync())
+                            {
+                                failStreak = 0;
+                                reconnectFails = 0;
+                                Stats.LastError = "";
+                            }
+                            else
+                            {
+                                reconnectFails++;
+                                if (reconnectFails >= 2)
+                                {
+                                    Stats.LastError = "虚拟手柄重建失败";
+                                    EmitStats();
+                                    StopWithError("虚拟手柄重建失败，请检查 ViGEmBus 驱动后重试");
+                                    return;
+                                }
+                                await Task.Delay(2000, token);
+                            }
                         }
                         else
                             await Task.Delay(1000, token);
@@ -1377,7 +1393,7 @@ public sealed class BotEngine : IDisposable
     /// 重建实例可跳过损坏的控制器对象。失败不抛——交回主循环退避，
     /// 下一轮提交失败会再次触发重建。
     /// </summary>
-    private async Task ReconnectPadAsync()
+    private async Task<bool> ReconnectPadAsync()
     {
         LogInternal("虚拟手柄提交连续失败，正在重建控制器自愈…", LogLevel.Warn);
         try { Pad360.Disconnect(); } catch { }
@@ -1385,11 +1401,18 @@ public sealed class BotEngine : IDisposable
         try
         {
             Pad360.Connect();
-            LogInternal("虚拟手柄已重建，挂机继续。", LogLevel.Success);
+            if (Pad360.IsConnected)
+            {
+                LogInternal("虚拟手柄已重建，挂机继续。", LogLevel.Success);
+                return true;
+            }
+            LogInternal("虚拟手柄重建未就绪（IsConnected=false）。", LogLevel.Error);
+            return false;
         }
         catch (Exception ex)
         {
-            LogInternal($"虚拟手柄重建失败：{ex.Message}（继续退避，下次提交失败再触发重建）", LogLevel.Error);
+            LogInternal($"虚拟手柄重建失败：{ex.Message}", LogLevel.Error);
+            return false;
         }
     }
 
@@ -2207,8 +2230,10 @@ public sealed class BotEngine : IDisposable
         Log?.Invoke($"[{DateTime.Now:HH:mm:ss}] {msg}", lv);
         // 警告/错误同步进微信动态（错误立即推、警告合并；摘要期间跳过防双发）
         if (!_summarizing && lv is LogLevel.Warn or LogLevel.Error)
+        {
             WeChatFeed.LogLine(msg, lv, FeedQuietLog);
-        EmitStats();
+            EmitStats();
+        }
     }
 
     /// <summary>
