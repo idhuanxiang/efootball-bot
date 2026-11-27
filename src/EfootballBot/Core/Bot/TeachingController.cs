@@ -54,7 +54,10 @@ public sealed class TeachingController
     private readonly string _traceName;
     private ActionTrace? _trace;
     private ushort _lastButtons;
+    private bool _lastRightTrigger;
     private DateTime _lastStepAt;
+    private long _lastSaveTick;
+    private bool _dirty;
     private int _nextIndex;
     private int _missStreak;
 
@@ -101,42 +104,65 @@ public sealed class TeachingController
         _ => TeachingMode.Off,
     };
 
-    /// <summary>游戏窗口是否在前台（只认标题含 eFootball 的窗口）。</summary>
+    /// <summary>游戏窗口是否在前台（支持国际服 eFootball 与国服 实况足球在线）。</summary>
     private static bool GameIsForeground()
     {
         var sb = new StringBuilder(256);
         GetWindowText(GetForegroundWindow(), sb, sb.Capacity);
-        return sb.ToString().Contains("eFootball", StringComparison.OrdinalIgnoreCase);
+        string title = sb.ToString();
+        return title.Contains("eFootball", StringComparison.OrdinalIgnoreCase) ||
+               title.Contains("实况足球在线", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>轮询物理手柄，返回本次新按下的一枚白名单按键；无变化返回 null。</summary>
-    private PadButton? PollRisingButton()
+    /// <summary>轮询物理手柄，返回本次新按下的一枚白名单按键或 RT 扳机；无变化返回 (null, false)。</summary>
+    private (PadButton? Button, bool RightTrigger) PollRisingInput()
     {
         ushort current = 0;
+        bool rtNow = false;
         for (int slot = 0; slot < 4; slot++)
         {
             var state = PadBackendProbe.TryRead(slot);
             if (state is null) continue;
             ushort held = (ushort)(state.Value.wButtons & WhiteMask);
-            if (held == 0) continue;   // 虚拟手柄空闲时是全 0，跳过
+            bool rt = state.Value.bRightTrigger >= 128;
+            if (held == 0 && !rt) continue;   // 虚拟手柄空闲时是全 0，跳过
             current = held;
+            rtNow = rt;
             break;
         }
         ushort rising = (ushort)(current & ~_lastButtons);
+        bool rtRising = rtNow && !_lastRightTrigger;
         _lastButtons = current;
+        _lastRightTrigger = rtNow;
+        if (rtRising) return (null, true);
         foreach (var (mask, button) in Priority)
-            if ((rising & mask) != 0) return button;
-        return null;
+            if ((rising & mask) != 0) return (button, false);
+        return (null, false);
     }
+
+    /// <summary>将尚未落盘的教学录制轨迹立即写入磁盘。</summary>
+    public void Flush()
+    {
+        if (!_dirty || _trace is null) return;
+        _trace.Save();
+        _dirty = false;
+        _lastSaveTick = Environment.TickCount64;
+    }
+
+    /// <summary>旧签名兼容。</summary>
+    public bool Tick(OcrResult ocr, IReadOnlyList<YoloDetection> dets,
+        out PadButton? toPress, out int delayMs, out string reason)
+        => Tick(ocr, dets, out toPress, out _, out delayMs, out reason);
 
     /// <summary>
     /// 每观察一帧调用一次。返回 true 表示本轮由教学接管（引擎应跳过场景决策）；
-    /// <paramref name="toPress"/> 非空时由引擎发送该按键。
+    /// <paramref name="toPress"/> 或 <paramref name="pressRt"/> 为真时由引擎发送对应按键。
     /// </summary>
     public bool Tick(OcrResult ocr, IReadOnlyList<YoloDetection> dets,
-        out PadButton? toPress, out int delayMs, out string reason)
+        out PadButton? toPress, out bool pressRt, out int delayMs, out string reason)
     {
         toPress = null;
+        pressRt = false;
         delayMs = 300;
         reason = "";
         if (Mode == TeachingMode.Off) return false;
@@ -145,17 +171,24 @@ public sealed class TeachingController
         {
             if (!GameIsForeground())
             {
+                Flush();
                 reason = "游戏窗口不在前台，暂停录制";
                 return true;
             }
-            var pressed = PollRisingButton();
-            if (pressed is null) return true;
+            var (pressedBtn, pressedRt) = PollRisingInput();
+            if (pressedBtn is null && !pressedRt)
+            {
+                if (_dirty && Environment.TickCount64 - _lastSaveTick >= 2000) Flush();
+                return true;
+            }
             var now = DateTime.Now;
             int gap = (int)Math.Clamp((now - _lastStepAt).TotalMilliseconds, 100, 10000);
             _lastStepAt = now;
-            _trace!.Add(TraceSignature.Capture(ocr, dets), pressed.Value.ToString(), gap);
-            _trace.Save();
-            reason = $"已录第 {_trace.Steps.Count} 步：{pressed.Value}";
+            string keyName = pressedRt ? "RT" : pressedBtn!.Value.ToString();
+            _trace!.Add(TraceSignature.Capture(ocr, dets), keyName, gap);
+            _dirty = true;
+            if (Environment.TickCount64 - _lastSaveTick >= 2000) Flush();
+            reason = $"已录第 {_trace.Steps.Count} 步：{keyName}";
             _log($"[教学] {reason}", LogLevel.Info);
             return true;
         }
@@ -195,13 +228,20 @@ public sealed class TeachingController
         }
 
         _missStreak = 0;
-        if (!Enum.TryParse(hit.Button, out PadButton btn))
+        if (string.Equals(hit.Button, "RT", StringComparison.OrdinalIgnoreCase))
+        {
+            pressRt = true;
+        }
+        else if (Enum.TryParse(hit.Button, out PadButton btn))
+        {
+            toPress = btn;
+        }
+        else
         {
             Mode = TeachingMode.Off;
             _log($"[教学] 轨迹含未知按键 {hit.Button}，退出复现", LogLevel.Warn);
             return false;
         }
-        toPress = btn;
         delayMs = Math.Clamp(hit.DelayMs, 100, 5000);
         _nextIndex = Mode == TeachingMode.ReplaySequential ? _nextIndex + 1 : _nextIndex;
         reason = $"复现第 {hit.Index + 1} 步：{hit.Button}";

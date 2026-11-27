@@ -24,13 +24,17 @@ public sealed class PerfTrace
     public double FrameMs { get; private set; }
     public double HashMs { get; private set; }
     public double OcrMs { get; private set; }
+    public double OcrInferMs { get; private set; }
     public double YoloMs { get; private set; }
     public double ActionMs { get; private set; }
     public double RoundMs { get; private set; }
     public double IdleMs { get; private set; }
+    public long MaxOcrMs { get; private set; }
+    public long MaxRoundMs { get; private set; }
 
     /// <summary>累计采样轮数（0 = 尚无数据）。</summary>
     public int Rounds { get; private set; }
+    private int _ocrSamples;
 
     public void Record(long frameMs, long hashMs, long ocrMs, long yoloMs, long actionMs, long roundMs)
     {
@@ -52,6 +56,13 @@ public sealed class PerfTrace
             RoundMs = Mix(RoundMs, roundMs);
             IdleMs = Mix(IdleMs, idle);
         }
+        if (ocrMs > 0)
+        {
+            OcrInferMs = _ocrSamples == 0 ? ocrMs : Mix(OcrInferMs, ocrMs);
+            _ocrSamples++;
+            if (ocrMs > MaxOcrMs) MaxOcrMs = ocrMs;
+        }
+        if (roundMs > MaxRoundMs) MaxRoundMs = roundMs;
         Rounds++;
     }
 
@@ -59,7 +70,9 @@ public sealed class PerfTrace
     public void Reset()
     {
         Rounds = 0;
-        FrameMs = HashMs = OcrMs = YoloMs = ActionMs = RoundMs = IdleMs = 0;
+        _ocrSamples = 0;
+        FrameMs = HashMs = OcrMs = OcrInferMs = YoloMs = ActionMs = RoundMs = IdleMs = 0;
+        MaxOcrMs = MaxRoundMs = 0;
     }
 
     private static double Mix(double avg, double sample) => avg + Alpha * (sample - avg);
@@ -68,6 +81,6 @@ public sealed class PerfTrace
     public string Describe()
         => Rounds == 0
             ? "尚无数据"
-            : $"轮 {RoundMs:F0}ms｜取帧 {FrameMs:F0} / 指纹 {HashMs:F0} / OCR {OcrMs:F0} / " +
+            : $"轮 {RoundMs:F0}ms(峰 {MaxRoundMs})｜取帧 {FrameMs:F0} / 指纹 {HashMs:F0} / OCR {OcrMs:F0}(推理 {OcrInferMs:F0}·峰 {MaxOcrMs}) / " +
               $"YOLO {YoloMs:F0} / 动作 {ActionMs:F0} / 其余 {IdleMs:F0}";
 }

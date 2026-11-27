@@ -403,8 +403,8 @@ public sealed class ObservationService : IDisposable
 
         long now = Environment.TickCount64;
 
-        if (now - _lastOcrTick < ocrIntervalMs && _lastOcrFrame is not null)
-            return new ObserveResult(_lastOcrFrame, _lastOcr, frameWaitMs, 0, 0);
+        if (now - _lastOcrTick < ocrIntervalMs && _lastOcr is not null)
+            return new ObserveResult(f, _lastOcr, frameWaitMs, 0, 0);
 
         // 静帧去重：画面与上次 OCR 帧相同（等待页/静止菜单的常态）→ 识别结果必然
         // 相同，跳过全帧 OCR——PP-OCR CPU 全帧一次几百 ms，是观察循环最大单项 CPU。
@@ -415,7 +415,7 @@ public sealed class ObservationService : IDisposable
         ulong hash = HashBgra(f, masks);
         long hashMs = Environment.TickCount64 - tHash0;
 
-        if (_lastOcrHash is { } lastHash && hash == lastHash)
+        if (_lastOcrHash is { } lastHash && hash == lastHash && _lastOcr is not null)
         {
             _lastOcrTick = Environment.TickCount64; // 视同一次 OCR 周期，维持节流节奏
             // 同步更新帧引用（审查修复④）：否则后续节流命中会返回更旧的 _lastOcrFrame，

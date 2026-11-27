@@ -136,11 +136,9 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     /// </summary>
     protected override async Task<int?> InterceptAsync(Observation obs, MatchScreen screen, int streak, bool inMatchRecently, CancellationToken ct)
     {
-        if (screen != _lastConfirmScreen || screen == MatchScreen.InMatch || IsCnHome)
-        {
+        if (screen is MatchScreen.InMatch or MatchScreen.MatchStartPage or MatchScreen.FullTime || IsCnHome)
             _cnConfirmAttempts = 0;
-            _lastConfirmScreen = screen;
-        }
+        _lastConfirmScreen = screen;
         // ---- 国服「关键比赛」预告弹窗（按钮=确定/取消，不是国际服的 OK）----
         // 实机 2026-11-11 16:20:32 起死循环：前往比赛 → 弹窗 →「高光在确定」直接 A → 弹窗关掉
         // 回主页 → 再前往比赛 → 又弹，连 60+ 轮零场次。国服这枚弹窗的选中态是青色
@@ -182,7 +180,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
             await _engine.Pad.Dpad(PadDir.Right);
             await _engine.Pad.Dpad(PadDir.Down);
             await _engine.Pad.Dpad(PadDir.Right);
-            await EnterAsync(obs, _homeAttempts, "主页进入我的联赛", (0.500, 0.620));
+            await EnterAsync(obs, _homeAttempts, "主页进入我的联赛", (0.500, 0.620), ct);
             return 3200;
         }
         // ---- 其他模块残留页（开始挂机时用户停在天梯巅峰赛/周活动里）：一律 B 退回主页 ----
@@ -213,7 +211,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         //      结构、A=勾选、RT=确定；2026-11-04 实机改版为国际服同款 UI（底行 取消/确认，
         //      确认钮=A 焦点），RT 在该页无绑定。HandleCnDifficultyAsync 按底行结构分派两种配方 ----
         if (screen == MatchScreen.DifficultyPage)
-            return await HandleCnDifficultyAsync(obs, streak);
+            return await HandleCnDifficultyAsync(obs, streak, ct);
         _diffAttempts = 0;
         // ---- 国服「下一步/确认」页的按键动作已由 <see cref="AdvanceConfirmAsync"/> 统管
         //      （国服键序 RT → A → 鼠标点击），这里只留死页逃生：同一确认页连续 12 轮画面仍不动
@@ -356,9 +354,9 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     /// <summary>
     /// 国服「进入 / 确认」：① RT（页面所印提示键）→ ② A → ③ 后台鼠标点按钮词/兜底落点。
     /// </summary>
-    private Task<int> EnterAsync(Observation? obs, int attempt, string what, (double X, double Y)? fallback = null)
+    private Task<int> EnterAsync(Observation? obs, int attempt, string what, (double X, double Y)? fallback = null, CancellationToken ct = default)
         => CnAdvance.ConfirmAsync(_engine, _mouse, attempt, what, "我的联赛", _log,
-            obs?.Ocr ?? OcrResult.Empty, obs?.Detections, fallback, CancellationToken.None);
+            obs?.Ocr ?? OcrResult.Empty, obs?.Detections, fallback, ct);
 
     /// <summary>后台鼠标点击（国服游戏为提权进程，须本程序以管理员运行 PostMessage 才被处理）。</summary>
     private async Task ClickAtAsync(double nx, double ny, CancellationToken ct)
@@ -381,9 +379,9 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     /// 第 1 轮 RT → 第 2 轮 A → 第 3 轮起退阶到 <b>后台鼠标点确认按钮</b>（网页层只吃鼠标），
     /// 不再「A 按到第 4 轮才试 RT」。
     /// </summary>
-    private Task CnConfirmAsync(Observation obs)
+    private Task CnConfirmAsync(Observation obs, CancellationToken ct = default)
         => CnAdvance.ConfirmAsync(_engine, _mouse, _diffAttempts, "难度页确认", "我的联赛", _log,
-            obs.Ocr, obs.Detections, null, CancellationToken.None);
+            obs.Ocr, obs.Detections, null, ct);
     /// <summary>
     /// 国服难度页处置。2026-11-04 实机：国服难度页已改版为国际服同款 UI——大标题
     /// 「选择赛事等级」+ 底行「取消 | 确认」（确认钮蓝框 = A 键焦点），旧「列表游走 +
@@ -391,7 +389,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     /// <see cref="HandleCnModernDifficultyAsync"/>（国际服多轮配方）；检测不到 → 保留
     /// 旧配方兜底（防 OCR 漏读底行词回退到 2026-10-18 行为）。
     /// </summary>
-    private async Task<int> HandleCnDifficultyAsync(Observation obs, int streak)
+    private async Task<int> HandleCnDifficultyAsync(Observation obs, int streak, CancellationToken ct)
     {
         if (streak < 1)
         {
@@ -399,7 +397,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
             return 800;        // 淡入防抖，等下一轮再读勾
         }
         if (HasBottomConfirmRow(obs.Ocr))
-            return await HandleCnModernDifficultyAsync(obs);
+            return await HandleCnModernDifficultyAsync(obs, ct);
         if (++_diffAttempts > 6)
         {
             _log("[我的联赛] 难度页多次确认未生效，B 返回主页重走「前往比赛」", LogLevel.Warn);
@@ -412,7 +410,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         if (MyLeagueBrain.RespectGameDifficulty(_nextMatchIsKey, ocr))
         {
             _log("[我的联赛] 关键比赛：难度由游戏指定，直接确认开赛（不改选）", LogLevel.Info);
-            await CnConfirmAsync(obs);
+            await CnConfirmAsync(obs, ct);
             return 3200;
         }
         string? selected = MyLeagueBrain.DetectSelectedDifficulty(obs.Frame, ocr);
@@ -421,15 +419,15 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         {
             // 目标难度名不合法（配置异常）：按游戏默认直接确认，绝不盲导航
             _log($"[我的联赛] 难度「{wanted}」不在难度表，按游戏默认确认开赛", LogLevel.Warn);
-            await CnConfirmAsync(obs);
+            await CnConfirmAsync(obs, ct);
             return 3200;
         }
         _log($"[我的联赛] 难度页：{plan.Summary}：上×{plan.UpStrokes} 归位 → 下×{plan.DownStrokes}" +
              (plan.CheckFirst ? " → A 勾选" : "") + " → 确认（RT 优先，A 兜底）", LogLevel.Info);
         await _engine.Pad.DpadRepeat(PadDir.Up, plan.UpStrokes);
         await _engine.Pad.DpadRepeat(PadDir.Down, plan.DownStrokes);
-        if (plan.CheckFirst) await EnterAsync(obs, _diffAttempts, "难度行勾选", (0.300, 0.450)); // 原来按 A 勾选，改 RT/鼠标点该行
-        await CnConfirmAsync(obs);
+        if (plan.CheckFirst) await EnterAsync(obs, _diffAttempts, "难度行勾选", (0.300, 0.450), ct); // 原来按 A 勾选，改 RT/鼠标点该行
+        await CnConfirmAsync(obs, ct);
         return 3500;
     }
 
@@ -452,7 +450,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
     /// 勾选目标难度并返回等待核验；蓝勾已就位/关键比赛/超过改选预算后，按 <see cref="MyLeagueBrain.DifficultyLegPlan"/>
     /// 跳到底行确认（第 4/7 轮 B 逃生重进，第 9 轮后停止挂机）。
     /// </summary>
-    private async Task<int> HandleCnModernDifficultyAsync(Observation obs)
+    private async Task<int> HandleCnModernDifficultyAsync(Observation obs, CancellationToken ct)
     {
         string wanted = LeagueConfig.Difficulty;
         var options = MyLeagueBrain.DetectDifficultyOptions(obs.Ocr);
@@ -464,7 +462,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
             if (_diffSwitchAttempts < 2)
             {
                 _diffSwitchAttempts++;
-                if (checkedDiff is null) _diffBlindApplied = wanted;
+                if (checkedDiff is null && _diffSwitchAttempts >= 2) _diffBlindApplied = wanted;
                 if (_diffSwitchAttempts == 1)
                 {
                     _log($"[我的联赛] 新式难度页改选（第 1/2 次）：{selectPlan.Summary}（上×{selectPlan.UpStrokes} 下×{selectPlan.DownStrokes} A）", LogLevel.Info);
@@ -480,7 +478,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
                     {
                         _log($"[我的联赛] 新式难度页改选（第 2/2 次·鼠标兜底）：点击「{wanted}」（{word.CenterX:F3},{word.CenterY:F3}）", LogLevel.Warn);
                         await CnAdvance.ClickAsync(_engine, _mouse, word.CenterX, word.CenterY, "我的联赛", _log,
-                            CancellationToken.None, CnAdvance.MouseMode.Background);
+                            ct, CnAdvance.MouseMode.Background);
                     }
                     else
                     {
@@ -528,7 +526,7 @@ public sealed class CnMyLeagueScenario : MyLeagueScenario
         await _engine.Pad.DpadRepeat(PadDir.Right, leg.Value.Rights);
         // 确认键：RT → A → 鼠标点确认（与 CnAdvance 同一份阶梯，别在这里另写一套）
         await CnAdvance.ConfirmAsync(_engine, _mouse, round, "新式难度页", "我的联赛", _log,
-            obs.Ocr, obs.Detections, (0.660, 0.940), CancellationToken.None);
+            obs.Ocr, obs.Detections, (0.660, 0.940), ct);
         return 3500;
     }
 

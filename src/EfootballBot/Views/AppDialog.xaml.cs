@@ -90,8 +90,7 @@ public partial class AppDialog : Window
     {
         try
         {
-            var cfg = AppConfig.Load();
-            bool glass = ThemeManager.IsGlassWorld(cfg.Appearance.World);
+            bool glass = ThemeManager.IsGlassWorld(ThemeManager.ActiveWorld);
             if (TryFindResource("DialogBg") is SolidColorBrush dlgBrush)
             {
                 var c = dlgBrush.Color;

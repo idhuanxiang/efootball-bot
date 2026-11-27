@@ -576,6 +576,8 @@ public partial class MainWindow
         if (collapsed)
         {
             RightCol.Width = new GridLength(0);
+            _dwmLayoutTimer?.Stop();
+            UpdateDwmPlacement(fromTimer: false);
         }
         else
         {
@@ -583,6 +585,11 @@ public partial class MainWindow
             RightCol.Width = saved is >= 320 and <= 540
                 ? new GridLength(saved, GridUnitType.Pixel)
                 : new GridLength(0.55, GridUnitType.Star);
+            if (_dwmPreview is not null)
+            {
+                _dwmLayoutTimer?.Start();
+                UpdateDwmPlacement(fromTimer: false);
+            }
         }
     }
 

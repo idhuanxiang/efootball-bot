@@ -123,6 +123,7 @@
   }
 
   function act(cmd) {
+    if (cmd === "stop" && !confirm("确定要停止挂机吗？")) return;
     var headers = T ? { "X-Token": T } : undefined;
     fetch(api(cmd), { method: "POST", cache: "no-store", headers: headers }).then(function (r) {
       if (!r.ok) throw new Error(String(r.status));
@@ -136,8 +137,12 @@
     b.addEventListener("click", function () { act(b.dataset.cmd); });
   });
 
+  var esRetryMs = 2000;
+  var esRetryTimer = null;
+
   /* ---- 实时通道：SSE ---- */
   function connectStream() {
+    if (esRetryTimer) { clearTimeout(esRetryTimer); esRetryTimer = null; }
     if (!("EventSource" in window)) { startPolling(); return; }
     try { es = new EventSource("/api/stream" + (T ? "?t=" + encodeURIComponent(T) : "")); }
     catch (e) { startPolling(); return; }
@@ -149,11 +154,19 @@
       renderEvents(d.events);
       renderLog(d.logs);
     };
-    es.onopen = function () { stopPolling(); };
+    es.onopen = function () {
+      esRetryMs = 2000;
+      stopPolling();
+    };
     es.onerror = function () {
-      // 关闭后回落轮询：某些微信内核会静默断开 SSE 且不再重连
+      // 关闭后回落轮询并按退避重连 SSE（某些内核会静默断开 SSE）
       if (es) { try { es.close(); } catch (e) { } es = null; }
       startPolling();
+      var delay = esRetryMs;
+      esRetryMs = Math.min(esRetryMs * 2, 30000);
+      if (!esRetryTimer) {
+        esRetryTimer = setTimeout(connectStream, delay);
+      }
     };
   }
 

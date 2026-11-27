@@ -551,7 +551,7 @@ public partial class MainWindow
                 return new EfootballBot.Core.System.MonitorStatus(
                     _workerHost is { ScenarioRunning: true },
                     _paused,
-                    _activeMode,
+                    EfootballBot.Core.Bot.Modules.BotModuleCatalog.Find(_activeMode)?.DisplayName ?? _activeMode,
                     s?.MatchesDone ?? 0,
                     s?.KeyMatches ?? 0,
                     s?.PlayersMaxed ?? 0,

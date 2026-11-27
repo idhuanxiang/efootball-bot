@@ -94,6 +94,32 @@ public sealed class BotEngine : IDisposable
     private readonly AppConfig _cfg;
 
     public AppConfig Config => _cfg;
+
+    /// <summary>运行时热更新安全配置字段（时序 / 影子模式 / 调度 / 通知 / 场景阈值）。</summary>
+    public void ApplyHotConfig(AppConfig next)
+    {
+        _cfg.Timing.TapHoldMs = next.Timing.TapHoldMs;
+        _cfg.Timing.TapGapMs = next.Timing.TapGapMs;
+        _cfg.Timing.DpadHoldMs = next.Timing.DpadHoldMs;
+        _cfg.Timing.OcrIntervalMs = next.Timing.OcrIntervalMs;
+        _cfg.Timing.PageTimeoutS = next.Timing.PageTimeoutS;
+        _cfg.Timing.LoadingTimeoutS = next.Timing.LoadingTimeoutS;
+        _cfg.Timing.MatchTimeoutMin = next.Timing.MatchTimeoutMin;
+        _cfg.Timing.ResultAKeyCount = next.Timing.ResultAKeyCount;
+        _cfg.Timing.HumanJitterMs = next.Timing.HumanJitterMs;
+        _cfg.Timing.IdleTapMinMs = next.Timing.IdleTapMinMs;
+        _cfg.Timing.IdleTapMaxMs = next.Timing.IdleTapMaxMs;
+        _cfg.Timing.HumanPacingEnabled = next.Timing.HumanPacingEnabled;
+        _cfg.DryRun = next.DryRun;
+        _cfg.Schedule = next.Schedule;
+        _cfg.Notify = next.Notify;
+        _cfg.MyLeague = next.MyLeague;
+        _cfg.CnMyLeague = next.CnMyLeague;
+        _cfg.AiLadder = next.AiLadder;
+        _cfg.Weekly = next.Weekly;
+        _cfg.CnWeekly = next.CnWeekly;
+        LogInternal("[热更新] 已实时应用最新配置（时序/作息/通知/影子模式/场景阈值）", LogLevel.Info);
+    }
     /// <summary>虚拟手柄（连接失败按 <see cref="PadBackendInfo.FallbackChain"/> 回退时整体换实例）。</summary>
     public IVirtualPad Pad360 { get; private set; }
     public Pad Pad { get; private set; }
@@ -272,7 +298,7 @@ public sealed class BotEngine : IDisposable
     private string _livenessDeadSig = "";
 
     // ---- 玩家 1 归属巡检（P0-2）：启动验证过一次，运行中每 5 分钟再确认 ----
-    private long _lastWitnessTick;
+    private long _lastWitnessTick = Environment.TickCount64;
 
     private bool _padOwnershipLostLogged;
     /// <summary>观察循环分段耗时滚动统计（日志与侧栏共用；每次开始挂机重置）。</summary>
@@ -612,8 +638,9 @@ public sealed class BotEngine : IDisposable
                         if (_teaching.Mode != TeachingMode.Off)
                         {
                             bool taught = _teaching.Tick(obs.Ocr, obs.Detections,
-                                out PadButton? teachButton, out int teachDelay, out _);
-                            if (teachButton is { } tb) await Pad.Press(tb);
+                                out PadButton? teachButton, out bool teachRt, out int teachDelay, out _);
+                            if (teachRt) await Pad.RT();
+                            else if (teachButton is { } tb) await Pad.Press(tb);
                             if (taught)
                             {
                                 RecordPerf(roundStartTick, actionStartMs);
@@ -1395,8 +1422,25 @@ public sealed class BotEngine : IDisposable
     /// </summary>
     private async Task<bool> ReconnectPadAsync()
     {
-        LogInternal("虚拟手柄提交连续失败，正在重建控制器自愈…", LogLevel.Warn);
+        LogInternal("虚拟手柄提交连续失败或玩家 1 归属漂移，正在重建控制器自愈…", LogLevel.Warn);
         try { Pad360.Disconnect(); } catch { }
+        if (_cfg.HidHide.HidePhysicalGamepad && !_cfg.DryRun && PadBackendInfo.RequiresSlotZero(Pad360.Kind))
+        {
+            var padNodes = HidDeviceEnumerator.FindConnectedPhysicalGamepadDevNodes();
+            if (padNodes.Count == 0)
+            {
+                var allNodes = HidDeviceEnumerator.FindPhysicalGamepadDevNodes();
+                if (allNodes.Count > 0 && PadBackendProbe.IsSlot0Occupied())
+                    padNodes = allNodes;
+            }
+            if (padNodes.Count > 0)
+            {
+                LogInternal("重连前重新隐藏物理手柄，确保虚拟手柄抢回玩家 1 (slot0)…", LogLevel.Info);
+                var (_, _, hideMsg) = await Task.Run(Input.PhysicalPadControl.HidePhysicalPads);
+                LogInternal($"[pad-hide] {hideMsg}", LogLevel.Info);
+                await Task.Delay(300);
+            }
+        }
         await Task.Delay(500);
         try
         {
@@ -2041,6 +2085,20 @@ public sealed class BotEngine : IDisposable
 
     // ---------------- 感知观察 ----------------
     /// <summary>
+    /// 按需碎词重读（零空闲成本）：仅在场景连续判 Unknown 且帧内有碎词时调用，
+    /// 对逐字碎词行做 ×2 裁切放大重读并更新 <paramref name="obs"/>。
+    /// </summary>
+    public async Task<Observation> RereadFragmentsAsync(Observation obs, CancellationToken ct)
+    {
+        var (enriched, stats) = await Ocr.RereadFragmentsAsync(obs.Frame, obs.Ocr, ct);
+        if (stats.LinesChanged <= 0) return obs;
+        LogInternal($"[OCR] 未知画面触发碎词重读：改写 {stats.LinesChanged}/{stats.LinesReread} 行", LogLevel.Info);
+        var updated = obs with { Ocr = enriched };
+        _lastObs = updated;
+        return updated;
+    }
+
+    /// <summary>
     /// 获取一帧新鲜画面 → OCR（节流）→ YOLO 检测（仅新帧）→ 组装 Observation 并派发事件。
     /// 捕获自愈 + OCR 节流由 ObservationService 负责。
     /// </summary>
@@ -2295,7 +2353,9 @@ public sealed class BotEngine : IDisposable
         Pad.SetSessionToken(CancellationToken.None);
         // 推理资源（OCR/YOLO/ONNX）由 EngineServices 进程级持有，这里只回收引擎自己的
         // 捕获/观察资源；下次开始挂机直接复用，不要再 Dispose（否则模型又得重载一遍）
+        try { _teaching.Flush(); } catch { }
         try { Observation.Dispose(); } catch { }
+        try { Capture.Dispose(); } catch { }
         try { _dxgi?.Dispose(); } catch { }
         try { _gdi?.Dispose(); } catch { }
         try { Pad360.Dispose(); } catch { }

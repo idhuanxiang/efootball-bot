@@ -789,7 +789,7 @@
                                     <Button x:Name="BtnStartMyLeague" Content="开始"
                                             Style="{StaticResource PrimaryBtn}" MinWidth="104" Height="34" Margin="0,0,8,8"
                                             Click="BtnStartMyLeague_Click"/>
-                                    <Button x:Name="BtnPauseMyLeague" Content="暂停 (F10)"
+                                    <Button x:Name="BtnPauseMyLeague" Content="暂停"
                                             Style="{StaticResource GhostBtn}" MinWidth="96" Height="34" Margin="0,0,8,8"
                                             IsEnabled="False" Click="BtnPause_Click"/>
                                     <Button x:Name="BtnManualMyLeague" Content="发现问题手动停止"
@@ -1157,7 +1157,7 @@
                                                    HorizontalAlignment="Left"/>
                                         <StackPanel Orientation="Horizontal">
                                             <TextBox x:Name="TxtAiStopAtRating" Width="108" Height="30" Text="0"
-                                                     Background="{DynamicResource ComboBg}"
+                                                     Background="{DynamicResource Surface2}" BorderBrush="{DynamicResource HairlineStrong}"
                                                      VerticalAlignment="Center" ToolTip="达到该实力评分或更高时自动停止；0=不启用（无限），自定义请输入正整数"/>
                                             <TextBlock Text="分（0=无限）" FontSize="11.5" VerticalAlignment="Center" Margin="6,0,0,0"
                                                        Foreground="{DynamicResource TextMuted}"/>
@@ -2302,13 +2302,13 @@
                             <TextBlock x:Name="TxtPadBackendState" Style="{StaticResource BulletText}"
                                        TextWrapping="Wrap" Margin="0,2,0,8" Text="检测中…"/>
                             <WrapPanel>
-                                <Button x:Name="BtnProxyInstall" Content="投放代理到游戏目录" Padding="12,5" Margin="0,0,8,0"
+                                <Button x:Name="BtnProxyInstall" Content="投放代理到游戏目录" Style="{StaticResource GhostBtn}" Padding="12,5" Margin="0,0,8,0"
                                         Click="BtnProxyInstall_Click"/>
-                                <Button x:Name="BtnProxyRemove" Content="撤回代理" Padding="12,5" Margin="0,0,8,0"
+                                <Button x:Name="BtnProxyRemove" Content="撤回代理" Style="{StaticResource GhostBtn}" Padding="12,5" Margin="0,0,8,0"
                                         Click="BtnProxyRemove_Click"/>
-                                <Button x:Name="BtnProxyRefresh" Content="重新检测" Padding="12,5" Margin="0,0,8,0"
+                                <Button x:Name="BtnProxyRefresh" Content="重新检测" Style="{StaticResource GhostBtn}" Padding="12,5" Margin="0,0,8,0"
                                         Click="BtnProxyRefresh_Click"/>
-                                <Button x:Name="BtnProxyPick" Content="手动选择目录…" Padding="12,5"
+                                <Button x:Name="BtnProxyPick" Content="手动选择目录…" Style="{StaticResource GhostBtn}" Padding="12,5"
                                         Click="BtnProxyPick_Click"/>
                             </WrapPanel>
                         </StackPanel>
@@ -2679,6 +2679,7 @@
                                        Text="补充说明（可选）：描述遇到的现象，比如卡在哪一步、点了什么没反应、什么时候开始的——会写进反馈包，帮我们更快定位。"/>
                             <TextBox x:Name="TxtDiagNote" Height="48" Margin="0,4,0,0" Padding="6,4"
                                      VerticalScrollBarVisibility="Auto" MaxLength="500"
+                                     VerticalContentAlignment="Top" AcceptsReturn="True"
                                      TextWrapping="Wrap" FontSize="11.5"
                                      Background="{DynamicResource Surface2}" BorderBrush="{DynamicResource HairlineStrong}"/>
                             <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
@@ -2816,6 +2817,8 @@
                                 <Button x:Name="BtnGithubMeasure" Content="测量 GitHub" Style="{StaticResource GhostBtn}"
                                         Padding="14,7" Click="BtnGithubMeasure_Click"
                                         ToolTip="本机 DNS 解析 + TCP 443 直连测速（不依赖内核）"/>
+                                <Button x:Name="BtnGithubCancel" Content="取消" Style="{StaticResource GhostBtn}"
+                                        Padding="14,7" Margin="10,0,0,0" Click="BtnMeasureCancel_Click" IsEnabled="False"/>
                                 <Button x:Name="BtnFastGithubProbe" Content="内核测速" Style="{StaticResource GhostBtn}"
                                         Padding="14,7" Margin="10,0,0,0" Click="BtnFastGithubProbe_Click"
                                         ToolTip="调用 FastGithub --selftest：TCP 初筛 + HTTPS 复验，只测速不改 hosts"/>
@@ -2826,7 +2829,7 @@
                                       Background="Transparent" BorderThickness="0"
                                       Foreground="{DynamicResource TextPrimary}"
                                       ItemContainerStyle="{StaticResource NetRowStyle}"
-                                      ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                       SelectionMode="Single">
                                 <ListView.View>
@@ -2914,7 +2917,7 @@
                                       Foreground="{DynamicResource TextPrimary}"
                                       RowHeight="27" ColumnHeaderHeight="28"
                                       SelectionMode="Single" SelectionUnit="FullRow"
-                                      ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                       ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                       ColumnHeaderStyle="{StaticResource NetDataHeader}"
                                       CellStyle="{StaticResource NetDataCell}"
@@ -3242,11 +3245,17 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" MinWidth="110"/>
                             <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <ComboBox x:Name="CmbLogFiles" Grid.Column="0" MinWidth="110" MaxWidth="320"
+                        <ComboBox x:Name="CmbLogFiles" Grid.Column="0" MinWidth="110" MaxWidth="300"
                                   VerticalAlignment="Center"
                                   SelectionChanged="CmbLogFiles_SelectionChanged"/>
-                        <ComboBox x:Name="CmbHistoryLogFilter" Grid.Column="1" Width="118" FontSize="11.5"
+                        <TextBox x:Name="TxtHistoryLogSearch" Grid.Column="1" Width="136" Height="28"
+                                 Margin="8,0,0,0" Padding="6,3" FontSize="11.5" VerticalContentAlignment="Center"
+                                 Background="{DynamicResource Surface2}" BorderBrush="{DynamicResource HairlineStrong}"
+                                 ToolTip="按关键词过滤当前日志内容（不区分大小写）"
+                                 TextChanged="TxtHistoryLogSearch_TextChanged"/>
+                        <ComboBox x:Name="CmbHistoryLogFilter" Grid.Column="2" Width="118" FontSize="11.5"
                                   Margin="8,0,0,0" VerticalAlignment="Center" SelectedIndex="0"
                                   ToolTip="历史日志显示过滤（文件内容不受影响：仅关键流程含里程碑与提醒/报错）"
                                   SelectionChanged="CmbHistoryLogFilter_SelectionChanged">

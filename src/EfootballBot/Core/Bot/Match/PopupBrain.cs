@@ -95,6 +95,11 @@ public static class PopupBrain
     /// 弹窗决策：单按钮 → A；多按钮 → 看白底高亮那枚是不是推进键；不是就按上下关系挪一格再 A。
     /// </summary>
     public static PopupAction Decide(FrameData? frame, OcrResult ocr, out string note)
+        => Decide(frame, ocr, null, out note);
+
+    /// <summary>弹窗决策（支持传入已预计算的按钮列表，避免同一帧重复扫描像素）。</summary>
+    public static PopupAction Decide(FrameData? frame, OcrResult ocr,
+        IReadOnlyList<PopupButton>? precomputedButtons, out string note)
     {
         // 替换物品确认弹窗（用户 2026-11-23 实机）：标题「要覆盖目前的物品吗？」+「覆盖」/「取消」，
         // 焦点默认在下方「取消」。实测按钮词经常只读出「取消」一枚（「覆盖」被并进标题或漏读），
@@ -112,7 +117,7 @@ public static class PopupBrain
             note = "无像素帧，高光无法判定";
             return PopupAction.None;
         }
-        var buttons = FindButtons(frame, ocr);
+        var buttons = precomputedButtons ?? FindButtons(frame, ocr);
         if (buttons.Count == 0)
         {
             note = "未识别到按钮词";

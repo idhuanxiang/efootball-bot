@@ -198,15 +198,16 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         // 无上下文时宁可判 Unknown 等一拍，绝不把菜单当比赛盲按 A。
         // 冷启动直接落在真实比赛中由比分框时钟主判据覆盖，不依赖角区兜底。
         bool matchContext = MatchShared.MatchContext(_memory, now);
-        var screen = ClassifyScreen(obs, matchContext);
+        bool cornerHasContent = ScreenProbe.CornerHasContent(obs.Frame);
+        bool mostlyLight = ScreenProbe.IsMostlyLightPage(obs.Frame);
+        var screen = ClassifyScreenWithProbes(obs, matchContext, cornerHasContent, mostlyLight);
         // 周活动页被 YOLO 误检成 main_menu 框时，共享分类会判 MainMenu（实机 2026-11-23：
         // 对阵AI/Team Effort 卡片页检测 main_menu 0.72~0.88）→ 引导误认"已到主页"不接管，
         // 于是执行主菜单导航跑偏。用周活动 Brain 分类 + OCR 专有特征双重判据纠正为 Unknown，
         // 让引导走 B 退回。OCR 特征：顶部「对阵AI/对阵玩家」页签 + 活动卡（Team Effort/阵容挑战/
         // 巡回活动/结束倒数）——真正主菜单没有这些词，不会误伤。
         bool weeklyPageByBrain = WeeklyBrain.Classify(obs.Detections, obs.Ocr,
-            ScreenProbe.CornerHasContent(obs.Frame), matchContext,
-            ScreenProbe.IsMostlyLightPage(obs.Frame)) != WkScreen.None;
+            cornerHasContent, matchContext, mostlyLight) != WkScreen.None;
         bool weeklyPageByOcr = (obs.Ocr.ContainsJoined("对阵AI") || obs.Ocr.ContainsJoined("对阵玩家"))
             && (obs.Ocr.ContainsJoined("Team Effort") || obs.Ocr.ContainsJoined("阵容挑战")
                 || obs.Ocr.ContainsJoined("巡回活动") || obs.Ocr.ContainsJoined("结束倒数"));
@@ -252,9 +253,7 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         // 重新定位，不落共享决策。正常弹窗（确定/OK/下一步，无其它板块特征）不触发。
         if (_enteredFromHub)
         {
-            bool otherBrain = WeeklyBrain.Classify(obs.Detections, obs.Ocr,
-                                    ScreenProbe.CornerHasContent(obs.Frame), matchContext,
-                                    ScreenProbe.IsMostlyLightPage(obs.Frame)) != WkScreen.None
+            bool otherBrain = weeklyPageByBrain
                                 || AiLadderBrain.Classify(obs.Ocr) != AlScreen.None
                                 || PeakLadderBrain.Classify(obs.Ocr, obs.Detections) != PlScreen.None;
             bool eventFeature = obs.Ocr.ContainsJoined("赛事等级") || obs.Ocr.ContainsJoined("Team Effort")
@@ -376,7 +375,22 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
         if (screen == MatchScreen.Unknown)
         {
             _unknownStreak++;
-            if (_unknownStreak >= 2 && obs.Ocr.Words.Count > 0 &&
+            if ((_unknownStreak == 2 || (_unknownStreak > 2 && _unknownStreak % 4 == 0)) &&
+                obs.Ocr.Words.Count >= 2)
+            {
+                var rereadObs = await _engine.RereadFragmentsAsync(obs, ct);
+                if (!ReferenceEquals(rereadObs, obs))
+                {
+                    obs = rereadObs;
+                    screen = ClassifyScreenWithProbes(obs, matchContext, cornerHasContent, mostlyLight);
+                    if (screen != MatchScreen.Unknown)
+                    {
+                        _unknownStreak = 0;
+                        _log($"[我的联赛] 碎词重读后重分类：{DescribeScreen(screen)}", LogLevel.Info);
+                    }
+                }
+            }
+            if (screen == MatchScreen.Unknown && _unknownStreak >= 2 && obs.Ocr.Words.Count > 0 &&
                 (now - _lastUnknownDumpAt).TotalSeconds > 120)
             {
                 _lastUnknownDumpAt = now;
@@ -887,12 +901,17 @@ public class MyLeagueScenario : IScenario, IModuleLifecycle
     /// 国服子类先判国服主页页签/其他模块残留页（命中记 Unknown 由拦截钩子接管），未命中回落本判定。
     /// loginRecovery = 最近 ~100s 见过 eFootball 2027 标题页（掉线重登窗口，见 MatchShared）。
     /// </summary>
-    protected virtual MatchScreen ClassifyScreen(Observation obs, bool matchContext) =>
-        MatchBrain.Classify(obs.Detections, obs.Ocr, ScreenProbe.CornerHasContent(obs.Frame),
-            matchContext, ScreenProbe.IsMostlyLightPage(obs.Frame),
+    protected virtual MatchScreen ClassifyScreenWithProbes(Observation obs, bool matchContext, bool cornerHasContent, bool mostlyLight)
+        => MatchBrain.Classify(obs.Detections, obs.Ocr, cornerHasContent,
+            matchContext, mostlyLight,
             MatchShared.LoginRecovery(_memory, DateTime.Now),
             // 画面还是球场（进球庆祝/回放过场）→ 一律按比赛中处理（2026-11-20 虚计场次事故）
             ScreenProbe.LooksLikePitch(obs.Frame));
+
+    protected virtual MatchScreen ClassifyScreen(Observation obs, bool matchContext) =>
+        ClassifyScreenWithProbes(obs, matchContext,
+            ScreenProbe.CornerHasContent(obs.Frame),
+            ScreenProbe.IsMostlyLightPage(obs.Frame));
     /// <summary>日志里的界面显示名（国服子类把主页 Unknown 显示成国服页签名，便于远程排障）。</summary>
     protected virtual string DescribeScreen(MatchScreen screen) => screen.ToString();
     /// <summary>

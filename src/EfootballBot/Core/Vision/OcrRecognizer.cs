@@ -393,15 +393,54 @@ public sealed record OcrResult(IReadOnlyList<OcrWord> Words, int Width, int Heig
         foreach (var ordered in GetGroupedLines())
         {
             if (ordered.Count < 2) continue;
-            string text = string.Concat(ordered.Select(w => w.NormText));
-            if (text.Length < 2) continue;
-            double x0 = ordered.Min(w => w.X), y0 = ordered.Min(w => w.Y);
-            double x1 = ordered.Max(w => w.X + w.W), y1 = ordered.Max(w => w.Y + w.H);
-            // 合并行置信度取最低：整行文本里只要有一个碎词可疑，合并结果就应降权（保守）
-            double conf = ordered.Min(w => w.Confidence);
-            result.Add(new OcrWord(text, x0, y0, x1 - x0, y1 - y0, conf));
+            AddMergedWord(result, ordered);
+
+            // 若同一 Y 行内存在明显横向空隙（如左右两栏按钮），额外产出分段合并词，
+            // 使碎词拥有紧凑包围盒而不被整行拉宽
+            var segments = SplitByHorizontalGap(ordered, gapFactor: 2.5);
+            if (segments.Count > 1)
+            {
+                foreach (var seg in segments)
+                    if (seg.Count >= 2) AddMergedWord(result, seg);
+            }
         }
         return result;
+    }
+
+    internal static List<List<OcrWord>> SplitByHorizontalGap(List<OcrWord> ordered, double gapFactor)
+    {
+        var segments = new List<List<OcrWord>>();
+        if (ordered.Count == 0) return segments;
+        var curSeg = new List<OcrWord> { ordered[0] };
+        for (int i = 1; i < ordered.Count; i++)
+        {
+            var prev = ordered[i - 1];
+            var cur = ordered[i];
+            double gap = cur.X - (prev.X + prev.W);
+            double limit = Math.Max(prev.H, cur.H) * gapFactor;
+            if (gap > limit)
+            {
+                segments.Add(curSeg);
+                curSeg = new List<OcrWord> { cur };
+            }
+            else
+            {
+                curSeg.Add(cur);
+            }
+        }
+        segments.Add(curSeg);
+        return segments;
+    }
+
+    private static void AddMergedWord(List<OcrWord> target, List<OcrWord> group)
+    {
+        string text = string.Concat(group.Select(w => w.NormText));
+        if (text.Length < 2) return;
+        double x0 = group.Min(w => w.X), y0 = group.Min(w => w.Y);
+        double x1 = group.Max(w => w.X + w.W), y1 = group.Max(w => w.Y + w.H);
+        // 合并行置信度取最低：整行文本里只要有一个碎词可疑，合并结果就应降权（保守）
+        double conf = group.Min(w => w.Confidence);
+        target.Add(new OcrWord(text, x0, y0, x1 - x0, y1 - y0, conf));
     }
 
     public IEnumerable<OcrWord> FindAll(string normalizedKeyword)
@@ -460,7 +499,10 @@ public sealed record OcrResult(IReadOnlyList<OcrWord> Words, int Width, int Heig
     /// MaxBy 在 score 相同时稳定返回首个命中，故单候选与无 score（默认 1.0）场景行为完全不变。
     /// </summary>
     public OcrWord? FindButton(string normalizedKeyword)
-        => FindButtonWords(normalizedKeyword).MaxBy(w => w.Confidence);
+        => FindButtonWords(normalizedKeyword)
+            .OrderByDescending(w => Math.Round(w.Confidence, 5))
+            .ThenBy(w => w.W)
+            .FirstOrDefault();
 }
 
 /// <summary>文字规范化，对抗 OCR 的空格 / 全半角 / 常见误识。</summary>
@@ -474,30 +516,23 @@ public static class OcrText
         {
             if (char.IsWhiteSpace(ch)) continue;
             if (char.IsPunctuation(ch) || char.IsSymbol(ch)) continue;
-            sb.Append(ch);
+            sb.Append(NormalizeChar(ch));
         }
-        var r = sb.ToString();
-        foreach (var (bad, good) in Replacements)
-            r = r.Replace(bad, good);
-        return r;
+        return sb.ToString();
     }
 
-    // 仅保留 PP-OCRv6 实测仍会出现的误识（82 帧真机 dump 中 45 帧把「前往比赛」识成
-    // 「前往比賽」）。以下旧 Windows OCR 时代的规则在 v6 下 0 命中，已于本次删除：
-    // 我的聏赛/我的聏、联賽/聯賽、关键比賽/關鍵比賽、兌换/兌換、傑出、教練、經驗、
-    // 設置、賽程、積分、森破/皋破/皋分/森分、惠品/愚品、道具(自映射)、確認、返囘、
-    // 下ー步、新(自映射)、前往比(自映射)。真机日志出现新误识时再按数据补规则。
-    // 2026-10-21 反馈包（GDI 兜底捕获 + 2027 新 UI 美术字）：繁体单字误识回升——
-    // 「前往比賽」「賽程表」「锦标賽」「階段」「組別」均现。单字映射逐词生效，
-    // 碎词（前|往|比|賽 被拆成 4 个词）也能还原，比整词规则抗拆分。
-    internal static readonly (string Bad, string Good)[] Replacements =
+    private static char NormalizeChar(char ch) => ch switch
     {
-        ("前往比賽", "前往比赛"),
-        ("賽", "赛"),
-        ("歷", "历"),
-        ("階", "阶"),
-        ("組", "组"),
-        ("別", "别"),
+        '賽' => '赛', '歷' => '历', '階' => '阶', '組' => '组', '別' => '别',
+        '聯' => '联', '確' => '确', '認' => '认', '繼' => '继', '續' => '续',
+        '勝' => '胜', '負' => '负', '積' => '积', '獎' => '奖', '勵' => '励',
+        '開' => '开', '結' => '结', '進' => '进', '選' => '选', '設' => '设',
+        '項' => '项', '頂' => '顶', '級' => '级', '員' => '员', '傳' => '传', '對' => '对',
+        '戰' => '战', '點' => '点', '擊' => '击', '過' => '过', '畫' => '画',
+        '試' => '试', '練' => '练', '訓' => '训', '動' => '动', '報' => '报',
+        '領' => '领', '經' => '经', '驗' => '验', '關' => '关', '閉' => '闭',
+        '準' => '准', '備' => '备',
+        _ => ch,
     };
 }
 
@@ -537,16 +572,16 @@ internal interface IOcrBackend : IDisposable
 /// </summary>
 public sealed class OcrRecognizer : IDisposable
 {
-    private readonly IOcrBackend _backend;
+    private IOcrBackend _backend;
 
     /// <summary>当前引擎类型。</summary>
-    public OcrEngineKind EngineKind { get; }
+    public OcrEngineKind EngineKind { get; private set; }
 
     /// <summary>引擎/语言标签（日志展示用）。</summary>
     public string LanguageTag => _backend.Label;
 
     /// <summary>非空 = 选定引擎加载失败已自动回退（内容为原因），日志须播报。</summary>
-    public string? FallbackNote { get; }
+    public string? FallbackNote { get; private set; }
 
     /// <summary>旧签名兼容：默认使用当前默认引擎（离线命令行自检 --check-frame/--dump 走此入口）。
     /// preferredTag 曾用于选择 Windows OCR 语言包，该引擎已删除，参数保留仅防调用方破坏。</summary>
@@ -564,6 +599,7 @@ public sealed class OcrRecognizer : IDisposable
     {
         EngineKind = engine;
         _downscaleLongSide = downscaleLongSide;
+        _preferInt8 = preferInt8;
         _tuning = tuning ?? OcrTuning.Off;
         switch (engine)
         {
@@ -630,6 +666,7 @@ public sealed class OcrRecognizer : IDisposable
     public const int DefaultDownscaleLongSide = 1920;
 
     private readonly int _downscaleLongSide;
+    private readonly bool _preferInt8;
     private readonly OcrTuning _tuning;
 
     /// <summary>
@@ -641,8 +678,45 @@ public sealed class OcrRecognizer : IDisposable
     private readonly global::System.Threading.SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
+    private static readonly OcrTuning OnDemandFragmentTuning = new()
+    {
+        LineReread = true,
+        LineRereadScale = 2,
+        LineRereadMaxLines = 4,
+        LineRereadRequireFragments = true,
+    };
+
     /// <summary>最近一帧的行级重读统计（诊断用；未开启行级重读时恒为 default）。</summary>
     public LineReread.Stats LastRereadStats { get; private set; }
+
+    /// <summary>
+    /// 零空闲成本按需碎词重读：仅在画面连续未知/卡住时由上层调用，只对当前帧里的逐字碎词行
+    /// 做最多 4 行的 ×2 裁切放大重读，正常帧零开销。
+    /// </summary>
+    public async Task<(OcrResult Result, LineReread.Stats Stats)> RereadFragmentsAsync(
+        FrameData frame, OcrResult baseResult, CancellationToken ct = default)
+    {
+        if (baseResult.Words.Count < 2 || frame.Width <= 0 || frame.Height <= 0)
+            return (baseResult, default);
+
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var scaled = ImageScaling.DownscaleBilinear(frame, _downscaleLongSide);
+            var (merged, stats) = await LineReread.ApplyAsync(
+                    baseResult, scaled, _backend.RecognizeAsync, OnDemandFragmentTuning, ct)
+                .ConfigureAwait(false);
+            LastRereadStats = stats;
+            if (merged.OsdMaskRects.Count == 0 && baseResult.OsdMaskRects.Count > 0)
+                merged = merged with { OsdMaskRects = baseResult.OsdMaskRects };
+            return (merged, stats);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     public async Task<OcrResult> RecognizeAsync(FrameData frame, CancellationToken ct = default)
     {
@@ -651,7 +725,29 @@ public sealed class OcrRecognizer : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             var scaled = ImageScaling.DownscaleBilinear(frame, _downscaleLongSide);
-            var result = await _backend.RecognizeAsync(scaled, ct).ConfigureAwait(false);
+            OcrResult result;
+            try
+            {
+                result = await _backend.RecognizeAsync(scaled, ct).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex) when (_backend is SidecarOcrBackend)
+            {
+                // vision-svc 运行期熔断/断连：立即回退进程内引擎并重跑本帧，绝不把挂机卡死
+                try { _backend.Dispose(); } catch { }
+                try
+                {
+                    _backend = new SimdPaddleOcrBackend(_tuning);
+                    EngineKind = OcrEngineKind.SimdPaddle;
+                    FallbackNote = $"vision-svc 运行时异常已回退 SimdPaddle：{ex.Message}";
+                }
+                catch (Exception ex2)
+                {
+                    _backend = new RapidV6OcrBackend(_preferInt8);
+                    EngineKind = OcrEngineKind.RapidV6;
+                    FallbackNote = $"vision-svc 运行时异常且 SimdPaddle 失败，已回退 RapidV6：{ex.Message}；{ex2.Message}";
+                }
+                result = await _backend.RecognizeAsync(scaled, ct).ConfigureAwait(false);
+            }
             result = OcrResult.FilterWindowTitlebar(result);
             if (!_tuning.LineReread || result.Words.Count == 0)
             {

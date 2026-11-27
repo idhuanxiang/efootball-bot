@@ -435,9 +435,9 @@ public sealed partial class CnWeeklyScenario : IScenario
     /// <summary>
     /// 国服「进入 / 确认」：① RT（页面所印提示键）→ ② A → ③ 后台鼠标点按钮词/兜底落点。
     /// </summary>
-    private Task<int> EnterAsync(Observation? obs, int attempt, string what, (double X, double Y)? fallback = null)
+    private Task<int> EnterAsync(Observation? obs, int attempt, string what, (double X, double Y)? fallback = null, CancellationToken ct = default)
         => CnAdvance.ConfirmAsync(_engine, _mouse, attempt, what, "国服周活动", _log,
-            obs?.Ocr ?? OcrResult.Empty, obs?.Detections, fallback, CancellationToken.None);
+            obs?.Ocr ?? OcrResult.Empty, obs?.Detections, fallback, ct);
 
     /// <summary>
     /// 「重新挑战」消耗资金确认弹窗（2026-11-25 实机）：上排蓝色高亮「资金 5000」（默认焦点）、

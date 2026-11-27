@@ -45,13 +45,14 @@ public static partial class MatchBrain
         //   · 「确定 / 确认 / OK」只在**不是弹窗**（PopupBrain 挑不出按钮候选、也没有设置/难度
         //     面板词）时才当快通道，否则交回下面的 HasConfirm 分支走弹窗阶梯（上移/单键确认），
         //     国服场景的 onConfirm 会按 RT → A → 后台鼠标点「确定」三级推进。
+        var cachedPopupButtons = PopupBrain.FindButtons(frame, ocr);
         {
             bool nextStepWord = ocr.ContainsJoined("下一步") || ocr.ContainsJoined("继续");
             bool blueAdvance = ScreenProbe.HasBlueAdvanceButton(frame);
             bool popupHasCancel = ocr.ContainsJoined("取消") || ocr.ContainsJoined("关闭") ||
                                   ocr.ContainsJoined("稍后") || ocr.ContainsJoined("离开") ||
-                                  ocr.ContainsJoined("退出") || PopupBrain.FindButtons(frame, ocr).Count >= 2;
-            bool dialogButtons = PopupBrain.FindButtons(frame, ocr).Count > 0;
+                                  ocr.ContainsJoined("退出") || cachedPopupButtons.Count >= 2;
+            bool dialogButtons = cachedPopupButtons.Count > 0;
             bool settingsLike = IsDifficultyChoice(ocr) || IsGameSettingsDialog(ocr);
             bool quickAdvance = nextStepWord ||
                 (blueAdvance && !dialogButtons && !settingsLike && !popupHasCancel);
@@ -154,7 +155,7 @@ public static partial class MatchBrain
                 // 难度选择页/启动设定窗仍走旧判定（它们的确认键本来就是默认焦点，挪格反而进列表）。
                 if (!IsDifficultyChoice(ocr) && !IsGameSettingsDialog(ocr))
                 {
-                    var popup = PopupBrain.Decide(frame, ocr, out var popupNote);
+                    var popup = PopupBrain.Decide(frame, ocr, cachedPopupButtons, out var popupNote);
                     // 画面不变 → 换招：挪格失效就退回「直接 A」（见 ConfirmRepositionRounds 的说明）
                     if (popup is PopupAction.UpThenConfirm or PopupAction.DownThenConfirm &&
                         screenStreak >= ConfirmRepositionRounds)

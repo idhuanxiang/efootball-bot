@@ -168,7 +168,7 @@ public static class LineReread
             w.Confidence);
     }
 
-    /// <summary>与 <see cref="OcrResult.Lines"/> 完全一致的行聚类（中心 Y 邻近 + 高度容差）。</summary>
+    /// <summary>与 <see cref="OcrResult.Lines"/> 一致的行聚类，并按横向大空隙分段（避免跨栏裁切）。</summary>
     internal static List<List<OcrWord>> GroupLines(IReadOnlyList<OcrWord> words)
     {
         var lines = new List<List<OcrWord>>();
@@ -179,6 +179,12 @@ public static class LineReread
             if (line is null) lines.Add(new List<OcrWord> { w });
             else line.Add(w);
         }
-        return lines;
+        var segmented = new List<List<OcrWord>>(lines.Count);
+        foreach (var line in lines)
+        {
+            line.Sort((a, b) => a.X.CompareTo(b.X));
+            segmented.AddRange(OcrResult.SplitByHorizontalGap(line, gapFactor: 3.0));
+        }
+        return segmented;
     }
 }

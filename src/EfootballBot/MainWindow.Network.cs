@@ -584,6 +584,8 @@ public partial class MainWindow
         BtnMeasureAll.IsEnabled = false;
         BtnGithubMeasure.IsEnabled = false;
         BtnMeasureCancel.IsEnabled = true;
+        BtnGithubCancel.IsEnabled = true;
+        BtnGithubCancel.IsEnabled = true;
         AppendLog("[测速] 开始测量国际服服务器延迟…", LogLevel.Info);
         int n = 0;
         var ct = _measureCts.Token;
@@ -614,6 +616,7 @@ public partial class MainWindow
             BtnMeasureAll.IsEnabled = true;
             BtnGithubMeasure.IsEnabled = true;
             BtnMeasureCancel.IsEnabled = false;
+            BtnGithubCancel.IsEnabled = false;
         }
     }
 
@@ -624,6 +627,8 @@ public partial class MainWindow
         BtnMeasureAll.IsEnabled = false;
         BtnGithubMeasure.IsEnabled = false;
         BtnMeasureCancel.IsEnabled = true;
+        BtnGithubCancel.IsEnabled = true;
+        BtnGithubCancel.IsEnabled = true;
         int n = 0;
         var ct = _measureCts.Token;
         try
@@ -651,6 +656,7 @@ public partial class MainWindow
             BtnMeasureAll.IsEnabled = true;
             BtnGithubMeasure.IsEnabled = true;
             BtnMeasureCancel.IsEnabled = false;
+            BtnGithubCancel.IsEnabled = false;
         }
     }
 
@@ -702,12 +708,18 @@ public partial class MainWindow
         (t.Domain is not null ? _githubRows : _serverRows).Add(row);
         TxtAddTarget.Text = "";
         UpdateServerSummary();
+        if (t.Domain is not null)
+        {
+            UpdateGithubSummary();
+            TxtServerSummary.Text = $"已添加到「GitHub 域名延迟」列表：{s}";
+        }
         AppendLog($"已添加目标：{s}（域名将每次测量前解析）", LogLevel.Info);
     }
 
     private void BtnRemoveTarget_Click(object sender, System.Windows.RoutedEventArgs e)
     {
-        if (SelectedRow is not { } row) { TxtServerSummary.Text = "先在表格中选中一行。"; return; }
+        var row = (LvServers.SelectedItem as ServerRowVm) ?? (LvGithub.SelectedItem as ServerRowVm);
+        if (row is null) { TxtServerSummary.Text = "先在服务器或 GitHub 表格中选中一行。"; return; }
         Probe.Remove(row.Id);
         _serverRows.Remove(row);
         _githubRows.Remove(row);
@@ -956,6 +968,7 @@ public partial class MainWindow
 
     private void DrawIgSpark(IReadOnlyList<int> samples)
     {
+        if (NetworkPanel.Visibility != Visibility.Visible) return;
         CvIgSpark.Children.Clear();
         if (samples.Count < 2) return;
         double w = CvIgSpark.ActualWidth;

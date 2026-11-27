@@ -157,6 +157,7 @@ public sealed class PeakLadderScenario : IScenario
         {
             _skipBlockedThisMatch = false;
             _goMatchClicks = 0;
+            _cnConfirmAttempts = 0;
         }
         string screenName = pl != PlScreen.None ? $"天梯巅峰赛.{pl}" : ml.ToString();
         if (screenName == _lastScreenName) _streak++;
@@ -165,7 +166,7 @@ public sealed class PeakLadderScenario : IScenario
             _streak = 0;
             _lastScreenName = screenName;
             _attempts = 0; // 换屏即重置当前阶段预算
-            _cnConfirmAttempts = 0;
+            if (pl == PlScreen.ActivityHome || ml == MatchScreen.MainMenu) _cnConfirmAttempts = 0;
             _log($"[天梯巅峰赛] 界面：{screenName}", LogLevel.Info);
         }
         // 国服比赛起始页：底栏印「设置|球场|RT 下一步」。按用户 2026-11-21 规则，国服「下一步/确认」
@@ -245,9 +246,9 @@ public sealed class PeakLadderScenario : IScenario
     /// <summary>
     /// 国服「进入 / 确认」：① RT（页面所印提示键）→ ② A → ③ 后台鼠标点按钮词/兜底落点。
     /// </summary>
-    private Task<int> EnterAsync(Observation? obs, int attempt, string what, (double X, double Y)? fallback = null)
+    private Task<int> EnterAsync(Observation? obs, int attempt, string what, (double X, double Y)? fallback = null, CancellationToken ct = default)
         => CnAdvance.ConfirmAsync(_engine, _mouse, attempt, what, "天梯巅峰赛", _log,
-            obs?.Ocr ?? OcrResult.Empty, obs?.Detections, fallback, CancellationToken.None);
+            obs?.Ocr ?? OcrResult.Empty, obs?.Detections, fallback, ct);
 
     // ---------------- 菜单侧状态机 ----------------
     /// <summary>返回正数/0=本轮已处理（下一轮延时）；null=未接管（走共享决策）。</summary>
@@ -363,7 +364,7 @@ public sealed class PeakLadderScenario : IScenario
                     }
                     _log("[天梯巅峰赛] 参赛模式弹窗：上×2 选「单场比赛」→ A", LogLevel.Info);
                     await _engine.Pad.DpadRepeat(PadDir.Up, 2);
-                    await EnterAsync(obs, _attempts, "国服进入/确认");
+                    await EnterAsync(obs, _attempts, "国服进入/确认", ct: ct);
                     return 3000;
                 }
                 if (pl == PlScreen.ActivityHome)

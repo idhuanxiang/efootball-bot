@@ -238,7 +238,7 @@ public sealed partial class WeeklyEventScenario : IScenario
         if (screenName == _lastScreenName) _streak++;
         else { _streak = 0; _lastScreenName = screenName; _log($"[周活动] 界面：{screenName}", LogLevel.Info); }
         // ---- 周活动菜单侧状态机：接管周活动界面与阶段内无特征界面 ----
-        int? weeklyWait = await HandleWeeklyAsync(wk, ml, obs);
+        int? weeklyWait = await HandleWeeklyAsync(wk, ml, obs, ct);
         if (weeklyWait is not null) return weeklyWait.Value;
         // wk==None 且阶段已交回共享流程：走共用决策（比赛中/终场/弹窗/逃生）
         var action = MatchBrain.Decide(ml, obs.Ocr, _streak, matchContext, obs.Frame);
@@ -259,7 +259,7 @@ public sealed partial class WeeklyEventScenario : IScenario
 
     // ---------------- 菜单侧状态机 ----------------
     /// <summary>返回正数/0=本轮已处理（下一轮延时）；null=未接管（走共享决策）。</summary>
-    private async Task<int?> HandleWeeklyAsync(WkScreen wk, MatchScreen ml, Observation obs)
+    private async Task<int?> HandleWeeklyAsync(WkScreen wk, MatchScreen ml, Observation obs, CancellationToken ct)
     {
         // 建议面板：任何阶段命中都先关掉（面板是纯展示层，盖在主页上会让主页探针全部失效）。
         // B 每次只退一级：详情视图 → 列表视图 → 活动主页，所以每观测到面板就按一次 B，
@@ -901,7 +901,7 @@ public sealed partial class WeeklyEventScenario : IScenario
     /// 决策与像素探针见 <see cref="PopupBrain"/>（纯函数，可单测）。
     /// 认不出按钮词的弹窗退回原来的「有推进词就 A」行为，绝不停在原地。
     /// </summary>
-    private async Task<int> HandlePopupAsync(Observation obs, string context)
+    private async Task<int> HandlePopupAsync(Observation obs, string context, CancellationToken ct = default)
     {
         var action = PopupBrain.Decide(obs.Frame, obs.Ocr, out var note);
         switch (action)
@@ -914,7 +914,7 @@ public sealed partial class WeeklyEventScenario : IScenario
             case PopupAction.UpThenConfirm:
                 _log($"[周活动] {context}：{note}", LogLevel.Info);
                 await _engine.Pad.Dpad(PadDir.Up);
-                await Task.Delay(250); // 上移后留时给游戏刷新焦点，否则A落在旧焦点(取消)
+                await Task.Delay(250, ct); // 上移后留时给游戏刷新焦点，否则A落在旧焦点(取消)
                 await _engine.Pad.Confirm();
                 return 2400;
             case PopupAction.PressConfirm:
@@ -927,7 +927,7 @@ public sealed partial class WeeklyEventScenario : IScenario
                 {
                     _log($"[周活动] {context}：{note}，兜底上移避开取消/关闭后再 A", LogLevel.Info);
                     await _engine.Pad.Dpad(PadDir.Up);
-                    await Task.Delay(250);
+                    await Task.Delay(250, ct);
                     await _engine.Pad.Confirm();
                     return 2400;
                 }

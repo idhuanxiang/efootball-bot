@@ -90,35 +90,58 @@ public static class ImageScaling
         double invY = (double)srcH / dstH;
         float maxX = srcW - 1, maxY = srcH - 1;
 
-        for (int y = 0; y < dstH; y++)
+        int[] x0Arr = ArrayPool<int>.Shared.Rent(dstW);
+        int[] x1Arr = ArrayPool<int>.Shared.Rent(dstW);
+        float[] fxArr = ArrayPool<float>.Shared.Rent(dstW);
+        try
         {
-            double sy = (y + 0.5) * invY - 0.5;
-            sy = Math.Clamp(sy, 0.0, (double)maxY);
-            int y0 = (int)sy;
-            int y1 = Math.Min(y0 + 1, srcH - 1);
-            float fy = (float)(sy - y0);
-
-            byte* dstRow = pDst + (long)y * dstW * 4;
             for (int x = 0; x < dstW; x++)
             {
                 double sx = (x + 0.5) * invX - 0.5;
                 sx = Math.Clamp(sx, 0.0, (double)maxX);
                 int x0 = (int)sx;
-                int x1 = Math.Min(x0 + 1, srcW - 1);
-                float fx = (float)(sx - x0);
-
-                byte* p00 = pSrc + ((long)y0 * srcW + x0) * 4;
-                byte* p01 = pSrc + ((long)y0 * srcW + x1) * 4;
-                byte* p10 = pSrc + ((long)y1 * srcW + x0) * 4;
-                byte* p11 = pSrc + ((long)y1 * srcW + x1) * 4;
-
-                // 4 邻域加权，Round 半 away from zero 与 OpenCV 一致（CV_ROUND = rint）
-                float w00 = (1 - fx) * (1 - fy), w01 = fx * (1 - fy), w10 = (1 - fx) * fy, w11 = fx * fy;
-                dstRow[x * 4 + 0] = (byte)Math.Round(w00 * p00[0] + w01 * p01[0] + w10 * p10[0] + w11 * p11[0]);
-                dstRow[x * 4 + 1] = (byte)Math.Round(w00 * p00[1] + w01 * p01[1] + w10 * p10[1] + w11 * p11[1]);
-                dstRow[x * 4 + 2] = (byte)Math.Round(w00 * p00[2] + w01 * p01[2] + w10 * p10[2] + w11 * p11[2]);
-                dstRow[x * 4 + 3] = (byte)Math.Round(w00 * p00[3] + w01 * p01[3] + w10 * p10[3] + w11 * p11[3]);
+                x0Arr[x] = x0;
+                x1Arr[x] = Math.Min(x0 + 1, srcW - 1);
+                fxArr[x] = (float)(sx - x0);
             }
+
+            for (int y = 0; y < dstH; y++)
+            {
+                double sy = (y + 0.5) * invY - 0.5;
+                sy = Math.Clamp(sy, 0.0, (double)maxY);
+                int y0 = (int)sy;
+                int y1 = Math.Min(y0 + 1, srcH - 1);
+                float fy = (float)(sy - y0);
+                float invFy = 1f - fy;
+
+                byte* srcRow0 = pSrc + (long)y0 * srcW * 4;
+                byte* srcRow1 = pSrc + (long)y1 * srcW * 4;
+                byte* dstRow = pDst + (long)y * dstW * 4;
+                for (int x = 0; x < dstW; x++)
+                {
+                    int x0Off = x0Arr[x] * 4;
+                    int x1Off = x1Arr[x] * 4;
+                    float fx = fxArr[x];
+                    float invFx = 1f - fx;
+
+                    byte* p00 = srcRow0 + x0Off;
+                    byte* p01 = srcRow0 + x1Off;
+                    byte* p10 = srcRow1 + x0Off;
+                    byte* p11 = srcRow1 + x1Off;
+
+                    float w00 = invFx * invFy, w01 = fx * invFy, w10 = invFx * fy, w11 = fx * fy;
+                    dstRow[x * 4 + 0] = (byte)MathF.Round(w00 * p00[0] + w01 * p01[0] + w10 * p10[0] + w11 * p11[0]);
+                    dstRow[x * 4 + 1] = (byte)MathF.Round(w00 * p00[1] + w01 * p01[1] + w10 * p10[1] + w11 * p11[1]);
+                    dstRow[x * 4 + 2] = (byte)MathF.Round(w00 * p00[2] + w01 * p01[2] + w10 * p10[2] + w11 * p11[2]);
+                    dstRow[x * 4 + 3] = (byte)MathF.Round(w00 * p00[3] + w01 * p01[3] + w10 * p10[3] + w11 * p11[3]);
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<int>.Shared.Return(x0Arr);
+            ArrayPool<int>.Shared.Return(x1Arr);
+            ArrayPool<float>.Shared.Return(fxArr);
         }
     }
 

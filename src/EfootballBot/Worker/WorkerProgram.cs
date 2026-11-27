@@ -230,7 +230,15 @@ public static class WorkerProgram
                 // 若已由 cmd == "stop" 摘除 engine 引用，说明是 GUI 主动停止（后续会发 EvStopped），不再补发 EvExited
                 if (!ReferenceEquals(Volatile.Read(ref engine), e)) return;
                 StopPreviewLoop();
-                _ = SendAsync(PipeProtocol.EvExited(reason));
+                _ = Task.Run(async () =>
+                {
+                    try { await e.WaitPendingRestoreAsync(1200); } catch { }
+                    if (ReferenceEquals(Interlocked.CompareExchange(ref engine, null, e), e))
+                    {
+                        try { e.Dispose(); } catch { }
+                    }
+                    await SendAsync(PipeProtocol.EvExited(reason));
+                });
             };
         }
 
@@ -445,8 +453,16 @@ public static class WorkerProgram
                 }
                 else if (msg.Cmd == "reloadConfig")
                 {
-                    // M1 简化：仅记录日志，下次 start 时自动读最新配置
-                    await SendAsync(PipeProtocol.EvLog("Info", "配置将在下次启动场景时生效"));
+                    var latest = AppConfig.Load();
+                    if (engine is { } active)
+                    {
+                        active.ApplyHotConfig(latest);
+                        await SendAsync(PipeProtocol.EvLog("Info", "已热更新运行中引擎配置（捕获/OCR 引擎/窗口绑定需重开挂机生效）"));
+                    }
+                    else
+                    {
+                        await SendAsync(PipeProtocol.EvLog("Info", "配置已刷新，将在下次启动场景时生效"));
+                    }
                 }
             }, readCts.Token);
 

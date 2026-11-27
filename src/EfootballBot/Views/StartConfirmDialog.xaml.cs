@@ -72,8 +72,7 @@ public partial class StartConfirmDialog : Window
     {
         try
         {
-            var cfg = EfootballBot.Core.Config.AppConfig.Load();
-            bool glass = EfootballBot.Core.UI.ThemeManager.IsGlassWorld(cfg.Appearance.World);
+            bool glass = EfootballBot.Core.UI.ThemeManager.IsGlassWorld(EfootballBot.Core.UI.ThemeManager.ActiveWorld);
             if (TryFindResource("DialogBg") is System.Windows.Media.SolidColorBrush dlgBrush)
             {
                 var c = dlgBrush.Color;

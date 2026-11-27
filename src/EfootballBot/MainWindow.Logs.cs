@@ -352,7 +352,10 @@ public partial class MainWindow
 
             foreach (var f in files)
             {
-                CmbLogFiles.Items.Add(new ComboBoxItem { Content = f.Name, Tag = f.FullName });
+                string sizeText = f.Length >= 1024 * 1024
+                    ? $"{f.Length / (1024.0 * 1024.0):F1} MB"
+                    : $"{Math.Max(1, f.Length / 1024)} KB";
+                CmbLogFiles.Items.Add(new ComboBoxItem { Content = $"{f.Name}（{sizeText}）", Tag = f.FullName });
             }
 
             // 默认选中当前活跃日志
@@ -380,6 +383,16 @@ public partial class MainWindow
         if (CmbLogFiles.SelectedItem is not ComboBoxItem ci) return;
         string path = (string)ci.Tag;
         LoadLogFile(path);
+    }
+
+    private string _historyLogSearch = "";
+
+    private void TxtHistoryLogSearch_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (LogFileContent is null || CmbLogFiles is null || _loadingConfig) return;
+        _historyLogSearch = TxtHistoryLogSearch.Text.Trim();
+        if (CmbLogFiles.SelectedItem is ComboBoxItem ci && ci.Tag is string path)
+            LoadLogFile(path);
     }
 
     private void CmbHistoryLogFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -439,6 +452,7 @@ public partial class MainWindow
             // 用一个定长环形队列只保留最后 N 行（内存恒定，大文件也只扫一次）。
             const int MaxLoadedLines = 5000;
             string filterVal = _historyLogFilter;
+            string searchVal = _historyLogSearch;
             LogFileStatus.Text = $"{path} | 正在读取…";
             // 文件扫描 + 正则解析放后台：避免 5000 行 ~10000 次正则匹配阻塞 UI 线程
             var parsed = await Task.Run(() =>
@@ -465,6 +479,7 @@ public partial class MainWindow
                     }
                     total++;
                     if (!PassesLogFilter(lv, filterVal)) continue;
+                    if (searchVal.Length > 0 && !msg.Contains(searchVal, StringComparison.OrdinalIgnoreCase)) continue;
 
                     var pm = LogPrefixRegex.Match(msg);
                     if (pm.Success)

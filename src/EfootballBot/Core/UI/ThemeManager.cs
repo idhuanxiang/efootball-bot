@@ -67,12 +67,18 @@ public static class ThemeManager
     public static bool IsGlassWorld(string? world)
         => !string.Equals(world?.Trim(), WorldFluent, StringComparison.OrdinalIgnoreCase);
 
+    private static string _activeWorld = WorldGlass;
+
+    /// <summary>当前生效的外观世界（供无边框弹窗零 I/O 读取）。</summary>
+    public static string ActiveWorld => _activeWorld;
+
     public static string NormalizeWorld(string? world) => IsGlassWorld(world) ? WorldGlass : WorldFluent;
 
     /// <summary>把指定暗黑主题 + 外观世界的所有 Token 颜色写入 Application.Current.Resources。</summary>
     public static void ApplyTheme(string? themeName, string? world = null)
     {
         bool glass = IsGlassWorld(world);
+        _activeWorld = NormalizeWorld(world);
         var normalized = NormalizeTheme(themeName);
         _activeTheme = normalized;
         var source = ThemePalette.For(normalized, world);

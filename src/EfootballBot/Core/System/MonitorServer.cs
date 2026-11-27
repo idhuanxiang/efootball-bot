@@ -250,6 +250,17 @@ public sealed class MonitorServer : IDisposable
                         return;
                     }
                     string cmd = path[5..];
+                    var st = _status();
+                    if (!st.Running)
+                    {
+                        await WriteAsync(ctx, 409, "application/json; charset=utf-8", "{\"ok\":false,\"message\":\"当前未在挂机\"}");
+                        return;
+                    }
+                    if (cmd == "step" && !st.Paused)
+                    {
+                        await WriteAsync(ctx, 409, "application/json; charset=utf-8", "{\"ok\":false,\"message\":\"单步仅在暂停状态下可用\"}");
+                        return;
+                    }
                     await _command(cmd);
                     await WriteAsync(ctx, 200, "application/json; charset=utf-8", "{\"ok\":true}");
                     return;
