@@ -55,7 +55,12 @@ public static partial class MatchBrain
             bool settingsLike = IsDifficultyChoice(ocr) || IsGameSettingsDialog(ocr);
             bool quickAdvance = nextStepWord ||
                 (blueAdvance && !dialogButtons && !settingsLike && !popupHasCancel);
-            bool skipReady = screen == MatchScreen.InMatch && allowMatchSkip && SkipBannerHasCheck(frame, ocr);
+            // SkipBannerHasCheck 对 frame=null 的旧约定是保守返回 true（无像素就当绿勾在），
+            // 直接接到本门控会把右下角「下一步」快通道在所有无帧路径（纯函数单测/降级调用）
+            // 整体关闭——v9.3.1 首发就是因此挂了两个 InMatch 回归用例。改为只有拿到像素证据
+            // （frame 非空且绿勾核验通过）才拦快通道；frame 非空时实机行为不变。
+            bool skipReady = frame is not null && screen == MatchScreen.InMatch
+                && allowMatchSkip && SkipBannerHasCheck(frame, ocr);
             bool screenAllowsQuick = !skipReady && (screen == MatchScreen.InMatch
                 || (screen == MatchScreen.HasConfirm && (inMatchRecently || (!dialogButtons && nextStepWord)))
                 || (screen == MatchScreen.Unknown && inMatchRecently && !InputLivenessProbe.IsWatermarkPage(ocr)));
