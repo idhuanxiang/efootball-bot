@@ -599,6 +599,20 @@ public partial class MainWindow
         _cfg.Update.AutoDownloadInstall = ChkAutoDownloadInstall.IsChecked == true;
 
         PersistConfigSafe("保存UI配置");
+        if (_workerHost?.ScenarioRunning == true)
+            _ = _workerHost.SendReloadConfigAsync();
+    }
+
+    private void ChkCollectSuspicious_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_loadingConfig || _cfg is null) return;
+        SaveUiToConfig();
+    }
+
+    private void CmbSuspiciousThrottle_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loadingConfig || _cfg is null) return;
+        SaveUiToConfig();
     }
 
     // ---------------- 挂机节奏 ----------------

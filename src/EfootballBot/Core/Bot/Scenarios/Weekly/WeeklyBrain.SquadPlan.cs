@@ -34,7 +34,40 @@ public static partial class WeeklyBrain
             IsActivityCompleted(ocr));
 
     public static bool IsActivityCompleted(OcrResult ocr)
-        => ocr.ContainsJoined("活动已完成") || ocr.ContainsJoined("收件箱领取奖励");
+        => ocr.ContainsJoined("活动已完成") || ocr.ContainsJoined("收件箱领取奖励") ||
+           IsConsolationGpRewardsOnly(ocr);
+
+    /// <summary>
+    /// 阵容挑战可重复进入后的「全 100 GP 安慰奖」完成态判定（2026-11-28 用户国际服实机两帧）：
+    /// 三场打完退出再重进时，主页仍显示「下一场比赛 挑战1」，但下方三段奖励全部从正式道具
+    /// 降格为「100 GP」。在奖励区（x&gt;0.35, y&gt;0.50）命中至少 2 处独立的「100 GP」即判已完成；
+    /// 使用前后边界排除「10000 GP」「1,100 GP」等正常 GP 奖励。
+    /// </summary>
+    private static readonly global::System.Text.RegularExpressions.Regex ConsolationGpRegex =
+        new(@"(?<![\d,])100\s*GP(?![A-Za-z])",
+            global::System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+            global::System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static bool IsConsolationGpRewardsOnly(OcrResult ocr)
+    {
+        int hits = 0;
+        foreach (var line in ocr.Lines)
+        {
+            if (line.CenterX <= 0.35 || line.CenterY <= 0.50) continue;
+            hits += ConsolationGpRegex.Matches(line.Text).Count;
+            if (hits >= 2) return true;
+        }
+        if (ocr.Lines.Count == 0)
+        {
+            foreach (var word in ocr.Words)
+            {
+                if (word.CenterX <= 0.35 || word.CenterY <= 0.50) continue;
+                hits += ConsolationGpRegex.Matches(word.Text).Count;
+                if (hits >= 2) return true;
+            }
+        }
+        return false;
+    }
 
     /// <summary>
     /// 阵容挑战入场弹窗「球员卡限制 / OK」判定（2026-11-19 用户实机帧）：标题行固定文案

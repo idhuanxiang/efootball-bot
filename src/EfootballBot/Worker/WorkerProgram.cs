@@ -210,7 +210,8 @@ public static class WorkerProgram
             {
                 if (stale()) return;
                 _ = SendAsync(PipeProtocol.EvStats(s.MatchesDone, s.KeyMatches, s.PlayersMaxed, s.StartedAt, s.LastError,
-                    s.SkippedMatches, s.PerfNote, s.AiLadderRating, s.AiLadderDivision));
+                    s.SkippedMatches, s.PerfNote, s.AiLadderRating, s.AiLadderDivision,
+                    string.IsNullOrEmpty(s.ActiveMode) ? null : s.ActiveMode));
             };
             // 感知摘要事件（Screen 已是摘要文本："OCR N 词 / 检测 N 框"）
             e.ScreenChanged += s =>

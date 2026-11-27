@@ -76,10 +76,11 @@ public static class PipeProtocol
     /// <summary>stop 命令的确认事件：引擎已完全停止。GUI 收到即回收 Worker，不再固定等 5s。</summary>
     public static Msg EvStopped() => new() { Ev = "stopped" };
     public static Msg EvStats(int matches, int keyMatches, int playersMaxed, DateTime? startedAt, string? lastError,
-        int skipped = 0, string? perf = null, int aiLadderRating = 0, int aiLadderDivision = 0)
+        int skipped = 0, string? perf = null, int aiLadderRating = 0, int aiLadderDivision = 0, string? mode = null)
         => new()
         {
             Ev = "stats",
+            Mode = mode,
             Matches = matches,
             KeyMatches = keyMatches,
             PlayersMaxed = playersMaxed,

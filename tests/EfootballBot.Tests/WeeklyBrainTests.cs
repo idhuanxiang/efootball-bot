@@ -734,6 +734,44 @@ public class WeeklyBrainTests
         // 底栏「任务」红点/收件箱类文案与「领取奖励」分处两处时不得合成完成态
         Assert.False(WeeklyBrain.IsActivityCompleted(Ocr(
             W("收件箱", 0.85, 0.08), W("奖励", 0.38, 0.38))));
+
+        // 2026-11-28 实机：可重复进入的阵容挑战打完后重置为「下一场比赛 挑战1」，但三段奖励全降格为「100 GP」
+        var consolationThree = Ocr(
+            W("前往比赛", 0.13, 0.25), W("赛程", 0.09, 0.38), W("下一场比赛", 0.40, 0.22),
+            W("挑战1", 0.40, 0.26), W("100 GP", 0.48, 0.70), W("100 GP", 0.66, 0.70), W("100 GP", 0.85, 0.70));
+        Assert.True(WeeklyBrain.IsActivityCompleted(consolationThree));
+        Assert.True(WeeklyBrain.IsActivityCompleted(Ocr(
+            W("100 GP", 0.48, 0.70), W("100 GP", 0.66, 0.70))));
+        // 正常高额 GP（10000 GP / 1,100 GP）或正式道具奖励不得误判为完成态
+        Assert.False(WeeklyBrain.IsActivityCompleted(Ocr(
+            W("10000 GP", 0.48, 0.70), W("1,100 GP", 0.66, 0.70), W("100 GP", 0.85, 0.70))));
+        Assert.False(WeeklyBrain.IsActivityCompleted(Ocr(
+            W("随机位置代币 ×1", 0.48, 0.70), W("选择技巧代币 ×20", 0.66, 0.70), W("随机加成代币 ×2", 0.85, 0.70))));
+        // 完成态主页即使被 YOLO 误检出一枚中部 btn_confirm，也不得抢判为 EntryPopup（防对着主页按 A 重开比赛）
+        var fakeConfirm = new[] { new YoloDetection("btn_confirm", 0, 0.85f, 0.45, 0.60, 0.12, 0.06) };
+        Assert.Equal(WkScreen.TeamEffortHome, WeeklyBrain.Classify(fakeConfirm, consolationThree));
+    }
+
+    [Fact]
+    public void DetectGreenCheck_HandlesWindowedTitleBarOffset()
+    {
+        const int W = 1282, H = 759;
+        var px = new byte[W * H * 4];
+        var frame = new FrameData(px, W, H, 0);
+        Assert.False(WeeklyBrain.DetectGreenCheck(frame, 0));
+
+        // 模拟带标题栏的窗口截图（绿勾落在 y=0.235，超出原 0.220 上限但在 0.265 内）
+        double right = 0.352;
+        int x0 = (int)((right - 0.045) * W), x1 = (int)((right - 0.015) * W);
+        int y0 = (int)(0.228 * H), y1 = (int)(0.248 * H);
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++)
+            {
+                int i = (y * W + x) * 4;
+                px[i] = 40; px[i + 1] = 200; px[i + 2] = 40; px[i + 3] = 255;
+            }
+        Assert.True(WeeklyBrain.DetectGreenCheck(frame, 0));
+        Assert.False(WeeklyBrain.DetectGreenCheck(frame, 1));
     }
 
     [Fact]

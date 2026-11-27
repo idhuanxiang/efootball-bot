@@ -370,7 +370,7 @@ public sealed class DatasetSampleWriter
             }
 
             var cursorMoves = edges
-                .Where(e => !string.IsNullOrWhiteSpace(e.FocusDirection))
+                .Where(e => e.FromPage == e.ToPage && !string.IsNullOrWhiteSpace(e.FocusDirection))
                 .GroupBy(e => (e.ToPage, e.InputAction, e.FocusDirection, Text: e.FocusedText ?? "-"))
                 .Select(g => (g.Key.ToPage, g.Key.InputAction, g.Key.FocusDirection, g.Key.Text, Count: g.Count()))
                 .OrderByDescending(x => x.Count)

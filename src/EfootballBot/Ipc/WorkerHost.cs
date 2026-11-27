@@ -224,6 +224,8 @@ public sealed class WorkerHost : IDisposable
                         EmitLog(msg.Level ?? "Info", msg.Text ?? "");
                         break;
                     case "stats":
+                        if (!string.IsNullOrEmpty(msg.Mode))
+                            _lastStats.ActiveMode = msg.Mode;
                         _lastStats.MatchesDone = msg.Matches;
                         _lastStats.KeyMatches = msg.KeyMatches;
                         _lastStats.PlayersMaxed = msg.PlayersMaxed;
@@ -562,6 +564,12 @@ public sealed class WorkerHost : IDisposable
 
     /// <summary>手动一键测试满级换人：Worker 置位引擎请求，回联赛主页无弹窗时立即巡检。</summary>
     public Task SendSwapTestAsync() => SendAsync(PipeProtocol.CmdSwapTest());
+
+    /// <summary>通知运行中的 Worker 重新加载磁盘配置并热更新引擎参数。</summary>
+    public Task SendReloadConfigAsync()
+        => _pipe is { IsConnected: true } && _scenarioRunning
+            ? SendAsync(PipeProtocol.CmdReloadConfig())
+            : Task.CompletedTask;
 
     /// <summary>枚举 \\.\pipe\ 判断 Worker 管道是否已存在（避免在服务器未监听时空连产生幽灵句柄）。</summary>
     private static bool PipeExists(string pipeName)

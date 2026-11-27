@@ -59,8 +59,13 @@ public sealed class Pad
     /// ★不能在这里 RebuildLinked：那样会造出新令牌让连按停不下来；
     ///   令牌只由 ResumeActions（恢复）重建。
     /// </summary>
+    private long _pauseEpoch;
+    /// <summary>单调暂停代次：每次 PauseActions 递增，供主循环区分"暂停→迅速恢复"引发的取消与真实异常。</summary>
+    public long PauseEpoch => Volatile.Read(ref _pauseEpoch);
+
     public void PauseActions()
     {
+        Interlocked.Increment(ref _pauseEpoch);
         lock (_ctsGate) _pauseCts?.Cancel(); // 不 Dispose：可能有异步动作正持有它的 Token
     }
 

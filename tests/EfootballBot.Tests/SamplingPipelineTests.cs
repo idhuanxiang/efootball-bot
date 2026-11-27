@@ -296,11 +296,44 @@ public sealed class SamplingPipelineTests
             var navMd = File.ReadAllText(Path.Combine(tmp, "navigation_graph.md"));
             Assert.Contains("Pad:A @ 「前往比赛」", navMd);
             Assert.Contains("## 3. 页内光标移动路径", navMd);
+            // Section 3 只收录同页光标移动（LeaguePage->LeaguePage），跨页切换（LeaguePage->MatchStartPage）不得混入
+            var sec3 = navMd.Split("## 3. 页内光标移动路径")[1];
+            Assert.Contains("`Pad:Down`", sec3);
+            Assert.DoesNotContain("`Pad:A`", sec3);
         }
         finally
         {
             if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);
         }
+    }
+
+    [Fact]
+    public void PadTakeoverBlockedException_StripCode_HandlesPrefix()
+    {
+        var raw = "启动失败：[PAD_TAKEOVER_BLOCKED] 手柄接管失败：请先拔掉物理手柄";
+        Assert.True(EfootballBot.Core.Input.PadTakeoverBlockedException.IsBlocked(raw));
+        Assert.Equal("启动失败： 手柄接管失败：请先拔掉物理手柄",
+            EfootballBot.Core.Input.PadTakeoverBlockedException.StripCode(raw));
+        Assert.DoesNotContain(EfootballBot.Core.Input.PadTakeoverBlockedException.Code,
+            EfootballBot.Core.Input.PadTakeoverBlockedException.StripCode(raw));
+    }
+
+    [Fact]
+    public void Pad_PauseEpoch_IncrementsMonotonicallyAcrossPauseResume()
+    {
+        var pad = new EfootballBot.Core.Input.Pad(
+            new EfootballBot.Core.Input.DryRunPad(null!),
+            new EfootballBot.Core.Config.TimingConfig());
+        long e0 = pad.PauseEpoch;
+        pad.PauseActions();
+        long e1 = pad.PauseEpoch;
+        pad.ResumeActions();
+        long e2 = pad.PauseEpoch;
+        pad.PauseActions();
+        long e3 = pad.PauseEpoch;
+        Assert.True(e1 > e0);
+        Assert.Equal(e1, e2);
+        Assert.True(e3 > e2);
     }
 
     private static void PaintRect(FrameData f, double x0, double y0, double x1, double y1, byte lum)

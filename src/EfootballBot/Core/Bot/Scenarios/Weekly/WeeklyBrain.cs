@@ -195,9 +195,10 @@ public static partial class WeeklyBrain
         // 判成 btn_confirm（实机 Titani 帧 0.91 @(0.12,0.93)），把干净主页误门控成
         // EntryPopup → A 在主页上=前往比赛直接开下一场（实机：终场后 8s 进下一场、
         // 完成态从未被评估）。弹窗按钮都在屏幕中部，底栏确认框不算弹窗证据。
-        bool popupOnTop =
+        bool ocrPopupOnTop =
             ocr.ContainsJoined("下一步") || ocr.ContainsJoined("确认") ||
-            ocr.FindButton("OK") is not null ||
+            ocr.FindButton("OK") is not null;
+        bool yoloConfirmOnTop =
             dets.Any(d => d.ClassName == "btn_confirm" && d.Score >= MatchBrain.MinScore && d.CenterY < 0.85);
         bool settingsTitle = ocr.Words.Any(w => w.CenterY < 0.2 && w.Text.Replace(" ", "").Contains("活动设置"));
         bool eventHomeBody = ocr.ContainsJoined("前往比赛") &&
@@ -205,6 +206,8 @@ public static partial class WeeklyBrain
              ocr.ContainsJoined("球员加分") || ocr.ContainsJoined("主要奖励"));
         // 阵容挑战主页（2026-11-19 用户实机）：另一套主页版式，没有积分栏，判据换固定 UI 词。
         bool teamEffortHomeBody = IsTeamEffortHome(ocr);
+        bool teamEffortCompleted = teamEffortHomeBody && IsActivityCompleted(ocr);
+        bool popupOnTop = ocrPopupOnTop || (yoloConfirmOnTop && !teamEffortCompleted);
         bool eventsListTabs = HasMatchTabRow(ocr);
         bool introMark = ocr.ContainsJoined("进入") && ocr.ContainsJoined("详情");
         // 介绍页不参与弹窗门控：其白色「进入」按钮本身会被 YOLO 判 btn_confirm，
@@ -346,12 +349,13 @@ public static partial class WeeklyBrain
     /// <summary>
     /// 活动列表卡右上角绿色勾（该活动主要奖励已完成，不进入）：勾形徽章固定在卡右上角。
     /// 实机 weekly_list_greencheck 帧：卡1 勾区 157 绿像素，未完成卡 0——阈值 50。
+    /// 纵向区间放宽至 0.150..0.265，兼容带 ~32-40px 窗口标题栏的截屏（实机 1282×759 绿勾在 y≈0.22..0.26）。
     /// </summary>
     public static bool DetectGreenCheck(FrameData frame, int slot)
     {
         if (slot < 0 || slot >= CardRightEdges.Length) return false;
         double right = CardRightEdges[slot];
-        return CountGreen(frame, right - 0.065, right - 0.005, 0.150, 0.220) >= 50;
+        return CountGreen(frame, right - 0.065, right - 0.005, 0.150, 0.265) >= 50;
     }
 
     /// <summary>

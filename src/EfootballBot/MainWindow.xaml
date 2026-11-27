@@ -2100,7 +2100,7 @@
                         </StackPanel>
                     </Border>
 
-                    <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                    <Border Style="{StaticResource Card}" Margin="0,0,0,12" Tag="Imp1">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                 <Rectangle Style="{StaticResource CardTitleBar}"/>
@@ -2525,10 +2525,12 @@
                                 <TextBlock Grid.Row="0" Grid.Column="1" Style="{StaticResource BulletText}" TextWrapping="Wrap"
                                            Text="统一保存为分辨率自适应的无损 PNG 与标准 YOLO/OCR 标注（data\samples\日期\），自动剔除黑屏过渡、静止重复帧以及过场右下角「跳过」反标 btn_back 样本，未知页自动聚类并生成提示词与路径导航图。"/>
                             </Grid>
-                            <CheckBox x:Name="ChkCollectSuspicious" Content="启用：挂机时自动采样高质量素材与未知页（可随时热生效）" Margin="0,12,0,0"/>
+                            <CheckBox x:Name="ChkCollectSuspicious" Content="启用：挂机时自动采样高质量素材与未知页（可随时热生效）" Margin="0,12,0,0"
+                                      Checked="ChkCollectSuspicious_Changed" Unchecked="ChkCollectSuspicious_Changed"/>
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <TextBlock Text="同类节流" Style="{StaticResource FieldLabel}" Width="104" VerticalAlignment="Center"/>
-                                <ComboBox x:Name="CmbSuspiciousThrottle" Width="110" Margin="10,0,0,0" SelectedIndex="2">
+                                <ComboBox x:Name="CmbSuspiciousThrottle" Width="110" Margin="10,0,0,0" SelectedIndex="2"
+                                          SelectionChanged="CmbSuspiciousThrottle_SelectionChanged">
                                     <ComboBoxItem Content="10 秒"/>
                                     <ComboBoxItem Content="30 秒"/>
                                     <ComboBoxItem Content="60 秒"/>

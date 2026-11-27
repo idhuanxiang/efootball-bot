@@ -677,6 +677,8 @@ public partial class MainWindow
     {
         var s = _workerHost?.LastStats;
         if (s is null) return;
+        if (!string.IsNullOrEmpty(s.ActiveMode) && s.ActiveMode != _activeMode)
+            _activeMode = s.ActiveMode;
         StMatches.Text = s.MatchesDone.ToString();
         StKey.Text = s.KeyMatches.ToString();
         StMaxed.Text = s.PlayersMaxed.ToString();

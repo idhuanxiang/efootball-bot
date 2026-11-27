@@ -15,9 +15,9 @@ public sealed class PadTakeoverBlockedException : InvalidOperationException
 
     public PadTakeoverBlockedException(string message) : base(message) { }
 
-    /// <summary>给用户的弹窗正文（去掉错误码前缀）。</summary>
+    /// <summary>给用户的弹窗正文（去掉错误码标记，兼容带前缀的消息）。</summary>
     public static string StripCode(string message)
-        => message.StartsWith(Code, StringComparison.Ordinal) ? message[Code.Length..].TrimStart() : message;
+        => message.Replace(Code, "", StringComparison.Ordinal).Replace("  ", " ").Trim();
 
     /// <summary>消息是否带本错误码。</summary>
     public static bool IsBlocked(string? message)

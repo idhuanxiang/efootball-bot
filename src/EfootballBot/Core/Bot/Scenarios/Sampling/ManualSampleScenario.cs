@@ -147,6 +147,8 @@ public sealed class ManualSampleScenario : IScenario, IModuleLifecycle
         string targetPageId = decision.PageId;
         string? transitionDesc = null;
         bool pageChanged = _currentPageId is not null && !string.Equals(_currentPageId, targetPageId, StringComparison.Ordinal);
+        // 跨页切换本身会造成全屏亮度网格剧变，不能把跨页帧算成页内光标移动
+        var effectiveFocusShift = pageChanged ? new FocusShiftResult(false, 0, 0, 0, 0, "", null, 0) : focusShift;
 
         if (_pendingAction is { } pending)
         {
@@ -157,8 +159,8 @@ public sealed class ManualSampleScenario : IScenario, IModuleLifecycle
             transitionDesc = $"{_currentPageId} --[OCR/Auto]--> {targetPageId}";
         }
 
-        string sampleNote = focusShift.Moved
-            ? $"光标移动({focusShift.Direction}){(focusShift.FocusedText is { } ft ? $"→「{ft}」" : "")}"
+        string sampleNote = effectiveFocusShift.Moved
+            ? $"光标移动({effectiveFocusShift.Direction}){(effectiveFocusShift.FocusedText is { } ft ? $"→「{ft}」" : "")}"
             : (_pendingAction is { } pa
                 ? $"操作 {pa.ActionLabel} 后 OCR 自动采样（{decision.Reason}）"
                 : $"OCR 识别自动采样（{decision.Reason}）");
@@ -173,7 +175,7 @@ public sealed class ManualSampleScenario : IScenario, IModuleLifecycle
             pageTagOverride: decision.PageTagOverride,
             transitionSummary: transitionDesc,
             note: sampleNote,
-            focusShift: focusShift);
+            focusShift: effectiveFocusShift);
 
         if (res.Saved)
         {
@@ -182,23 +184,30 @@ public sealed class ManualSampleScenario : IScenario, IModuleLifecycle
             if (transitionDesc is not null)
             {
                 if (_pendingAction is { } p)
-                    _engine.SampleWriter.RecordTransition(p.FromPage, p.ActionLabel, res.PageId, screen == MatchScreen.Unknown, obs.Frame.Width, obs.Frame.Height, focusShift);
+                {
+                    _engine.SampleWriter.RecordTransition(p.FromPage, p.ActionLabel, res.PageId, screen == MatchScreen.Unknown, obs.Frame.Width, obs.Frame.Height, effectiveFocusShift);
+                    // Stage 1 已成功落盘并记录跳转边，立即消费掉本次挂起操作，避免 Stage 2 重复采样与伪造二次跳转
+                    _pendingAction = null;
+                    _followUpStage = 0;
+                }
                 else if (_currentPageId is not null)
-                    _engine.SampleWriter.RecordTransition(_currentPageId, "OCR/Auto", res.PageId, screen == MatchScreen.Unknown, obs.Frame.Width, obs.Frame.Height, focusShift);
+                {
+                    _engine.SampleWriter.RecordTransition(_currentPageId, "OCR/Auto", res.PageId, screen == MatchScreen.Unknown, obs.Frame.Width, obs.Frame.Height, effectiveFocusShift);
+                }
             }
-            else if (focusShift.Moved && !pageChanged)
+            else if (effectiveFocusShift.Moved && !pageChanged)
             {
-                _engine.SampleWriter.RecordTransition(res.PageId, $"Cursor:{focusShift.Direction}", res.PageId, screen == MatchScreen.Unknown, obs.Frame.Width, obs.Frame.Height, focusShift);
+                _engine.SampleWriter.RecordTransition(res.PageId, $"Cursor:{effectiveFocusShift.Direction}", res.PageId, screen == MatchScreen.Unknown, obs.Frame.Width, obs.Frame.Height, effectiveFocusShift);
             }
 
             if (res.Bucket == "unknown")
             {
                 _log($"[手动采样] OCR 发现未知页 {res.PageId}（{decision.Reason}，{obs.Frame.Width}x{obs.Frame.Height}），已生成提示词与无损样本（累计 {_engine.SampleWriter.SavedCount} 帧）", LogLevel.Info);
             }
-            else if (focusShift.Moved)
+            else if (effectiveFocusShift.Moved)
             {
-                string focusDesc = focusShift.FocusedText is { } ftxt ? $"「{ftxt}」" : $"({focusShift.NewX:F2},{focusShift.NewY:F2})";
-                _log($"[手动采样] 光标移动({focusShift.Direction}) → {focusDesc}，已采样 [{res.Bucket}] {res.PageId}（累计 {_engine.SampleWriter.SavedCount} 帧）", LogLevel.Info);
+                string focusDesc = effectiveFocusShift.FocusedText is { } ftxt ? $"「{ftxt}」" : $"({effectiveFocusShift.NewX:F2},{effectiveFocusShift.NewY:F2})";
+                _log($"[手动采样] 光标移动({effectiveFocusShift.Direction}) → {focusDesc}，已采样 [{res.Bucket}] {res.PageId}（累计 {_engine.SampleWriter.SavedCount} 帧）", LogLevel.Info);
             }
             else
             {
@@ -206,8 +215,8 @@ public sealed class ManualSampleScenario : IScenario, IModuleLifecycle
             }
         }
 
-        // 若页面已发生有效切换且不在等待下一拍落地，则推进当前页状态
-        if (res.Saved || pageChanged)
+        // 仅在样本保留，或未落盘但未触发过滤（非黑屏/反标过滤）时推进当前页，防止 filtered 返回的 "Unknown" 污染当前页状态
+        if (res.Saved || (pageChanged && res.Bucket != "filtered"))
             _currentPageId = res.PageId;
 
         if (_followUpStage == 0 && _pendingAction is { } done && now - done.Tick >= 1400)
