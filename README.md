@@ -2,7 +2,7 @@
 
 > 为实况足球（eFootball）端游打造的自动化挂机工具 —— 国际服 / 国服双支持：自动比赛、自动领奖、自动换人、自动切活动，解放双手。
 
-![version](https://img.shields.io/badge/version-9.4.0-2ea44f)
+![version](https://img.shields.io/badge/version-9.4.1-2ea44f)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078d4)
 ![runtime](https://img.shields.io/badge/.NET-10%20%E8%87%AA%E5%B8%A6%E8%BF%90%E8%A1%8C%E6%97%B6-512bd4)
 ![license](https://img.shields.io/badge/license-%E5%85%8D%E8%B4%B9%E4%B8%AA%E4%BA%BA%E4%BD%BF%E7%94%A8-lightgrey)
@@ -162,6 +162,7 @@
 | **全局热键与拟人节奏** | 按需挂载低级钩子（游戏全屏前台稳定响应暂停/终止，支持丢失抬起键自愈）；按键间隔抖动 + 随机休息 + 作息调度 |
 | **统一操作与跨模式切换** | 开始 → 一键结束 / 暂停（再点继续）/ 发现问题手动停止（自动截图 + 打包反馈）；运行中其余挂机模式按钮变为「切换」，支持免二次弹窗一键切换模式 |
 | **单机多开隔离** | 每个实例独立配置与锁，可同时跑两份互不干扰 |
+| **预览与样本存储** | 实时预览帧走进程间共享内存环（管道只递序号，不再传 JPEG/base64）；自动采样默认单日 4000 帧上限，到限停写并保留已有样本，长期挂机不会把磁盘吃满（`Learning.MaxFramesPerDay`，0 = 不限） |
 | **现代双世界界面** | 支持 Windows 11 Fluent 与 Apple 黑玻璃（Glass）双视觉世界 × 暗色/浅色/深蓝 6 套配色，支持即时预览与回滚；响应式三栏布局、2×2 实时统计，全日志自动带 `[HH:mm:ss]` 时间戳与 `[分类]` 前缀，「仅关键流程」同步保留警告/错误、报错堆栈落盘且界面仅提示摘要 |
 
 ---
