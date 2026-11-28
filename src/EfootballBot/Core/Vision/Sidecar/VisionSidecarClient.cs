@@ -92,6 +92,10 @@ public sealed class VisionSidecarClient : IAsyncDisposable
         psi.ArgumentList.Add(pipeName);
         psi.ArgumentList.Add("--parent");
         psi.ArgumentList.Add(Environment.ProcessId.ToString());
+        // auto/dml 都传 dml：sidecar 内 DML 初始化失败会自行回落 CPU（见 infer::commit_session）。
+        var ep = string.IsNullOrWhiteSpace(cfg.Ep) ? "dml" : cfg.Ep.Trim().ToLowerInvariant();
+        psi.ArgumentList.Add("--ep");
+        psi.ArgumentList.Add(ep == "cpu" ? "cpu" : "dml");
         if (cfg.Verbose) psi.ArgumentList.Add("--console");
 
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };

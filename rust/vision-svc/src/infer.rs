@@ -6,7 +6,7 @@
 use std::time::Instant;
 
 use ort::session::Session;
-use ort::value::Tensor;
+use ort::value::{Tensor, TensorRef};
 
 use crate::ocr::{ctc_decode, db_postprocess, det_preprocess, load_dict, rec_preprocess, DetBox, Word};
 use crate::preproc::{letterbox_rgb, rgb_to_chw_f32, Bgra};
@@ -28,6 +28,10 @@ pub struct YoloEngine {
     pub classes: Vec<String>,
     input_w: u32,
     input_h: u32,
+    /// 预处理缓冲：逐帧复用，避免每帧重建 1.2MB(RGB24) + 4.9MB(CHW)，
+    /// 与 C# 侧 `YoloDetector` 的预分配缓冲保持同一思路。
+    rgb: Vec<u8>,
+    chw: Vec<f32>,
     pub last_ms: f64,
     pub last_dims: Vec<usize>,
     pub last_max_score: f32,
@@ -35,7 +39,7 @@ pub struct YoloEngine {
 
 impl YoloEngine {
     pub fn new(model: &str, classes_txt: Option<&str>, threads: usize, ep: Ep) -> Result<YoloEngine, Box<dyn std::error::Error>> {
-        let session = builder(ep, threads)?.commit_from_file(model)?;
+        let session = commit_session(ep, threads, model)?;
         let classes = match classes_txt.and_then(|p| std::fs::read_to_string(p).ok()) {
             Some(t) => t.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect(),
             None => Vec::new(),
@@ -45,6 +49,8 @@ impl YoloEngine {
             classes,
             input_w: 640,
             input_h: 640,
+            rgb: Vec::new(),
+            chw: Vec::new(),
             last_ms: 0.0,
             last_dims: Vec::new(),
             last_max_score: 0.0,
@@ -54,20 +60,26 @@ impl YoloEngine {
     pub fn detect(&mut self, img: &Bgra<'_>, score_thresh: f32, iou_thresh: f32) -> Result<Vec<Detect>, Box<dyn std::error::Error>> {
         let t0 = Instant::now();
         let (iw, ih) = (self.input_w, self.input_h);
-        let mut rgb = Vec::new();
+        let mut rgb = std::mem::take(&mut self.rgb);
         let (scale, ox, oy, nw, nh) = letterbox_rgb(img, iw, ih, 114, &mut rgb);
-        let mut chw = vec![0f32; (iw * ih * 3) as usize];
+        let mut chw = std::mem::take(&mut self.chw);
+        let chw_len = (iw * ih * 3) as usize;
+        if chw.len() != chw_len {
+            chw.resize(chw_len, 0.0);
+        }
         rgb_to_chw_f32(&rgb, iw, ih, &mut chw);
 
-        let input = Tensor::<f32>::from_array(([1usize, 3, ih as usize, iw as usize], chw))?;
-        let outputs = self.session.run(ort::inputs![input])?;
-        let (shape, data) = outputs[0].try_extract_tensor::<f32>()?;
-        let dims: Vec<usize> = shape.iter().map(|d| *d as usize).collect();
-
-        self.last_dims = dims.clone();
-        self.last_max_score = data.iter().copied().filter(|v| v.is_finite()).fold(f32::NEG_INFINITY, f32::max);
-        // 两种布局：[1, N, 4+nc] / [1, 4+nc, N] / 端到端 [1, N, 6]
-        let mut dets = Vec::new();
+        // 借用张量输入：chw 就地复用，不再交给 ORT 所有权（省 4.9MB/帧的分配与拷贝）。
+        let (dims, max_score, dets) = {
+            let input = TensorRef::<f32>::from_array_view(
+                ([1usize, 3, ih as usize, iw as usize], &chw[..]),
+            )?;
+            let outputs = self.session.run(ort::inputs![input])?;
+            let (shape, data) = outputs[0].try_extract_tensor::<f32>()?;
+            let dims: Vec<usize> = shape.iter().map(|d| *d as usize).collect();
+            let max_score = data.iter().copied().filter(|v| v.is_finite()).fold(f32::NEG_INFINITY, f32::max);
+            // 两种布局：[1, N, 4+nc] / [1, 4+nc, N] / 端到端 [1, N, 6]
+            let mut dets = Vec::new();
         if dims.len() == 3 {
             let (d1, d2) = (dims[1], dims[2]);
             if d2 == 6 {
@@ -109,6 +121,12 @@ impl YoloEngine {
                 let _ = (nw, nh);
             }
         }
+            (dims, max_score, dets)
+        };
+        self.rgb = rgb;
+        self.chw = chw;
+        self.last_dims = dims;
+        self.last_max_score = max_score;
         self.last_ms = t0.elapsed().as_secs_f64() * 1000.0;
         Ok(nms(dets, iou_thresh))
     }
@@ -219,7 +237,8 @@ pub enum Ep {
 impl Ep {
     pub fn from_name(s: &str) -> Ep {
         match s {
-            "dml" | "directml" => Ep::Dml,
+            // "auto"/"gpu"：先试 DirectML，失败由 commit_session 回落 CPU。
+            "dml" | "directml" | "auto" | "gpu" => Ep::Dml,
             _ => Ep::Cpu,
         }
     }
@@ -239,6 +258,26 @@ fn builder(ep: Ep, threads: usize) -> Result<ort::session::builder::SessionBuild
     }
 }
 
+/// 建会话：DML 不可用（缺 DirectML.dll、驱动/显卡不支持）时**回落 CPU**，
+/// 以免 GUI 一旦传 `--ep dml` 整个推理能力就不可用。
+fn commit_session(ep: Ep, threads: usize, path: &str) -> Result<Session, Box<dyn std::error::Error>> {
+    // DML 的失败点有两个：注册 EP（builder）与建会话（commit），都要能回落。
+    let first = match builder(ep, threads) {
+        Ok(mut b) => b
+            .commit_from_file(path)
+            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>),
+        Err(e) => Err(e),
+    };
+    match first {
+        Ok(s) => Ok(s),
+        Err(e) if ep == Ep::Dml => {
+            eprintln!("[vision] DirectML 初始化失败（{e}），回落 CPU: {path}");
+            Ok(builder(Ep::Cpu, threads)?.commit_from_file(path)?)
+        }
+        Err(e) => Err(e),
+    }
+}
+
 pub struct OcrEngine {
     det: Session,
     rec: Session,
@@ -253,8 +292,8 @@ pub struct OcrEngine {
 
 impl OcrEngine {
     pub fn new(paths: &ModelPaths, det_limit: u32, threads: usize, ep: Ep) -> Result<OcrEngine, Box<dyn std::error::Error>> {
-        let det = builder(ep, threads)?.commit_from_file(&paths.det)?;
-        let rec = builder(ep, threads)?.commit_from_file(&paths.rec)?;
+        let det = commit_session(ep, threads, &paths.det)?;
+        let rec = commit_session(ep, threads, &paths.rec)?;
         let dict = load_dict(&paths.dict)?;
         Ok(OcrEngine {
             det,

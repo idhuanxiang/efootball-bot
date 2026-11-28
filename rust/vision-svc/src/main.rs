@@ -412,6 +412,14 @@ fn ocr_threads() -> usize {
     8
 }
 
+/// YOLO 的线程数单独定：模型小（2.4M 参数），线程开满反而因 SMT 过度订阅变慢；
+/// 这里按物理核数（逻辑核 / 2）取 2~8。
+fn yolo_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| (n.get() / 2).clamp(2, 8))
+        .unwrap_or(4)
+}
+
 fn ensure_ort_dylib() {
     if std::env::var_os("ORT_DYLIB_PATH").is_some() {
         return;
@@ -907,7 +915,7 @@ fn serve(args: &Args, name: String) -> Result<(), Box<dyn std::error::Error>> {
                                             continue;
                                         }
                                     };
-                                    match infer::YoloEngine::new(&model, paths.classes.as_deref(), ocr_threads(), infer::Ep::from_name(&args.ep)) {
+                                    match infer::YoloEngine::new(&model, paths.classes.as_deref(), yolo_threads(), infer::Ep::from_name(&args.ep)) {
                                         Ok(e) => *y = Some(e),
                                         Err(e) => {
                                             conn.send(&Msg::err(id, format!("YOLO 加载失败: {e}")).to_line())?;

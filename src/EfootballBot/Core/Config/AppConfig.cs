@@ -676,9 +676,13 @@ public sealed class VisionSidecarConfig
     /// <summary>是否用 sidecar 接管画面捕获（关闭则只用它的推理能力）。</summary>
     public bool UseForCapture { get; set; } = true;
 
-    /// <summary>是否用 sidecar 跑 YOLO 检测。实测 CPU 下侧车比进程内慢（313ms vs 131ms），默认关；
-    /// 等 GPU EP 可用后再打开才有意义。</summary>
+    /// <summary>是否用 sidecar 跑 YOLO 检测。默认关：先用 <c>tools\VisionProbe --yolo-ab</c>
+    /// 跑「进程内/侧车 × GPU/CPU」四组合对照，确认本机不吃亏再打开。</summary>
     public bool UseForYolo { get; set; } = false;
+
+    /// <summary>推理执行后端："cpu"（默认，行为与旧版一致）/ "auto"（优先 DirectML，失败回落 CPU）/ "dml"。
+    /// 先用 <c>tools\VisionProbe --yolo-ab</c> 验证本机 DML 确实更快，再切 auto/dml。</summary>
+    public string Ep { get; set; } = "cpu";
 
     /// <summary>把 sidecar 的 stdout/stderr 也打进日志（排障用）。</summary>
     public bool Verbose { get; set; } = false;

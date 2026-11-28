@@ -281,34 +281,78 @@ static class YoloAb
     public static async Task<int> RunAsync(string png)
     {
         using var bmp = SkiaSharp.SKBitmap.Decode(png);
+        if (bmp is null) { Console.WriteLine($"解码失败：{png}"); return 2; }
         var info = new SkiaSharp.SKImageInfo(bmp.Width, bmp.Height, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Unpremul);
         using var conv = new SkiaSharp.SKBitmap(info);
         bmp.CopyTo(conv, SkiaSharp.SKColorType.Bgra8888);
         var frame = new FrameData(conv.Bytes, bmp.Width, bmp.Height, 0);
-        Console.WriteLine($"帧 {frame.Width}x{frame.Height}");
+        Console.WriteLine($"帧 {frame.Width}x{frame.Height}（每格 5 次平均，含预处理与 IPC）");
 
-        // 进程内
         var model = EfootballBot.Core.System.AppPaths.FindBundledFile("models", "yolo", "yolo26n.onnx");
         if (model is null) { Console.WriteLine("找不到 yolo 模型"); return 2; }
         var classes = EfootballBot.Core.System.AppPaths.FindBundledFile("models", "yolo", "classes.txt");
-        var factory = new EfootballBot.Core.Inference.OnnxSessionFactory(null);
-        using var det = new EfootballBot.Core.Vision.Yolo.YoloDetector(model, classes, factory, 0.25f, 0.45f);
-        for (var i = 0; i < 3; i++) det.Detect(frame, default);
-        var sw = Stopwatch.StartNew();
-        for (var i = 0; i < 5; i++) det.Detect(frame, default);
-        sw.Stop();
-        Console.WriteLine($"进程内 YOLO: {sw.Elapsed.TotalMilliseconds / 5:F1} ms/帧  标签={det.ModelLabel}");
 
-        // 侧车
+        var rows = new List<(string Name, string Ms, string Info)>();
+
+        // ①② 进程内：null = Auto（CUDA→DML→CPU）；"CPU" = 强制 CPU。
+        foreach (var (name, pref) in new (string, string?)[] { ("进程内 GPU(Auto)", null), ("进程内 CPU", "CPU") })
+        {
+            try
+            {
+                var factory = new EfootballBot.Core.Inference.OnnxSessionFactory(pref);
+                using var det = new EfootballBot.Core.Vision.Yolo.YoloDetector(model, classes, factory, 0.25f, 0.45f);
+                for (var i = 0; i < 3; i++) det.Detect(frame, default);
+                var sw = Stopwatch.StartNew();
+                for (var i = 0; i < 5; i++) det.Detect(frame, default);
+                sw.Stop();
+                rows.Add((name, $"{sw.Elapsed.TotalMilliseconds / 5:F1}",
+                    $"EP={factory.ActiveProvider ?? "?"}  {det.ModelLabel}"));
+            }
+            catch (Exception ex)
+            {
+                rows.Add((name, "失败", ex.Message));
+            }
+        }
+
+        // ③④ 侧车：cpu / dml（dml 失败时 sidecar 内部回落 CPU，stderr 会写 [vision] 行）。
         var exe = VisionSidecarLocator.Locate(null);
-        if (exe is null) { Console.WriteLine("未找到 vision-svc.exe"); return 0; }
-        var cfg = new EfootballBot.Core.Config.VisionSidecarConfig { ExePath = exe, Verbose = true };
-        await using var client = await VisionSidecarClient.StartAsync(cfg, hwnd: 0, width: 1920, height: 1080);
-        await client.DetectAsync(frame); // 预热（含模型加载）
-        var sw2 = Stopwatch.StartNew();
-        for (var i = 0; i < 5; i++) await client.DetectAsync(frame);
-        sw2.Stop();
-        Console.WriteLine($"侧车   YOLO: {sw2.Elapsed.TotalMilliseconds / 5:F1} ms/帧  {client.LastDetectInfo}");
+        if (exe is null)
+        {
+            rows.Add(("侧车 CPU", "跳过", "未找到 vision-svc.exe"));
+            rows.Add(("侧车 DML", "跳过", "未找到 vision-svc.exe"));
+        }
+        else
+        {
+            foreach (var ep in new[] { "cpu", "dml" })
+            {
+                try
+                {
+                    var cfg = new EfootballBot.Core.Config.VisionSidecarConfig { ExePath = exe, Verbose = true, Ep = ep };
+                    await using var client = await VisionSidecarClient.StartAsync(cfg, hwnd: 0, width: 1920, height: 1080);
+                    await client.DetectAsync(frame); // 预热（含模型加载）
+                    var sw = Stopwatch.StartNew();
+                    for (var i = 0; i < 5; i++) await client.DetectAsync(frame);
+                    sw.Stop();
+                    var epLine = client.StderrSnapshot
+                        .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                        .LastOrDefault(l => l.Contains("[vision]", StringComparison.Ordinal)) ?? "";
+                    rows.Add(($"侧车 {ep.ToUpperInvariant()}", $"{sw.Elapsed.TotalMilliseconds / 5:F1}",
+                        $"{client.LastDetectInfo} {epLine}".Trim()));
+                    await client.SendAsync(VisionMsg.CmdOf("stop"), 3000);
+                }
+                catch (Exception ex)
+                {
+                    rows.Add(($"侧车 {ep.ToUpperInvariant()}", "失败", ex.Message));
+                }
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("| 组合 | ms/帧 | 说明 |");
+        Console.WriteLine("|---|---|---|");
+        foreach (var r in rows) Console.WriteLine($"| {r.Name} | {r.Ms} | {r.Info} |");
+        Console.WriteLine();
+        Console.WriteLine("判读：进程内 CPU ≈ 侧车 CPU → 慢在 CPU 而非 Rust；侧车 DML ≈ 进程内 GPU → 主因是 EP。");
         return 0;
     }
 }
