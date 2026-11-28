@@ -1,0 +1,35 @@
+name: Watch Upstream Repo
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      force_notify:
+        description: '即使上游无变化也输出状态评论'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check upstream repository updates
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        shell: bash
+        run: |
+          ARGS=()
+          if [ "${{ inputs.force_notify }}" = "true" ]; then
+            ARGS+=(--force-notify)
+          fi
+          python3 .github/scripts/watch_upstream.py "${ARGS[@]}"

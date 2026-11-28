@@ -1,0 +1,58 @@
+name: Sync Upstream Issue
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '指定同步的标签，如 v9.4.0；留空自动取 CHANGELOG.md 最新版本'
+        required: false
+        type: string
+      dry_run:
+        description: '仅预览正文变更，不实际 PATCH 上游 Issue'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve tag and commit SHA
+        id: meta
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ] && [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          if [ -z "$TAG" ]; then
+            TAG="$(grep -m1 -oE '^## v[^[:space:]]+' CHANGELOG.md | sed 's/^## //')"
+          fi
+          if [ -z "$TAG" ]; then
+            echo "::error::无法解析待同步的版本标签"
+            exit 1
+          fi
+          SHA="$(git rev-parse HEAD)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Sync CHANGELOG to upstream Issue #10
+        env:
+          UPSTREAM_SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          ARGS=(--tag "${{ steps.meta.outputs.tag }}" --sha "${{ steps.meta.outputs.sha }}")
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+          python3 .github/scripts/sync_upstream_issue.py "${ARGS[@]}"
