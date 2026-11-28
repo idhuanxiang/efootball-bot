@@ -53,6 +53,8 @@ public sealed class DatasetSampleWriter
     private readonly List<PageTransitionRecord> _transitions = new();
     private readonly Dictionary<string, (string Summary, int Count)> _unknownSummaries = new(StringComparer.Ordinal);
     private bool _classesWritten;
+    /// <summary>上一次落盘用的毫秒时间戳：同一毫秒内的连续采样靠它顺延，避免同名 PNG 互相覆盖。</summary>
+    private long _lastStampMs;
 
     public int SavedCount { get; private set; }
     public int FilteredBlackCount { get; private set; }
@@ -211,7 +213,16 @@ public sealed class DatasetSampleWriter
         var pixels = (byte[])frame.Bgra.Clone();
         int width = frame.Width;
         int height = frame.Height;
-        string stamp = DateTime.Now.ToString("HHmmss_fff");
+        // 文件名靠毫秒戳区分：批量回放或并发调用时同一毫秒可能连落两帧，同名 PNG 会互相覆盖
+        // （写盘是异步的，存在性检查不可靠）。这里让戳在进程内严格单调递增，撞了就顺延 1ms。
+        string stamp;
+        lock (_gate)
+        {
+            long nowMs = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
+            if (nowMs <= _lastStampMs) nowMs = _lastStampMs + 1;
+            _lastStampMs = nowMs;
+            stamp = new DateTime(nowMs * TimeSpan.TicksPerMillisecond).ToString("HHmmss_fff");
+        }
         string fileStem = $"{stamp}_{pageId}_{width}x{height}";
         string targetDir = Path.Combine(_rootDir, subDir);
         string imgDir = bucket is "unknown" ? targetDir : Path.Combine(targetDir, "images");
