@@ -219,6 +219,35 @@ public sealed class SamplingPipelineTests
     }
 
     [Fact]
+    public void DatasetSampleWriter_RapidFramesInSameMillisecond_DoNotOverwriteEachOther()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "efootball_sample_rapid_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // 批量回放/并发采样时同一毫秒可能连落多帧：文件名只靠毫秒戳区分会撞名覆盖，
+            // 表现为 SavedCount 正常但磁盘上少帧（CI 全量跑时真实出现过 3 帧只剩 1 张）。
+            // 帧用小尺寸 + 连写 40 帧，保证在本机也能落进同一毫秒，稳定覆盖这条路径。
+            var writer = new DatasetSampleWriter(tempRoot);
+            var frame = MakeFrame(320, 180, 0, 0, 0, gradient: true);
+            const int frames = 40;
+            for (int i = 0; i < frames; i++)
+            {
+                var res = writer.TryRecordFrame(frame, MakeOcr(($"连续页{i}", 0.2, 0.1, 0.9f)),
+                    Array.Empty<YoloDetection>(), MatchScreen.MainMenu, false, "manual");
+                Assert.True(res.Saved);
+            }
+
+            writer.Flush(15000);
+            Assert.Equal(frames, writer.SavedCount);
+            Assert.Equal(frames, Directory.GetFiles(tempRoot, "*.png", SearchOption.AllDirectories).Length);
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void BotModuleCatalog_RegistersManualSamplingWithoutGamepadTakeover()
     {
         var intl = BotModuleCatalog.Find(ModuleIds.IntlManualSample);
