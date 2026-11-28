@@ -407,7 +407,7 @@ public sealed class BotEngine : IDisposable
         _requiresGamepad = needsPad;
         Stats.ActiveMode = mode;
         bool cn = BotModuleCatalog.IsCn(mode);
-        SampleWriter = new DatasetSampleWriter();
+        SampleWriter = new DatasetSampleWriter(maxFramesPerDay: _cfg.Learning.MaxFramesPerDay);
         // 注册表自检：结构性错误（重复 id / 场景缺工厂 / 接力目标跨服）只会在运行期表现为
         // 「点了没反应」，所以每次启动都写一条日志留证（正常时一条都不打）
         if (BotModuleCatalog.SelfCheck() is { Count: > 0 } registryProblems)

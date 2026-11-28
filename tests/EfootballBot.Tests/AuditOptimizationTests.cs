@@ -1,5 +1,7 @@
 using EfootballBot.Core.Bot.Scenarios.MyLeague;
 using EfootballBot.Core.Bot.Scenarios.Weekly;
+using EfootballBot.Core.Vision.Sidecar;
+using EfootballBot.Ipc;
 using EfootballBot.Core.Capture;
 using EfootballBot.Core.Observation;
 using EfootballBot.Core.Vision;
@@ -207,5 +209,39 @@ public class AuditOptimizationTests
         var mask = new[] { new OcrMaskRect(0.24, 0.0, 0.76, 0.10) };
         Assert.Equal(ObservationService.HashBgra(f1, mask), ObservationService.HashBgra(f2, mask));
         Assert.NotEqual(ObservationService.HashBgra(f1, mask), ObservationService.HashBgra(f3, mask));
+    }
+
+
+    [Fact]
+    public void PreviewRing_RoundTrip_ThroughSharedMemory()
+    {
+        string name = $@"Local\EfootballBot.PreviewTest-{Guid.NewGuid():N}";
+        using var writer = new UploadFrameRing(name, 640, 360, slots: 2);
+        var bgra = new byte[640 * 360 * 4];
+        for (int i = 0; i < bgra.Length; i += 4) { bgra[i] = 0x14; bgra[i + 1] = 0x0F; bgra[i + 2] = 0x0B; bgra[i + 3] = 0xFF; }
+        long seq = writer.Publish(new FrameData(bgra, 640, 360, 1234));
+        Assert.True(seq > 0 && seq % 2 == 0);
+
+        using var reader = SharedFrameRing.Open(name);
+        Assert.True(reader.TryReadLatest(out var frame));
+        Assert.Equal(640, frame.Width);
+        Assert.Equal(360, frame.Height);
+        Assert.True(frame.TimestampMs > 0); // 写入侧用当前时间做发布时间，不沿用帧源时间戳
+        Assert.Equal(0x14, frame.Bgra[0]);
+        Assert.False(reader.TryReadLatest(out _)); // 无新帧不重复吐旧帧
+    }
+
+    [Fact]
+    public void PreviewProtocol_RingAndFrame_RoundTrip()
+    {
+        var ring = PipeProtocol.TryDeserialize(PipeProtocol.Serialize(PipeProtocol.EvPreviewRing("Local\\Test")));
+        Assert.NotNull(ring);
+        Assert.Equal("previewRing", ring!.Ev);
+        Assert.Equal("Local\\Test", ring.Text);
+
+        var frame = PipeProtocol.TryDeserialize(PipeProtocol.Serialize(PipeProtocol.EvPreviewFrame(2468)));
+        Assert.NotNull(frame);
+        Assert.Equal("previewFrame", frame!.Ev);
+        Assert.Equal(2468, frame.Seq);
     }
 }

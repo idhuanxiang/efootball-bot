@@ -99,7 +99,7 @@ public partial class MainWindow
     }
 
     /// <summary>
-    /// 预览帧由 Worker 推送 PNG base64 解码显示（ShowPreviewPng）。
+    /// 预览帧由 Worker 写入共享帧环、GUI 侧读取显示（ShowPreviewFrame）。
     /// 本定时器兼作看门狗：开关挂机会重建 Worker 进程，新进程的预览推送是停着的——
     /// 若开启状态下超过 4 秒没收到帧，自动重发开启命令，不再需要手动重启预览。
     /// </summary>

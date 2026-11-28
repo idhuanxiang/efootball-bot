@@ -68,6 +68,19 @@ public partial class MainWindow
     private static int AutoSwapEveryValue(int index) =>
         index >= 0 && index < AutoSwapEveryPresets.Length ? AutoSwapEveryPresets[index] : 5;
 
+    /// <summary>把任意数值映射到最近的预设档位索引；等距时取靠前（数值较小）的那档。</summary>
+    private static int NearestPresetIndex(int[] presets, int value)
+    {
+        int best = 0;
+        long min = long.MaxValue;
+        for (int i = 0; i < presets.Length; i++)
+        {
+            long d = Math.Abs((long)presets[i] - value);
+            if (d < min) { min = d; best = i; }
+        }
+        return best;
+    }
+
     /// <summary>把计数值映射到下拉/自定义输入框（非预设值进自定义并回填数字）。</summary>
     private static void LoadStopAfterUi(ComboBox cmb, TextBox txt, int value, int[]? presets = null)
     {
@@ -223,15 +236,13 @@ public partial class MainWindow
             ? "未找到 vision-svc.exe（rust\build.bat 构建后放到程序目录）"
             : "已就绪";
 
-        // OCR 频率
+        // OCR 频率 / 预览间隔：配置值可能是手改的（不在预设档位里）。原来匹配不到就什么都不设，
+        // 界面停在上一次的选中项上——用户以为生效的是显示的那个值。改为落到最接近的档位。
         int[] ocrMsValues = { 500, 900, 1500, 2500, 5000 };
-        for (int i = 0; i < ocrMsValues.Length; i++)
-            if (_cfg.Timing.OcrIntervalMs == ocrMsValues[i]) { CmbOcrInterval.SelectedIndex = i; break; }
+        CmbOcrInterval.SelectedIndex = NearestPresetIndex(ocrMsValues, _cfg.Timing.OcrIntervalMs);
 
-        // 预览间隔
         int[] previewMsValues = { 150, 300, 500, 1000, 2000 };
-        for (int i = 0; i < previewMsValues.Length; i++)
-            if (_cfg.PreviewIntervalMs == previewMsValues[i]) { CmbPreviewInterval.SelectedIndex = i; break; }
+        CmbPreviewInterval.SelectedIndex = NearestPresetIndex(previewMsValues, _cfg.PreviewIntervalMs);
 
         // 挂机节奏：加载期间屏蔽 TextChanged，避免逐框赋值的中间态触发校验/保存
         TxtIdleMin.Text = FormatIdleSeconds(_cfg.Timing.IdleTapMinMs);

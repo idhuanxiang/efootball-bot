@@ -162,6 +162,63 @@ public sealed class SamplingPipelineTests
     }
 
     [Fact]
+    public void DatasetSampleWriter_StopsAtDailyQuota_AndKeepsExistingFrames()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "efootball_sample_quota_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var writer = new DatasetSampleWriter(tempRoot, maxFramesPerDay: 2);
+            var frame = MakeFrame(1280, 720, 0, 0, 0, gradient: true);
+
+            // 三帧同页面但 OCR 文本不同，避开重复帧过滤，让配额成为唯一的拦截条件
+            var r1 = writer.TryRecordFrame(frame, MakeOcr(("第一页", 0.2, 0.1, 0.9f)),
+                Array.Empty<YoloDetection>(), MatchScreen.MainMenu, false, "manual");
+            var r2 = writer.TryRecordFrame(frame, MakeOcr(("第二页", 0.2, 0.1, 0.9f)),
+                Array.Empty<YoloDetection>(), MatchScreen.MainMenu, false, "manual");
+            var r3 = writer.TryRecordFrame(frame, MakeOcr(("第三页", 0.2, 0.1, 0.9f)),
+                Array.Empty<YoloDetection>(), MatchScreen.MainMenu, false, "manual");
+
+            Assert.True(r1.Saved);
+            Assert.True(r2.Saved);
+            Assert.False(r3.Saved);
+            Assert.Equal("quota_exceeded", r3.Reason);
+            Assert.Equal(1, writer.DroppedByQuotaCount);
+            Assert.Equal(2, writer.SavedCount);
+
+            writer.Flush(15000);
+            Assert.Equal(2, Directory.GetFiles(tempRoot, "*.png", SearchOption.AllDirectories).Length);
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
+    public void DatasetSampleWriter_WithoutQuotaArgument_WritesWithoutLimit()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), "efootball_sample_noquota_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            // 默认构造（config 里 0 或未设）必须保持旧行为，否则老配置升级后会突然停止采样
+            var writer = new DatasetSampleWriter(tempRoot);
+            var frame = MakeFrame(1280, 720, 0, 0, 0, gradient: true);
+            for (int i = 0; i < 3; i++)
+            {
+                var res = writer.TryRecordFrame(frame, MakeOcr(($"页面{i}", 0.2, 0.1, 0.9f)),
+                    Array.Empty<YoloDetection>(), MatchScreen.MainMenu, false, "manual");
+                Assert.True(res.Saved);
+            }
+            Assert.Equal(0, writer.DroppedByQuotaCount);
+            writer.Flush(15000);
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void BotModuleCatalog_RegistersManualSamplingWithoutGamepadTakeover()
     {
         var intl = BotModuleCatalog.Find(ModuleIds.IntlManualSample);
@@ -285,6 +342,9 @@ public sealed class SamplingPipelineTests
             var shift = new FocusShiftResult(true, 0.50, 0.30, 0.50, 0.55, "下", "前往比赛", 18);
             writer.RecordTransition("LeaguePage", "Pad:Down", "LeaguePage", false, 1282, 759, shift);
             writer.RecordTransition("LeaguePage", "Pad:A", "MatchStartPage", false, 1282, 759, shift);
+            // 全量并行跑时线程池拥塞，WriteNavigationGraph 内置的 3 秒等待会被击穿（实测这条曾
+            // 拖到 17 秒、只读到 1 行）。这里先用自己的长超时把两次追加落盘等完，再看文件内容。
+            writer.Flush(15000);
             writer.WriteNavigationGraph();
 
             var jsonLines = File.ReadAllLines(Path.Combine(tmp, "transitions.jsonl"));

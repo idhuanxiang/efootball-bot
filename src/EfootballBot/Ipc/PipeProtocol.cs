@@ -35,7 +35,9 @@ public static class PipeProtocol
         public string? Screen { get; set; }       // screen: 感知摘要文本
         public double Score { get; set; }         // screen.score
         public string? Evidence { get; set; }     // screen.evidence
-        public string? Png { get; set; }          // preview: base64 PNG
+        public string? Png { get; set; }          // preview: base64 PNG（旧协议，保留兼容）
+        /// <summary>previewFrame：共享帧环里的最新帧序号。</summary>
+        public long Seq { get; set; }
         public int Matches { get; set; }          // stats
         public int KeyMatches { get; set; }
         public int PlayersMaxed { get; set; }  /// 满级提示次数（弃权场次已移除）
@@ -69,6 +71,10 @@ public static class PipeProtocol
     public static Msg EvScreen(string screen, double score, string? evidence)
         => new() { Ev = "screen", Screen = screen, Score = score, Evidence = evidence };
     public static Msg EvPreview(string pngBase64) => new() { Ev = "preview", Png = pngBase64 };
+    /// <summary>预览共享帧环的命名（Worker 创建后只发一次；GUI 据此打开读者）。</summary>
+    public static Msg EvPreviewRing(string name) => new() { Ev = "previewRing", Text = name };
+    /// <summary>预览帧已写入共享环的通知：只带序号，不再走管道传 JPEG/base64。</summary>
+    public static Msg EvPreviewFrame(long seq) => new() { Ev = "previewFrame", Seq = seq };
     public static Msg EvPong() => new() { Ev = "pong" };
     /// <summary>Worker 进程号：子会话模式下 GUI 无法用 Process.Start 拿句柄，靠它反查进程。</summary>
     public static Msg EvPid(int pid) => new() { Ev = "pid", Pid = pid };

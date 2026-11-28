@@ -11,6 +11,7 @@ using EfootballBot.Core.Bot.Modules;
 using EfootballBot.Core.Config;
 using EfootballBot.Core.Logging;
 using EfootballBot.Core.System;
+using EfootballBot.Core.Vision.Sidecar;
 using EfootballBot.Ipc;
 
 namespace EfootballBot.Worker;
@@ -100,6 +101,8 @@ public static class WorkerProgram
         int previewOn = 0;
         CancellationTokenSource? previewCts = null;
         Task? previewTask = null;
+        UploadFrameRing? previewRing = null;   // 预览帧走共享内存，管道只传序号
+        object previewRingGate = new();        // 串行化环创建：并发进来第二个会撞同名 MMF
         NamedPipeServerStream? pipe = null;
         CancellationTokenSource? readCts = null;
 
@@ -245,6 +248,39 @@ public static class WorkerProgram
 
         void StartPreviewLoop()
         {
+            // 懒创建共享帧环：第一次开预览时建，关掉后由 StopPreviewLoopAsync 回收。
+            // 名字带 PID，避免多个 Worker/多开档案互相打开对方的预览环。
+            // 创建必须串行且容错：上一条 stopPreview 的环还在回收时同名 MMF 仍占着，
+            // CreateNew 会抛 IOException；这里既不能让它冒出同步方法中断命令，也不能让
+            // 两个并发 start 各建一个（后者会顶掉前者的环，GUI 打开的就是死环）。
+            UploadFrameRing? ring = Volatile.Read(ref previewRing);
+            if (ring is null)
+            {
+                lock (previewRingGate)
+                {
+                    ring = Volatile.Read(ref previewRing);
+                    if (ring is null)
+                    {
+                        string ringName = $@"Local\EfootballBot.Preview-{pid}";
+                        try
+                        {
+                            var created = new UploadFrameRing(ringName, 640, 360, slots: 2);
+                            Volatile.Write(ref previewRing, created);
+                            ring = created;
+                            _ = SendAsync(PipeProtocol.EvPreviewRing(ringName));
+                        }
+                        catch (Exception ex)
+                        {
+                            // 建不出来就让预览停在旧路径（Worker 侧不发帧，GUI 侧超时后自行降级），
+                            // 不影响挂机主循环。
+                            FileLogger.Instance.Write(
+                                $"创建预览帧环失败（{ringName}）：{ex.GetType().Name}: {ex.Message}", LogLevel.Warn);
+                            ring = null;
+                        }
+                    }
+                }
+            }
+            if (ring is null) return;
             var cts = new CancellationTokenSource();
             var ct = cts.Token;
             var prev = Interlocked.Exchange(ref previewCts, cts);
@@ -265,9 +301,9 @@ public static class WorkerProgram
                         if (f is not null && f.TimestampMs != lastFrameStamp)
                         {
                             lastFrameStamp = f.TimestampMs;
-                            // 降采样到 640×360 后 JPEG 编码（PNG→JPEG 快 5~10 倍、体积小一个数量级）
-                            string b64 = EncodePreviewJpeg(f.Bgra, f.Width, f.Height);
-                            await SendAsync(PipeProtocol.EvPreview(b64));
+                            // 降采样到 640×360 后写共享帧环；管道只发一个序号，不再传 JPEG/base64。
+                            long seq = PublishScaledPreview(ring, f.Bgra, f.Width, f.Height, f.TimestampMs);
+                            await SendAsync(PipeProtocol.EvPreviewFrame(seq));
                         }
                         await Task.Delay(Math.Clamp(Volatile.Read(ref previewIntervalMs), 100, 2000), ct);
                     }
@@ -299,6 +335,8 @@ public static class WorkerProgram
             {
                 try { await pt.WaitAsync(TimeSpan.FromMilliseconds(500)); } catch { }
             }
+            var ring = Interlocked.Exchange(ref previewRing, null);
+            ring?.Dispose();
         }
 
         // 监听管道连接（循环，GUI 断开后等待重连）
@@ -517,17 +555,16 @@ public static class WorkerProgram
     private const int PreviewFrameIntervalMs = 100;
 
     /// <summary>
-    /// 将 BGRA 帧降采样到 640×360、按 UI 背景色补边、JPEG(q70) 编码后 base64。
-    /// 相比旧实现（480×270 PNG + Dispatcher.Invoke 回 UI 线程编码）：
-    ///   1) JPEG 编码比 PNG 快 5~10 倍，输出体积小一个数量级（管道与 GUI 解码同步变轻）；
-    ///   2) BitmapSource.Create 产出可 Freeze 的对象，后台线程直接编码，
-    ///      省掉每帧一次 Application.Dispatcher.Invoke 跨线程往返。
-    /// 返回的 base64 由 GUI 侧 BitmapImage 解码（自动识别 JPEG，无需改协议）。
+    /// 将 BGRA 帧降采样到 640×360、按 UI 背景色补边，**并在同一把锁内**写进共享帧环。
+    /// 旧实现在这里做 JPEG(q70) 编码 + base64 后走管道，每 100ms 一条几十 KB 的字符串；
+    /// 现在缓存复用同一块 900KB 缓冲，Publish 时一次性拷进共享内存，管道只发 8 字节序号。
+    /// Publish 必须留在锁内：缓冲是复用的，若在锁外拷贝，两个预览循环短暂重叠时
+    /// （Stop 的 500ms 等待超时后旧循环仍在跑）会把半新半旧的帧写进环。
     /// </summary>
     private static byte[]? s_previewBuf;
     private static readonly object s_previewLock = new();
 
-    private static string EncodePreviewJpeg(byte[] bgra, int sw, int sh)
+    private static long PublishScaledPreview(UploadFrameRing ring, byte[] bgra, int sw, int sh, long ts)
     {
         const int pw = 640, ph = 360;
         int cw = pw, ch = (int)Math.Round((double)pw * sh / sw);
@@ -558,13 +595,8 @@ public static class WorkerProgram
                 }
             }
 
-            var source = BitmapSource.Create(pw, ph, 96, 96, PixelFormats.Bgra32, null, buf, pw * 4);
-            source.Freeze();
-            var enc = new JpegBitmapEncoder { QualityLevel = 70 };
-            enc.Frames.Add(BitmapFrame.Create(source));
-            using var ms = new MemoryStream();
-            enc.Save(ms);
-            return Convert.ToBase64String(ms.ToArray());
+            // 仍在锁内：Publish 要把 buf 拷进共享内存，拷完才算这一帧交出去
+            return ring.Publish(new Core.Capture.FrameData(buf, pw, ph, ts));
         }
     }
 }

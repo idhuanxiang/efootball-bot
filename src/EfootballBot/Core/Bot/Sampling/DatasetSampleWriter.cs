@@ -62,9 +62,38 @@ public sealed class DatasetSampleWriter
     public int TransitionCount => _transitions.Count;
     public string RootDir => _rootDir;
 
-    public DatasetSampleWriter(string? rootDir = null)
+    /// <summary>因触达单日帧数上限而没落盘的帧数（0 说明配额没起过作用）。</summary>
+    public int DroppedByQuotaCount { get; private set; }
+
+    /// <summary>单日帧数上限；0 或负数表示不限。</summary>
+    private readonly int _maxFramesPerDay;
+    /// <summary>当日已落盘帧数缓存；-1 表示还没校准过。</summary>
+    private int _dayFrameCount = -1;
+
+    public DatasetSampleWriter(string? rootDir = null, int maxFramesPerDay = 0)
     {
         _rootDir = rootDir ?? Path.Combine(AppPaths.DataDir, "samples", DateTime.Now.ToString("yyyyMMdd"));
+        _maxFramesPerDay = maxFramesPerDay;
+    }
+
+    /// <summary>配额预占：调用方必须持有 _gate。首次调用时枚举当日目录校准计数（只在挂机早期发生一次）。</summary>
+    private bool TryReserveDaySlotLocked()
+    {
+        if (_maxFramesPerDay <= 0) return true;
+        if (_dayFrameCount < 0) _dayFrameCount = CountDayFrames();
+        if (_dayFrameCount >= _maxFramesPerDay) return false;
+        _dayFrameCount++;
+        return true;
+    }
+
+    private int CountDayFrames()
+    {
+        try
+        {
+            if (!Directory.Exists(_rootDir)) return 0;
+            return Directory.EnumerateFiles(_rootDir, "*.png", SearchOption.AllDirectories).Count();
+        }
+        catch { return 0; }
     }
 
     /// <summary>
@@ -154,6 +183,15 @@ public sealed class DatasetSampleWriter
             }
             queue.Enqueue((hash, wordSet));
             while (queue.Count > 8) queue.Dequeue();
+
+            // 容量上限：日志有保留天数/条数清理，样本目录以前完全没有。样本只是辅助数据，
+            // 长期挂机不能让它把磁盘吃满——到达上限就停止写入（保留已有样本，不做删除，
+            // 免得把待标注的好帧一起清掉）。0 或负数表示不限。
+            if (!TryReserveDaySlotLocked())
+            {
+                DroppedByQuotaCount++;
+                return new SampleWriteResult(false, "filtered", pageId, null, "quota_exceeded");
+            }
 
             SavedCount++;
             if (audit.RejectedBoxes.Count > 0)

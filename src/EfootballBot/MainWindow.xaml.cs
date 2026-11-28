@@ -26,7 +26,6 @@ namespace EfootballBot;
 
 public partial class MainWindow
 {
-    private string? _pendingPreviewFrame;
     private int _previewDispatchQueued;
 
     private readonly AppConfig _cfg;
@@ -201,16 +200,15 @@ public partial class MainWindow
             if (!string.IsNullOrEmpty(evidence))
                 TxtScreen.Text += $"  {evidence}";
         });
-        host.PreviewReceived += pngB64 =>
+        host.PreviewFrameReceived += _ =>
         {
-            // 只保留最新帧（审查修复）：UI 繁忙时不堆积几十帧 base64，恢复后直接显示最新一帧
-            global::System.Threading.Interlocked.Exchange(ref _pendingPreviewFrame, pngB64);
+            // 管道只带序号，帧在共享环里；UI 繁忙时合并通知，恢复后只读最新一帧。
             if (global::System.Threading.Interlocked.Exchange(ref _previewDispatchQueued, 1) != 0) return;
             Dispatcher.BeginInvoke(() =>
             {
                 global::System.Threading.Interlocked.Exchange(ref _previewDispatchQueued, 0);
-                var latest = global::System.Threading.Interlocked.Exchange(ref _pendingPreviewFrame, null);
-                if (latest is not null) ShowPreviewPng(latest);
+                if (!_previewOn || !ReferenceEquals(host, _workerHost)) return;
+                if (host.TryReadPreviewFrame(out var frame)) ShowPreviewFrame(frame);
             });
         };
         host.Exited += reason => Dispatcher.BeginInvoke(() =>
@@ -752,25 +750,21 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>将 Worker 传来的 PNG base64 解码显示到预览控件。</summary>
-    private void ShowPreviewPng(string pngBase64)
+    /// <summary>把共享帧环里的 BGRA 帧显示到预览控件（不再解码 JPEG/base64）。</summary>
+    private void ShowPreviewFrame(FrameData frame)
     {
-        // 关闭预览后管道里仍有迟到帧（BeginInvoke 排队中），若不检查开关会把刚清空的画面
+        // 关闭预览后管道里仍有迟到通知（BeginInvoke 排队中），若不检查开关会把刚清空的画面
         // 又显示回来、停在最后一帧"关不掉"（审查修复⑨）
         if (!_previewOn) return;
         try
         {
             _lastPreviewAt = DateTime.Now;
-            var bytes = Convert.FromBase64String(pngBase64);
-            var bmp = new BitmapImage();
-            bmp.BeginInit();
-            bmp.CacheOption = BitmapCacheOption.OnLoad;
-            bmp.StreamSource = new MemoryStream(bytes);
-            bmp.EndInit();
+            var bmp = BitmapSource.Create(frame.Width, frame.Height, 96, 96,
+                PixelFormats.Bgra32, null, frame.Bgra, frame.Width * 4);
             bmp.Freeze();
             Preview.Source = bmp;
         }
-        catch { /* 解码失败跳过这一帧 */ }
+        catch { /* 帧损坏或控件已卸载：跳过这一帧 */ }
     }
 
     protected override void OnClosing(CancelEventArgs e)

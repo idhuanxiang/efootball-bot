@@ -181,6 +181,10 @@ public sealed class LearningConfig
     /// <summary>同一类问题的转储节流秒数，防同一帧刷屏。</summary>
     public int ThrottleSeconds { get; set; } = 60;
 
+    /// <summary>单日样本目录的帧数上限（0 或负数=不限）。默认 4000 帧≈1~2GB：
+    /// 样本是辅助数据，到达上限停止写入而不是删旧帧，避免长期挂机把磁盘吃满。</summary>
+    public int MaxFramesPerDay { get; set; } = 4000;
+
     /// <summary>自学习总开关。默认关 —— 开启后按 TeachingMode 决定录制/复现；
     /// 只监听物理手柄白名单按键、只在游戏前台生效、轨迹只写 data\traces\。</summary>
     public bool TeachingEnabled { get; set; } = false;

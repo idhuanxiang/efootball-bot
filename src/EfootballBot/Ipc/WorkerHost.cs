@@ -4,8 +4,10 @@ using System.IO;
 using System.IO.Pipes;
 using System.Text;
 using EfootballBot.Core.Bot;
+using EfootballBot.Core.Capture;
 using EfootballBot.Core.Config;
 using EfootballBot.Core.System;
+using EfootballBot.Core.Vision.Sidecar;
 
 namespace EfootballBot.Ipc;
 
@@ -43,7 +45,14 @@ public sealed class WorkerHost : IDisposable
     public event Action<string, string>? Log;           // level, msg
     public event Action<BotStats>? StatsChanged;
     public event Action<string, double, string?>? ScreenObserved; // 感知摘要文本, 评分, 证据
-    public event Action<string>? PreviewReceived;       // pngBase64
+    public event Action<string>? PreviewReceived;       // 旧协议 pngBase64（保留兼容）
+    public event Action<string>? PreviewRingOpened;     // 预览共享帧环名称
+    public event Action<long>? PreviewFrameReceived;    // 新帧已写入共享环，值是序号
+    private SharedFrameRing? _previewRing;
+    // 预览环打开是轮询式的（OpenExisting 可能持续几百毫秒才成功），不能在管道读线程里跑：
+    // 读循环是单线程逐条分发，一卡住 stopped/log/stats 全部排队。改为后台打开，并用代际号
+    // 作废"打开途中又收到新开/已 Teardown"的迟到结果。
+    private int _previewRingGen;
     public event Action<string>? Exited;                // reason
     public event Action? Disconnected;                  // 管道断开 / 进程退出（自动重启已放弃时才触发）
 
@@ -244,6 +253,13 @@ public sealed class WorkerHost : IDisposable
                     case "preview":
                         if (!string.IsNullOrEmpty(msg.Png))
                             PreviewReceived?.Invoke(msg.Png);
+                        break;
+                    case "previewRing":
+                        if (!string.IsNullOrEmpty(msg.Text))
+                            BeginOpenPreviewRing(msg.Text!);
+                        break;
+                    case "previewFrame":
+                        PreviewFrameReceived?.Invoke(msg.Seq);
                         break;
                     case "pid":
                         _remotePid = msg.Pid;
@@ -516,6 +532,9 @@ public sealed class WorkerHost : IDisposable
         }
 
         _stopAck = null;
+        Interlocked.Increment(ref _previewRingGen);   // 作废仍在后台打开的预览环
+        try { _previewRing?.Dispose(); } catch { }
+        _previewRing = null;
         try { _readCts?.Cancel(); } catch { }
         try { _pipe?.Dispose(); } catch { }
         _pipe = null;
@@ -551,6 +570,55 @@ public sealed class WorkerHost : IDisposable
             return p.HasExited ? null : p;
         }
         catch { return null; }
+    }
+
+    /// <summary>后台打开预览共享帧环。管道读线程只负责排队，不承受 OpenExisting 的轮询等待
+    /// （最坏 2 秒）。迟到的打开结果用代际号判定是否还有效：期间又开过一次或已 Teardown 就丢弃。</summary>
+    private void BeginOpenPreviewRing(string name)
+    {
+        int gen = Interlocked.Increment(ref _previewRingGen);
+        var stale = Interlocked.Exchange(ref _previewRing, null);
+        try { stale?.Dispose(); } catch { }
+
+        _ = Task.Run(() =>
+        {
+            SharedFrameRing? ring = null;
+            try { ring = SharedFrameRing.Open(name, 1500); }
+            catch (Exception ex)
+            {
+                // Worker 已关预览（环被释放）属正常；真正打不开要留痕，否则只能看到预览不刷新。
+                ring = null;
+                EmitLog("Warn", $"打开预览帧环失败（{name}）：{ex.Message}");
+            }
+            if (ring is null) return;
+
+            if (Volatile.Read(ref _previewRingGen) != gen)
+            {
+                try { ring.Dispose(); } catch { }
+                return;
+            }
+            var prev = Interlocked.Exchange(ref _previewRing, ring);
+            try { prev?.Dispose(); } catch { }
+
+            // 代际号可能在「校验通过」与「赋值」之间被 Teardown 递增：此时刚装进去的环没人回收，
+            // 再核一次并在仍是我们自己时摘掉，避免每次关程序漏一个共享内存句柄。
+            if (Volatile.Read(ref _previewRingGen) != gen &&
+                ReferenceEquals(Interlocked.CompareExchange(ref _previewRing, null, ring), ring))
+            {
+                try { ring.Dispose(); } catch { }
+                return;
+            }
+            try { PreviewRingOpened?.Invoke(name); } catch { }
+        });
+    }
+
+    /// <summary>GUI 侧取最新预览帧（读共享帧环；未就绪或无新帧返回 false）。</summary>
+    public bool TryReadPreviewFrame(out FrameData frame)
+    {
+        var ring = _previewRing;
+        if (ring is null) { frame = null!; return false; }
+        try { return ring.TryReadLatest(out frame); }
+        catch { frame = null!; return false; } // 旧环刚被关闭/替换，迟到通知直接丢弃
     }
 
     /// <summary>发送预览开关命令。用 start/stop 同级的写超时：自动开预览恰在开始挂机后，
@@ -698,6 +766,9 @@ public sealed class WorkerHost : IDisposable
             // 硬回收路径也要 Dispose（正常 TeardownAsync 已 Dispose，这里只补关闭时的泄漏）
             try { _readCts?.Dispose(); } catch { }
             _readCts = null;
+            Interlocked.Increment(ref _previewRingGen);   // 作废仍在后台打开的预览环
+            try { _previewRing?.Dispose(); } catch { }
+            _previewRing = null;
             try { _process?.Kill(entireProcessTree: true); }
             catch { try { _process?.Kill(); } catch { } }
             try { _process?.WaitForExit(1500); } catch { }
